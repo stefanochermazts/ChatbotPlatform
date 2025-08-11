@@ -1,0 +1,121 @@
+name: ChatbotPlatform – Regole di sviluppo e collaborazione per Cursor
+version: 1
+
+### Obiettivo del progetto
+Piattaforma SaaS multitenant per chatbot con RAG avanzato, API compatibili OpenAI Chat Completions, e UI TALL (Tailwind, Alpine, Laravel, Livewire). Priorità: affidabilità, scalabilità, governance, sicurezza e accessibilità.
+
+### Stack e versioni target
+- PHP 8.2+ (Laravel 11, Octane opzionale)
+- Node 18+/20+, pnpm o npm; Vite, Tailwind CSS
+- Livewire 3 + Alpine.js; Blade
+- PostgreSQL 16 con estensione pgvector
+- Redis per code/cache; Meilisearch/Typesense o BM25 su DB
+- Storage S3/Azure Blob; CDN/Cloudflare
+- OpenAI (GPT-4.1/4o; embeddings text-embedding-3)
+- GraphQL (Lighthouse) per pannello admin/builder/analytics; REST per runtime chat, upload, webhooks
+
+### Convenzioni di progetto (Laravel)
+- PSR-12; usare Laravel Pint per lint/format PHP. Prettier + ESLint per JS/TS.
+- Struttura consigliata:
+  - `app/Http/Controllers` (REST), `routes/api.php` e `routes/web.php`
+  - `app/GraphQL` (resolver/services); schema in `graphql/schema.graphql`
+  - `app/Livewire` e `resources/views` per componenti Blade/Livewire
+  - `app/Models`, `app/Policies`, `app/Services`, `app/Actions`, `app/Jobs`
+  - `database/migrations`, `database/factories`, `database/seeders`
+  - `resources/js`, `resources/css`, `tailwind.config.js`, `vite.config.ts`
+  - `config/*` per feature flags, RAG, openai, search, tenancy
+- Test: Pest per unit/integration; Postman/Insomnia per suite API; contract tests per OpenAPI/SDL.
+- Preferire Services/Actions per logica di dominio; Controller sottili; evitare “God classes”.
+- Dependency Injection, typed properties e return types; evitare `mixed/array` generici.
+
+### Multitenancy, sicurezza e policy
+- Scoping obbligatorio per tenant in ogni accesso a dati; evitare leakage cross-tenant.
+- RBAC+ABAC con `Policies` e `Gates`; audit trail su azioni sensibili.
+- Segreti in `.env`/vault; mai committare chiavi/API key.
+- Input validation con `FormRequest`/rules; rate limit, WAF opzionale; headers `Retry-After`.
+- GDPR/PII: minimizzare e mascherare; log in formato JSON con redazione PII.
+- Accessibilità WCAG 2.1 AA per admin e widget.
+
+### RAG: best practice architetturali
+- Pipeline ingestion modulare: upload/crawler → parsing/OCR → chunking → embeddings → indicizzazione → QA/versioning.
+- Embeddings con OpenAI `text-embedding-3-*`; memorizzare dimensione corretta; usare `pgvector` per KNN.
+- Retrieval ibrido: vettoriale + BM25/Meilisearch/Typesense; filtri per tag/lingua/data/ACL; recency boost.
+- Reranking opzionale (MMR/cross-encoder) dietro interfaccia; non hardcodare vendor.
+- Context builder token-aware con dedup; citazioni obbligatorie con deep-link.
+- Policy anti-allucinazioni: soglia confidence e fallback “Non lo so”.
+- Caching query/risposte con invalidazione su update KB.
+- Jobs in coda per ingestion, embeddings, indicizzazione, evaluation; `Supervisor`/Horizon in prod.
+
+### API compatibile OpenAI Chat Completions (runtime)
+- Endpoint: `POST /v1/chat/completions` con SSE opzionale.
+- Auth: `Authorization: Bearer <API_KEY>` scoperte per tenant/bot.
+- Request: campi OpenAI standard (model, messages, temperature, tools/tool_choice, response_format, stream, stop, n...).
+- Tool calling: includere `search_kb` per retrieval e mappare citazioni nei messaggi.
+- Response: schema OpenAI (choices, message, tool_calls, usage); includere headers di rate limit e `Idempotency-Key`.
+- Errori: compatibili; non esporre stack trace; codici HTTP corretti.
+
+### GraphQL (admin/builder/analytics)
+- Schema-first con Lighthouse; risolutori sottili che delegano a Services.
+- Autorizzazione sul field level; pagination, filtri e sorting coerenti.
+- Subscription/eventi dove sensato; evitare overfetching.
+
+### Frontend TALL
+- Componenti Livewire accessibili; focus management/ARIA; evitare JS non necessario.
+- Tailwind: usare design tokens e varianti; dark mode opzionale; ridotto movimento.
+- Widget web: theming/branding, SDK eventi, quick-actions mediate dal backend con JWT breve + HMAC.
+
+### Osservabilità e affidabilità
+- Logging strutturato (JSON); tracing e correlation-id per request/chat.
+- Metriche chiave: latenza P95 (<2.5s), costi/token, groundedness, deflection.
+- Retry/backoff per chiamate LLM e IO; circuit breaker dove necessario.
+- Migrazioni “safe” e transazionali; feature flags per rollout.
+
+### CI/CD e ambienti
+- Pipeline: lint → test → build → canary/blue‑green → rollback automatico.
+- Build prod: `composer install --no-dev --prefer-dist`, `npm ci && npm run build`, `php artisan optimize`.
+- Deploy senza downtime; migrazioni con `--force` e check compatibilità.
+- Backup/DR: RPO ≤ 15m, RTO ≤ 60m; health checks, alerting SLO 99.9% API.
+- Ambienti:
+  - Dev: 2 VM o Laragon/Valet; NGINX + PHP‑FPM; Octane facoltativo.
+  - Workers: coda dedicata; Supervisor/Horizon.
+  - Prod: WAF/Ingress, autoscaling workers, DB gestito, Redis, Vector, Blob, CDN.
+
+### Regole operative per Cursor (IMPORTANT)
+- Leggi prima `docs/analisi-funzionale/analisi-funzionale.md` e file toccati; limita gli edit ai file necessari.
+- Quando modifichi schema/dati: genera migrazioni, factory e seed coerenti; non perdere dati.
+- Per nuove feature: crea test Pest (unit/integration) e aggiorna documentazione in `docs/`.
+- Mantieni compatibilità API OpenAI su `/v1/chat/completions`; non introdurre breaking changes.
+- Non esporre segreti; usa configurazioni da `config/*.php` e `.env`.
+- Rispetta PSR‑12 e naming descrittivo; preferisci Services/Actions a Controller gonfi.
+- Inserisci fallback “Non lo so” quando la confidence del RAG è bassa; cita sempre le fonti.
+- Non introdurre dipendenze non necessarie; isolare integrazioni dietro interfacce.
+
+### Comandi utili (cheat‑sheet)
+- Setup dev (Windows/Laragon):
+  - `composer install`
+  - `cp .env.example .env` e `php artisan key:generate`
+  - Configura DB Postgres e `pgvector`; `php artisan migrate --seed`
+  - `npm install` e `npm run dev`
+  - Code/queue: `php artisan queue:work --queue=default,ingestion,embeddings,indexing,evaluation`
+  - Octane: `php artisan octane:start --watch` (facoltativo in dev)
+- Test:
+  - `php artisan test` o `./vendor/bin/pest`
+  - API OpenAI-like via Postman collection in `docs/` (aggiungere se manca)
+- Build prod:
+  - `npm run build` e `php artisan optimize`
+
+### Accettazione (estratto)
+- Creazione bot + KB → risposta con citazioni (≥3 doc dove applicabile).
+- Widget con deep‑link citazioni; judge settimanale; limiti piano attivi.
+- KPI: groundedness ≥ 0.8; hallucination < 2%; CSAT ≥ 4/5; deflection ≥ 60%.
+
+### Cosa evitare
+- Modifiche massicce non richieste; refactor trasversali senza copertura test.
+- Query senza scoping tenant; N+1 non mitigati; log di PII in chiaro.
+- Bloccare thread web con operazioni di ingestion/embeddings: usare code.
+
+### Documentazione
+- Aggiorna `docs/analisi-funzionale/` con decisioni architetturali (ADR), API (OpenAPI/SDL) e guide runbook.
+
+
+

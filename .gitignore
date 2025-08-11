@@ -1,0 +1,32 @@
+﻿# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logs
+*.log
+backend/storage/logs/*.log
+
+# Laravel backend
+backend/vendor/
+backend/public/storage/
+backend/storage/
+backend/.env
+backend/.env.*
+backend/.phpunit.cache/
+backend/bootstrap/cache/*.php
+
+# Coverage/Build
+coverage/
+backend/coverage/
+backend/public/build/
