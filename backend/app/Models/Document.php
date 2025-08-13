@@ -15,15 +15,22 @@ class Document extends Model
         'title',
         'source',
         'path',
+        'source_url',
+        'content_hash',
+        'last_scraped_at',
+        'scrape_version',
         'metadata',
         'ingestion_status',
         'ingestion_progress',
         'last_error',
+        'size',
     ];
 
     protected $casts = [
         'metadata' => 'array',
         'ingestion_progress' => 'integer',
+        'scrape_version' => 'integer',
+        'last_scraped_at' => 'datetime',
     ];
 
     public function tenant(): BelongsTo

@@ -41,6 +41,8 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
     // Scraper config
     Route::get('/tenants/{tenant}/scraper', [ScraperAdminController::class, 'edit'])->name('scraper.edit');
     Route::post('/tenants/{tenant}/scraper', [ScraperAdminController::class, 'update'])->name('scraper.update');
+    Route::post('/tenants/{tenant}/scraper/run', [ScraperAdminController::class, 'run'])->name('scraper.run');
+    Route::post('/tenants/{tenant}/scraper/run-sync', [ScraperAdminController::class, 'runSync'])->name('scraper.run-sync');
 
     // RAG tester
     Route::get('/rag', [RagTestController::class, 'index'])->name('rag.index');

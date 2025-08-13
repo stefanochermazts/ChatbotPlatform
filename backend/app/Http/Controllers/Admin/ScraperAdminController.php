@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RunWebScrapingJob;
 use App\Models\ScraperConfig;
 use App\Models\Tenant;
+use App\Services\Scraper\WebScraperService;
 use Illuminate\Http\Request;
 
 class ScraperAdminController extends Controller
@@ -48,6 +50,47 @@ class ScraperAdminController extends Controller
         $config->save();
 
         return back()->with('ok', 'Configurazione scraper aggiornata');
+    }
+
+    public function run(Tenant $tenant)
+    {
+        $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
+        
+        if (!$config || empty($config->seed_urls)) {
+            return back()->with('error', 'Configurazione scraper non trovata o incompleta');
+        }
+
+        // Avvia scraping in background
+        RunWebScrapingJob::dispatch($tenant->id);
+        
+        return back()->with('ok', 'Scraping avviato in background. Controlla i log per il progresso.');
+    }
+
+    public function runSync(Tenant $tenant, WebScraperService $scraper)
+    {
+        $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
+        
+        if (!$config || empty($config->seed_urls)) {
+            return back()->with('error', 'Configurazione scraper non trovata o incompleta');
+        }
+
+        try {
+            $result = $scraper->scrapeForTenant($tenant->id);
+            
+            if (isset($result['error'])) {
+                return back()->with('error', $result['error']);
+            }
+            
+            $message = "Scraping completato: {$result['urls_visited']} URLs visitati, {$result['documents_saved']} documenti processati";
+            if (isset($result['stats'])) {
+                $stats = $result['stats'];
+                $message .= " (Nuovi: {$stats['new']}, Aggiornati: {$stats['updated']}, Invariati: {$stats['skipped']})";
+            }
+            return back()->with('ok', $message);
+            
+        } catch (\Exception $e) {
+            return back()->with('error', 'Errore durante scraping: ' . $e->getMessage());
+        }
     }
 
     private function toArray(string $multiline): array
