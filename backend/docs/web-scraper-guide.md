@@ -18,6 +18,7 @@ Il Web Scraper di ChatbotPlatform permette di estrarre automaticamente contenuti
 Liste degli URL di partenza (uno per riga):
 ```
 https://www.example.com/
+
 https://www.example.com/servizi/
 https://www.example.com/contatti/
 ```
@@ -55,15 +56,27 @@ Pattern regex per escludere URL:
 ```
 
 #### **🔗 Link-only Patterns** (Opzionale)
-Pattern regex delle pagine "indice" per cui vuoi solo seguire i link interni senza salvare la pagina stessa come documento. Utile per liste news, archivi, pagine di paginazione.
+Pattern regex delle pagine "indice" per cui vuoi solo seguire i link interni senza salvare la pagina stessa come documento. **Ottimizzazione importante** per liste news, archivi, categorie, pagine di paginazione.
 
-Esempi:
+**Esempi comuni:**
 ```
-/news/?$
-/news/page/\d+
+/news/?$                  # Homepage news
+/news/page/\d+           # Paginazione news  
+/categoria/.*            # Pagine categoria
+/archivio.*              # Archivi
+/tag/.*                  # Pagine tag
 ```
 
-Comportamento: se un URL matcha uno di questi pattern, lo scraper estrarrà i link e continuerà la ricorsione, ma non genererà un documento per quell'URL.
+**Comportamento:**
+- ✅ **Estrae link** dalla pagina e li aggiunge alla coda di scraping
+- ✅ **Continua ricorsione** seguendo i link trovati  
+- ❌ **Non salva documento** per l'URL che matcha il pattern
+- 🎯 **Risultato**: Solo gli articoli/contenuti finali vengono salvati, non le pagine di navigazione
+
+**Benefici:**
+- Riduce documenti "rumore" (liste, menu, indici)
+- Migliora qualità della knowledge base
+- Ottimizza risorse di storage e processing
 
 #### **🔧 Parametri Avanzati**
 
@@ -83,11 +96,16 @@ Comportamento: se un URL matcha uno di questi pattern, lo scraper estrarrà i li
 
 #### **🧩 Multi‑Scraper per Tenant**
 - Puoi creare più scraper per lo stesso tenant, ognuno con:
-  - **Nome scraper**
-  - **Regole di ambito** (seed/include/exclude/link‑only/domains)
-  - **KB target**
-  - **Frequenza (minuti)** e flag **Abilitato**
-- Nella UI trovi l’elenco “Scraper esistenti” per selezionare e caricare nel form uno scraper specifico; i pulsanti di esecuzione utilizzeranno lo scraper correntemente caricato.
+  - **Nome scraper**: Nome identificativo per distinguere le configurazioni
+  - **Regole di ambito**: seed/include/exclude/link‑only/domains specifiche
+  - **KB target**: Knowledge Base di destinazione per i documenti
+  - **Frequenza (minuti)**: Intervallo di esecuzione automatica (es: 60, 1440)
+  - **Flag Abilitato**: Attiva/disattiva esecuzione schedulata
+- Nella UI trovi l'elenco "Scraper esistenti" per:
+  - **Selezionare** e caricare configurazione nel form
+  - **Eliminare** scraper non più necessari
+  - **Visualizzare stato** (Attivo/Disattivo, frequenza)
+- I pulsanti di esecuzione utilizzeranno lo scraper correntemente caricato nel form.
 
 #### **🔐 Auth Headers** (Opzionale)
 Headers di autenticazione:
@@ -109,7 +127,11 @@ Cookie: session=abc123
 - Attendi il completamento (può richiedere tempo)
 - Ricevi feedback immediato
 
-Nota: nella pagina Scraper, i pulsanti eseguono lo scraper attualmente caricato nel form (id indicato accanto al nome nella lista “Scraper esistenti”).
+### **Gestione Multi-Scraper**
+- **Creare nuovo scraper**: Lascia il form vuoto e imposta un nome, poi clicca "Salva Configurazione"
+- **Modificare scraper esistente**: Clicca su uno scraper nella lista "Scraper esistenti" per caricarlo nel form
+- **Eliminare scraper**: Usa il pulsante 🗑️ "Elimina" accanto al nome dello scraper
+- **Eseguire scraper specifico**: I pulsanti eseguono lo scraper attualmente caricato/selezionato nel form
 
 ## 📁 Output
 
@@ -207,17 +229,23 @@ Rate Limit: 1 RPS
 ```
 Seed URLs: homepage + sitemap
 Include Patterns: /\d{4}/.* (articoli con date)
+Link-only Patterns: /news/?$, /categoria/.*, /page/\d+
 Exclude Patterns: /tag/.*, /author/.*
 Max Depth: 2
 Rate Limit: 2 RPS
+Skip Known URLs: true
+Recrawl Days: 7 (per articoli aggiornati)
 ```
 
 ### **Per E-commerce**
 ```
 Include Patterns: /prodotti/.*, /categoria/.*
+Link-only Patterns: /categorie/?$, /catalogo.*
 Exclude Patterns: /carrello/.*, /checkout/.*, /account/.*
 Max Depth: 3
 Rate Limit: 1 RPS
+Skip Known URLs: true
+Recrawl Days: 30 (per aggiornamenti prezzi/stock)
 ```
 
 ## ⚡ Commands CLI
@@ -332,9 +360,95 @@ $schedule->command('scraper:run-due')->everyFiveMinutes()->withoutOverlapping();
 4. **Rispetta copyright** e licenze di contenuto
 5. **Solo contenuti pubblici** accessibili senza login
 
+## 🧠 Configurazione Intent RAG
+
+Il sistema supporta intent configurabili per ogni tenant che influenzano come i documenti scrapati vengono utilizzati nel RAG:
+
+### **Intent Disponibili**
+- **📞 Telefono**: Ricerca numeri di telefono, centralino, call center
+- **📧 Email**: Ricerca indirizzi email, PEC, posta istituzionale  
+- **📍 Indirizzo**: Ricerca indirizzi, sede legale, ubicazione
+- **🕐 Orari**: Ricerca orari apertura, ricevimento, sportello
+
+### **Configurazione Avanzata**
+- **Intent abilitati**: Attiva/disattiva singoli intent per tenant
+- **Keywords extra**: Parole chiave aggiuntive per ogni intent (JSON)
+- **KB scope mode**: 
+  - `relaxed`: Fallback su tutto il tenant se KB vuota
+  - `strict`: Solo KB selezionata
+- **Soglia intent**: Punteggio minimo per attivazione (0-1)
+
+Esempio configurazione:
+```bash
+php artisan db:seed --class=TenantIntentConfigSeeder
+```
+
+### **Scoping Knowledge Base** 
+Gli intent ora rispettano la KB selezionata automaticamente dal RAG, permettendo ricerche specifiche per contesto (es: orari solo per una specifica sede).
+
 ## 🛡️ Sicurezza
 
 - Le credenziali di autenticazione sono memorizzate cifrate
 - Headers sensibili sono mascherati nei log
 - Rate limiting previene abusi accidentali
 - Whitelist domini previene scraping non autorizzato
+- Multi-tenant isolation garantito per tutte le operazioni
+
+## 📝 Esempio Configurazione Completa
+
+### **Scenario: Sito PA con News e Servizi**
+
+**Obiettivo**: Scraper separati per diverse sezioni del sito con KB dedicate
+
+#### **Scraper 1: "Servizi Istituzionali"**
+```
+Nome: Servizi PA
+KB Target: Servizi e Informazioni
+Frequenza: 1440 minuti (1 volta al giorno)
+Abilitato: ✅
+
+Seed URLs:
+https://www.comune.example.it/servizi/
+https://www.comune.example.it/uffici/
+
+Include Patterns:
+/servizi/.*
+/uffici/.*
+/contatti.*
+
+Exclude Patterns:
+/admin/.*
+\.pdf$
+
+Skip Known URLs: ✅
+Recrawl Days: 30
+```
+
+#### **Scraper 2: "News e Comunicazioni"** 
+```
+Nome: News Comunale
+KB Target: News e Comunicazioni  
+Frequenza: 360 minuti (6 volte al giorno)
+Abilitato: ✅
+
+Seed URLs:
+https://www.comune.example.it/news/
+
+Include Patterns:
+/news/\d{4}/.*
+/comunicazioni/.*
+
+Link-only Patterns:
+/news/?$
+/news/page/\d+
+/comunicazioni/?$
+
+Skip Known URLs: ✅
+Recrawl Days: 7
+```
+
+#### **Risultato**
+- **KB Servizi**: Contenuti stabili aggiornati mensilmente
+- **KB News**: Contenuti dinamici aggiornati 4 volte al giorno  
+- **RAG automatico**: Seleziona KB corretta in base alla domanda
+- **Ottimizzazione**: No duplicati, no pagine indice, scheduling intelligente
