@@ -21,11 +21,17 @@ class Tenant extends Model
         'default_language',
         'custom_system_prompt',
         'custom_context_template',
+        'intents_enabled',
+        'extra_intent_keywords',
+        'kb_scope_mode',
+        'intent_min_score',
     ];
 
     protected $casts = [
         'metadata' => 'array',
         'languages' => 'array',
+        'intents_enabled' => 'array',
+        'extra_intent_keywords' => 'array',
     ];
 
     public function apiKeys(): HasMany

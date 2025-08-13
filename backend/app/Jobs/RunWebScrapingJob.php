@@ -15,7 +15,8 @@ class RunWebScrapingJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public function __construct(
-        private readonly int $tenantId
+        private readonly int $tenantId,
+        private readonly ?int $scraperConfigId = null,
     ) {
         $this->onQueue('scraping');
     }
@@ -23,10 +24,11 @@ class RunWebScrapingJob implements ShouldQueue
     public function handle(WebScraperService $scraper): void
     {
         try {
-            $result = $scraper->scrapeForTenant($this->tenantId);
+            $result = $scraper->scrapeForTenant($this->tenantId, $this->scraperConfigId);
             
             \Log::info("Web scraping completato", [
                 'tenant_id' => $this->tenantId,
+                'scraper_config_id' => $this->scraperConfigId,
                 'urls_visited' => $result['urls_visited'] ?? 0,
                 'documents_saved' => $result['documents_saved'] ?? 0
             ]);

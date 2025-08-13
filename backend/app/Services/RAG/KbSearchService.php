@@ -16,6 +16,7 @@ class KbSearchService
         private readonly ?MultiQueryExpander $mq = null,
         private readonly RagCache $cache = new RagCache(),
         private readonly RagTelemetry $telemetry = new RagTelemetry(),
+        private readonly KnowledgeBaseSelector $kbSelector = new KnowledgeBaseSelector(new TextSearchService()),
     ) {}
 
     // Lingue attive per il tenant corrente (codici ISO, lowercase)
@@ -61,12 +62,16 @@ class KbSearchService
         // Esegui l'intent con priorità più alta
         foreach (['schedule', 'address', 'email', 'phone'] as $intentType) {
             if (in_array($intentType, $intents)) {
-                $result = $this->executeIntent($intentType, $tenantId, $query, $debug);
+                // Selezione KB prima del lookup intent (per scoping)
+                $kbSelIntent = $this->kbSelector->selectForQuery($tenantId, $query);
+                $selectedKbIdIntent = $kbSelIntent['knowledge_base_id'] ?? null;
+                $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
                 if ($result !== null) {
                     // Aggiungi debug intent se disponibile
                     if ($intentDebug) {
                         $intentDebug['executed_intent'] = isset($result['debug']['semantic_fallback']) ? $intentType . '_semantic' : $intentType;
                         $result['debug']['intent_detection'] = $intentDebug;
+                        $result['debug']['selected_kb'] = $kbSelIntent;
                     }
                     return $result;
                 }
@@ -89,20 +94,28 @@ class KbSearchService
         if ($debug) {
             $trace['milvus'] = $this->milvus->health();
         }
+        // Selezione automatica KB per la query
+        $kbSel = $this->kbSelector->selectForQuery($tenantId, $query);
+        $selectedKbId = $kbSel['knowledge_base_id'] ?? null;
+        $selectedKbName = $kbSel['kb_name'] ?? null;
+        if ($debug) {
+            $trace['selected_kb'] = $kbSel;
+        }
+
         foreach ($queries as $q) {
             if ($debug) {
                 $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
                 $vecHit = [];
                 if ((($trace['milvus']['ok'] ?? false) === true) && $qEmb) {
-                    $vecHit = $this->milvus->searchTopK($tenantId, $qEmb, $vecTopK);
+                    $vecHit = $this->milvus->searchTopK($tenantId, $qEmb, $vecTopK); // filtro KB lato app più avanti
                 }
-                $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK);
+                $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK, $selectedKbId);
                 $trace['per_query'][] = [
                     'q' => $q,
                     'vector_hits' => array_slice($vecHit, 0, 10),
                     'fts_hits' => array_slice($bmHit, 0, 10),
                 ];
-                $allFused[] = $this->rrfFuse($vecHit, $bmHit, $rrfK);
+                $allFused[] = $this->rrfFuse($this->filterVecHitsByKb($vecHit, $selectedKbId), $bmHit, $rrfK);
             } else {
                 $key = 'rag:vecfts:'.$tenantId.':'.sha1($q).":{$vecTopK},{$bmTopK},{$rrfK}";
                 $list = $this->cache->remember($key, function () use ($tenantId, $q, $vecTopK, $bmTopK, $rrfK) {
@@ -112,10 +125,13 @@ class KbSearchService
                     if (($milvusHealth['ok'] ?? false) === true && $qEmb) {
                         $vecHit = $this->milvus->searchTopK($tenantId, $qEmb, $vecTopK);
                     }
-                    $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK);
+                    // Nota: non passiamo $selectedKbId qui perché la closure non lo ha in scope; il key cache non cambia con KB.
+                    // Pertanto, applichiamo filtro KB al risultato fuso lato chiamante.
+                    $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK, null);
                     return $this->rrfFuse($vecHit, $bmHit, $rrfK);
                 });
-                $allFused[] = $list;
+                // Applica filtro KB ai risultati fusi
+                $allFused[] = $this->filterFusedByKb($list, $selectedKbId);
             }
         }
         // Fusione finale tra tutte le query (RRF su posizioni già “scorate”):
@@ -177,6 +193,7 @@ class KbSearchService
                 'url' => url('storage/'.$doc->path),
                 'snippet' => $snippet,
                 'score' => (float) $base['score'],
+                'knowledge_base' => $selectedKbName,
             ];
         }
 
@@ -193,6 +210,28 @@ class KbSearchService
         }
         
         return $result;
+    }
+
+    private function filterVecHitsByKb(array $vecHits, ?int $kbId): array
+    {
+        if ($kbId === null) return $vecHits;
+        if ($vecHits === []) return $vecHits;
+        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $vecHits)));
+        $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
+        $docToKb = [];
+        foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
+        return array_values(array_filter($vecHits, fn($h) => ($docToKb[(int)$h['document_id']] ?? 0) === $kbId));
+    }
+
+    private function filterFusedByKb(array $fused, ?int $kbId): array
+    {
+        if ($kbId === null) return $fused;
+        if ($fused === []) return $fused;
+        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $fused)));
+        $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
+        $docToKb = [];
+        foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
+        return array_values(array_filter($fused, fn($h) => ($docToKb[(int)$h['document_id']] ?? 0) === $kbId));
     }
 
     
@@ -424,7 +463,7 @@ class KbSearchService
     /**
      * Esegue un intent specifico
      */
-    private function executeIntent(string $intentType, int $tenantId, string $query, bool $debug): ?array
+    private function executeIntent(string $intentType, int $tenantId, string $query, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
         $name = $this->extractNameFromQuery($query, $intentType);
         
@@ -433,19 +472,19 @@ class KbSearchService
         
         switch ($intentType) {
             case 'schedule':
-                $results = $this->text->findSchedulesNearName($tenantId, $expandedName, 5);
+                $results = $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'schedule';
                 break;
             case 'phone':
-                $results = $this->text->findPhonesNearName($tenantId, $expandedName, 5);
+                $results = $this->text->findPhonesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'phone';
                 break;
             case 'email':
-                $results = $this->text->findEmailsNearName($tenantId, $expandedName, 5);
+                $results = $this->text->findEmailsNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'email';
                 break;
             case 'address':
-                $results = $this->text->findAddressesNearName($tenantId, $expandedName, 5);
+                $results = $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'address';
                 break;
             default:
@@ -454,7 +493,7 @@ class KbSearchService
         
         // Se la ricerca specifica non trova nulla, prova ricerca semantica con sinonimi
         if ($results === []) {
-            $semanticResults = $this->executeSemanticFallback($intentType, $tenantId, $name, $query, $debug);
+            $semanticResults = $this->executeSemanticFallback($intentType, $tenantId, $name, $query, $debug, $knowledgeBaseId);
             if ($semanticResults !== null) {
                 return $semanticResults;
             }
@@ -595,7 +634,7 @@ class KbSearchService
     /**
      * Fallback semantico: cerca con embedding usando query espansa e lascia che LLM disambigui
      */
-    private function executeSemanticFallback(string $intentType, int $tenantId, string $name, string $originalQuery, bool $debug): ?array
+    private function executeSemanticFallback(string $intentType, int $tenantId, string $name, string $originalQuery, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
         // Costruisci query semantica combinando termine originale + sinonimi
         $semanticQuery = $this->buildSemanticQuery($name, $intentType);
@@ -632,6 +671,14 @@ class KbSearchService
         
         // Filtra i risultati per estrarre solo quelli che contengono informazioni del tipo richiesto
         $filteredResults = $this->extractIntentDataFromSemanticResults($semanticHits, $intentType, $tenantId);
+        if ($knowledgeBaseId !== null) {
+            // filtra risultati per KB
+            $docIds = array_values(array_unique(array_column($filteredResults, 'document_id')));
+            $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
+            $docToKb = [];
+            foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
+            $filteredResults = array_values(array_filter($filteredResults, fn($r) => ($docToKb[(int)$r['document_id']] ?? 0) === $knowledgeBaseId));
+        }
         
         $debugInfo['semantic_fallback']['filtered_results_count'] = count($filteredResults);
         $debugInfo['semantic_fallback']['sample_filtered_results'] = array_slice($filteredResults, 0, 3);
@@ -690,7 +737,7 @@ class KbSearchService
         // Se non abbiamo citazioni, prova fallback con ricerca testuale sui documenti esistenti
         if (empty($cits)) {
             $debugInfo['semantic_fallback']['attempting_text_fallback'] = true;
-            $textFallbackResults = $this->attemptTextFallback($intentType, $tenantId, $name, $originalQuery);
+            $textFallbackResults = $this->attemptTextFallback($intentType, $tenantId, $name, $originalQuery, $knowledgeBaseId);
             if (!empty($textFallbackResults)) {
                 $debugInfo['semantic_fallback']['text_fallback_success'] = true;
                 $debugInfo['semantic_fallback']['text_fallback_count'] = count($textFallbackResults);
@@ -861,16 +908,16 @@ class KbSearchService
     /**
      * Fallback testuale quando Milvus non ha dati validi per il tenant
      */
-    private function attemptTextFallback(string $intentType, int $tenantId, string $name, string $originalQuery): array
+    private function attemptTextFallback(string $intentType, int $tenantId, string $name, string $originalQuery, ?int $knowledgeBaseId = null): array
     {
         // Usa la ricerca testuale diretta come ultima risorsa
         $expandedName = $this->expandNameWithSynonyms($name);
         
         $results = match($intentType) {
-            'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5),
-            'phone' => $this->text->findPhonesNearName($tenantId, $expandedName, 5),
-            'email' => $this->text->findEmailsNearName($tenantId, $expandedName, 5),
-            'address' => $this->text->findAddressesNearName($tenantId, $expandedName, 5),
+            'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
+            'phone' => $this->text->findPhonesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
+            'email' => $this->text->findEmailsNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
+            'address' => $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
             default => []
         };
         

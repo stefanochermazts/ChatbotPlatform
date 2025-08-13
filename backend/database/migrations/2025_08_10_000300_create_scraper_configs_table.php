@@ -20,6 +20,7 @@ return new class extends Migration {
             $table->json('include_patterns')->nullable();
             $table->json('exclude_patterns')->nullable();
             $table->boolean('respect_robots')->default(true);
+            // target_knowledge_base_id aggiunto con migrazione successiva
             $table->timestamps();
             $table->unique('tenant_id');
         });

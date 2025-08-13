@@ -10,28 +10,55 @@ class TextSearchService
      * Ricerca full-text per tenant su Postgres FTS.
      * @return array<int, array{document_id:int, chunk_index:int, score:float}>
      */
-    public function searchTopK(int $tenantId, string $query, int $k = 50): array
+    public function searchTopK(int $tenantId, string $query, int $k = 50, ?int $knowledgeBaseId = null): array
     {
         if ($query === '') {
             return [];
         }
 
-        $sql = <<<SQL
-            WITH q AS (SELECT plainto_tsquery('simple', :q) AS tsq)
-            SELECT dc.document_id, dc.chunk_index,
-                   ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
-            FROM document_chunks dc, q
-            WHERE dc.tenant_id = :tenant
-              AND to_tsvector('simple', dc.content) @@ q.tsq
-            ORDER BY score DESC
-            LIMIT :k
-        SQL;
+        if ($knowledgeBaseId !== null) {
+            $sql = <<<SQL
+                WITH q AS (SELECT plainto_tsquery('simple', :q) AS tsq)
+                SELECT dc.document_id, dc.chunk_index,
+                       ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
+                FROM document_chunks dc
+                INNER JOIN documents d ON d.id = dc.document_id
+                , q
+                WHERE dc.tenant_id = :tenant
+                  AND d.tenant_id = :tenant
+                  AND d.knowledge_base_id = :kbId
+                  AND to_tsvector('simple', dc.content) @@ q.tsq
+                ORDER BY score DESC
+                LIMIT :k
+            SQL;
 
-        $rows = DB::select($sql, [
-            'q' => $query,
-            'tenant' => $tenantId,
-            'k' => $k,
-        ]);
+            $rows = DB::select($sql, [
+                'q' => $query,
+                'tenant' => $tenantId,
+                'k' => $k,
+                'kbId' => (int) $knowledgeBaseId,
+            ]);
+        } else {
+            $sql = <<<SQL
+                WITH q AS (SELECT plainto_tsquery('simple', :q) AS tsq)
+                SELECT dc.document_id, dc.chunk_index,
+                       ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
+                FROM document_chunks dc
+                INNER JOIN documents d ON d.id = dc.document_id
+                , q
+                WHERE dc.tenant_id = :tenant
+                  AND d.tenant_id = :tenant
+                  AND to_tsvector('simple', dc.content) @@ q.tsq
+                ORDER BY score DESC
+                LIMIT :k
+            SQL;
+
+            $rows = DB::select($sql, [
+                'q' => $query,
+                'tenant' => $tenantId,
+                'k' => $k,
+            ]);
+        }
 
         return array_map(static function ($r) {
             return [
@@ -58,7 +85,7 @@ class TextSearchService
      * Score combina similarità trigram del nome e vicinanza nome↔numero.
      * @return array<int, array{phone:string,document_id:int,chunk_index:int,score:float}>
      */
-    public function findPhonesNearName(int $tenantId, string $name, int $limit = 10): array
+    public function findPhonesNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null): array
     {
         $name = trim($name);
         if ($name === '') {
@@ -71,27 +98,54 @@ class TextSearchService
         $last  = $parts[1] ?? '';
 
         // Candidati via trigram/ILIKE, limit ampio per post-filter
-        $rows = DB::select(
-            "SELECT document_id, chunk_index, content
-             FROM document_chunks
-             WHERE tenant_id = :t
-               AND (
-                    (LOWER(content) ILIKE :phrase1)
-                 OR (LOWER(content) ILIKE :phrase2)
-                 OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
-                 OR similarity(LOWER(content), :name) > 0.2
-               )
-             ORDER BY similarity(LOWER(content), :name) DESC
-             LIMIT 200",
-            [
-                't' => $tenantId,
-                'name' => $nameLower,
-                'phrase1' => '%'.$first.'%'.$last.'%',
-                'phrase2' => '%'.$last.'%'.$first.'%',
-                'first' => '%'.$first.'%',
-                'last'  => '%'.$last.'%',
-            ]
-        );
+        if ($knowledgeBaseId !== null) {
+            $rows = DB::select(
+                "SELECT dc.document_id, dc.chunk_index, dc.content
+                 FROM document_chunks dc
+                 INNER JOIN documents d ON d.id = dc.document_id
+                 WHERE dc.tenant_id = :t AND d.tenant_id = :t
+                   AND d.knowledge_base_id = :kb
+                   AND (
+                        (LOWER(dc.content) ILIKE :phrase1)
+                     OR (LOWER(dc.content) ILIKE :phrase2)
+                     OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                     OR similarity(LOWER(dc.content), :name) > 0.2
+                   )
+                 ORDER BY similarity(LOWER(dc.content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'kb' => (int) $knowledgeBaseId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        } else {
+            $rows = DB::select(
+                "SELECT document_id, chunk_index, content
+                 FROM document_chunks
+                 WHERE tenant_id = :t
+                   AND (
+                        (LOWER(content) ILIKE :phrase1)
+                     OR (LOWER(content) ILIKE :phrase2)
+                     OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                     OR similarity(LOWER(content), :name) > 0.2
+                   )
+                 ORDER BY similarity(LOWER(content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        }
 
         // Pattern più specifici per numeri di telefono italiani
         $sep = '[\\s\\.\\-\\x{00A0}\\x{2009}\\x{202F}\\x{2028}\\x{2029}\\x{2010}-\\x{2015}]*';
@@ -180,7 +234,7 @@ class TextSearchService
      * Trova email vicine a un nome.
      * @return array<int, array{email:string,document_id:int,chunk_index:int,score:float,excerpt:string}>
      */
-    public function findEmailsNearName(int $tenantId, string $name, int $limit = 10): array
+    public function findEmailsNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null): array
     {
         $name = trim($name);
         if ($name === '') return [];
@@ -189,25 +243,51 @@ class TextSearchService
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
 
-        $rows = DB::select(
-            "SELECT document_id, chunk_index, content FROM document_chunks
-             WHERE tenant_id = :t AND (
-                 (LOWER(content) ILIKE :phrase1)
-              OR (LOWER(content) ILIKE :phrase2)
-              OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
-              OR similarity(LOWER(content), :name) > 0.2
-             )
-             ORDER BY similarity(LOWER(content), :name) DESC
-             LIMIT 200",
-            [
-                't' => $tenantId,
-                'name' => $nameLower,
-                'phrase1' => '%'.$first.'%'.$last.'%',
-                'phrase2' => '%'.$last.'%'.$first.'%',
-                'first' => '%'.$first.'%',
-                'last'  => '%'.$last.'%',
-            ]
-        );
+        if ($knowledgeBaseId !== null) {
+            $rows = DB::select(
+                "SELECT dc.document_id, dc.chunk_index, dc.content FROM document_chunks dc
+                 INNER JOIN documents d ON d.id = dc.document_id
+                 WHERE dc.tenant_id = :t AND d.tenant_id = :t
+                   AND d.knowledge_base_id = :kb
+                   AND (
+                       (LOWER(dc.content) ILIKE :phrase1)
+                    OR (LOWER(dc.content) ILIKE :phrase2)
+                    OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                    OR similarity(LOWER(dc.content), :name) > 0.2
+                   )
+                 ORDER BY similarity(LOWER(dc.content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'kb' => (int) $knowledgeBaseId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        } else {
+            $rows = DB::select(
+                "SELECT document_id, chunk_index, content FROM document_chunks
+                 WHERE tenant_id = :t AND (
+                     (LOWER(content) ILIKE :phrase1)
+                  OR (LOWER(content) ILIKE :phrase2)
+                  OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                  OR similarity(LOWER(content), :name) > 0.2
+                 )
+                 ORDER BY similarity(LOWER(content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        }
 
         $pattern = '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu';
         $out = [];
@@ -245,7 +325,7 @@ class TextSearchService
      * Trova indirizzi (via/viale/piazza/corso/largo/vicolo/strada) vicino a un nome.
      * @return array<int, array{address:string,document_id:int,chunk_index:int,score:float,excerpt:string}>
      */
-    public function findAddressesNearName(int $tenantId, string $name, int $limit = 10): array
+    public function findAddressesNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null): array
     {
         $name = trim($name);
         if ($name === '') return [];
@@ -254,25 +334,51 @@ class TextSearchService
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
 
-        $rows = DB::select(
-            "SELECT document_id, chunk_index, content FROM document_chunks
-             WHERE tenant_id = :t AND (
-                 (LOWER(content) ILIKE :phrase1)
-              OR (LOWER(content) ILIKE :phrase2)
-              OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
-              OR similarity(LOWER(content), :name) > 0.2
-             )
-             ORDER BY similarity(LOWER(content), :name) DESC
-             LIMIT 200",
-            [
-                't' => $tenantId,
-                'name' => $nameLower,
-                'phrase1' => '%'.$first.'%'.$last.'%',
-                'phrase2' => '%'.$last.'%'.$first.'%',
-                'first' => '%'.$first.'%',
-                'last'  => '%'.$last.'%',
-            ]
-        );
+        if ($knowledgeBaseId !== null) {
+            $rows = DB::select(
+                "SELECT dc.document_id, dc.chunk_index, dc.content FROM document_chunks dc
+                 INNER JOIN documents d ON d.id = dc.document_id
+                 WHERE dc.tenant_id = :t AND d.tenant_id = :t
+                   AND d.knowledge_base_id = :kb
+                   AND (
+                       (LOWER(dc.content) ILIKE :phrase1)
+                    OR (LOWER(dc.content) ILIKE :phrase2)
+                    OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                    OR similarity(LOWER(dc.content), :name) > 0.2
+                   )
+                 ORDER BY similarity(LOWER(dc.content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'kb' => (int) $knowledgeBaseId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        } else {
+            $rows = DB::select(
+                "SELECT document_id, chunk_index, content FROM document_chunks
+                 WHERE tenant_id = :t AND (
+                     (LOWER(content) ILIKE :phrase1)
+                  OR (LOWER(content) ILIKE :phrase2)
+                  OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                  OR similarity(LOWER(content), :name) > 0.2
+                 )
+                 ORDER BY similarity(LOWER(content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        }
 
         // Pattern base indirizzi italiani
         $types = '(?:via|viale|piazza|p\.?zza|corso|largo|vicolo|piazzale|strada|str\.)';
@@ -315,7 +421,7 @@ class TextSearchService
      * Trova orari/schedule vicini a un nome.
      * @return array<int, array{schedule:string,document_id:int,chunk_index:int,score:float,excerpt:string}>
      */
-    public function findSchedulesNearName(int $tenantId, string $name, int $limit = 10): array
+    public function findSchedulesNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null): array
     {
         $name = trim($name);
         if ($name === '') return [];
@@ -324,25 +430,51 @@ class TextSearchService
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
 
-        $rows = DB::select(
-            "SELECT document_id, chunk_index, content FROM document_chunks
-             WHERE tenant_id = :t AND (
-                 (LOWER(content) ILIKE :phrase1)
-              OR (LOWER(content) ILIKE :phrase2)
-              OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
-              OR similarity(LOWER(content), :name) > 0.2
-             )
-             ORDER BY similarity(LOWER(content), :name) DESC
-             LIMIT 200",
-            [
-                't' => $tenantId,
-                'name' => $nameLower,
-                'phrase1' => '%'.$first.'%'.$last.'%',
-                'phrase2' => '%'.$last.'%'.$first.'%',
-                'first' => '%'.$first.'%',
-                'last'  => '%'.$last.'%',
-            ]
-        );
+        if ($knowledgeBaseId !== null) {
+            $rows = DB::select(
+                "SELECT dc.document_id, dc.chunk_index, dc.content FROM document_chunks dc
+                 INNER JOIN documents d ON d.id = dc.document_id
+                 WHERE dc.tenant_id = :t AND d.tenant_id = :t
+                   AND d.knowledge_base_id = :kb
+                   AND (
+                       (LOWER(dc.content) ILIKE :phrase1)
+                    OR (LOWER(dc.content) ILIKE :phrase2)
+                    OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                    OR similarity(LOWER(dc.content), :name) > 0.2
+                   )
+                 ORDER BY similarity(LOWER(dc.content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'kb' => (int) $knowledgeBaseId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        } else {
+            $rows = DB::select(
+                "SELECT document_id, chunk_index, content FROM document_chunks
+                 WHERE tenant_id = :t AND (
+                     (LOWER(content) ILIKE :phrase1)
+                  OR (LOWER(content) ILIKE :phrase2)
+                  OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                  OR similarity(LOWER(content), :name) > 0.2
+                 )
+                 ORDER BY similarity(LOWER(content), :name) DESC
+                 LIMIT 200",
+                [
+                    't' => $tenantId,
+                    'name' => $nameLower,
+                    'phrase1' => '%'.$first.'%'.$last.'%',
+                    'phrase2' => '%'.$last.'%'.$first.'%',
+                    'first' => '%'.$first.'%',
+                    'last'  => '%'.$last.'%',
+                ]
+            );
+        }
 
         // Pattern più precisi per orari italiani
         $patterns = [

@@ -12,6 +12,7 @@ class Document extends Model
 
     protected $fillable = [
         'tenant_id',
+        'knowledge_base_id',
         'title',
         'source',
         'path',
@@ -36,6 +37,11 @@ class Document extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function knowledgeBase(): BelongsTo
+    {
+        return $this->belongsTo(KnowledgeBase::class);
     }
 }
 

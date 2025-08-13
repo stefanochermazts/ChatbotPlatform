@@ -43,6 +43,9 @@
   <div class="mt-6 grid gap-4">
     <div class="bg-white border rounded p-4">
       <h2 class="font-semibold mb-2">Citazioni & Snippet</h2>
+      @if(isset($result['trace']['selected_kb']['kb_name']))
+        <div class="text-xs mb-2">KB selezionata: <span class="font-semibold">{{ $result['trace']['selected_kb']['kb_name'] }}</span></div>
+      @endif
       @if(isset($result['confidence']))
         <div class="text-sm mb-2">Confidence: <span class="font-semibold">{{ number_format($result['confidence']*100,1) }}%</span></div>
       @endif
@@ -89,6 +92,9 @@
     @if(($result['answer'] ?? null) !== null)
     <div class="bg-white border rounded p-4">
       <h2 class="font-semibold mb-2">Risposta</h2>
+      @if(isset($result['trace']['selected_kb']['kb_name']))
+        <div class="text-xs mb-2">KB selezionata: <span class="font-semibold">{{ $result['trace']['selected_kb']['kb_name'] }}</span></div>
+      @endif
       <pre class="whitespace-pre-wrap text-sm">{{ $result['answer'] }}
 
 Fonti:

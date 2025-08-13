@@ -16,10 +16,12 @@ class WebScraperService
     private array $results = [];
     private array $stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
 
-    public function scrapeForTenant(int $tenantId): array
+    public function scrapeForTenant(int $tenantId, ?int $scraperConfigId = null): array
     {
         $tenant = Tenant::findOrFail($tenantId);
-        $config = ScraperConfig::where('tenant_id', $tenantId)->first();
+        $config = $scraperConfigId
+            ? ScraperConfig::where('tenant_id', $tenantId)->where('id', $scraperConfigId)->first()
+            : ScraperConfig::where('tenant_id', $tenantId)->first();
         
         if (!$config || empty($config->seed_urls)) {
             return ['error' => 'Nessuna configurazione scraper trovata o seed URLs vuoti'];
@@ -75,6 +77,11 @@ class WebScraperService
             $isLinkOnly = $this->isLinkOnlyUrl($url, $config);
 
             if (!$isLinkOnly) {
+                // Politica: se skip_known_urls attivo, e abbiamo già un documento per questo URL (e non è da recrawllare), salta
+                if ($this->shouldSkipKnownUrl($url, $tenant, $config)) {
+                    $this->stats['skipped']++;
+                    \Log::info('Skip URL già noto', ['url' => $url]);
+                } else {
                 // Estrai contenuto principale
                 $extractedContent = $this->extractContent($content, $url);
                 if ($extractedContent) {
@@ -85,6 +92,7 @@ class WebScraperService
                         'content' => $extractedContent['content'],
                         'depth' => $depth
                     ];
+                }
                 }
             }
 
@@ -353,6 +361,20 @@ class WebScraperService
         return '~' . $p . '~i';
     }
 
+    private function shouldSkipKnownUrl(string $url, Tenant $tenant, ScraperConfig $config): bool
+    {
+        if (!($config->skip_known_urls ?? false)) {
+            return false;
+        }
+        $q = Document::query()->where('tenant_id', $tenant->id)->where('source_url', $url);
+        if ($config->recrawl_days && $config->recrawl_days > 0) {
+            $threshold = now()->subDays((int) $config->recrawl_days);
+            // se ultimo scraping è più vecchio del threshold, non skippare
+            $q->where('last_scraped_at', '>=', $threshold);
+        }
+        return $q->exists();
+    }
+
     private function saveResults(Tenant $tenant): int
     {
         $savedCount = 0;
@@ -379,10 +401,19 @@ class WebScraperService
                 if ($existingDocument) {
                     // Controlla se il contenuto è cambiato
                     if ($existingDocument->content_hash === $contentHash) {
-                        // Contenuto identico - aggiorna solo timestamp
-                        $existingDocument->update([
-                            'last_scraped_at' => now()
-                        ]);
+                        // Contenuto identico - aggiorna solo timestamp e, se configurata, la KB target
+                        $targetKbId = null;
+                        try {
+                            $cfg = ScraperConfig::where('tenant_id', $tenant->id)->first();
+                            $targetKbId = $cfg?->target_knowledge_base_id;
+                        } catch (\Throwable) {
+                            $targetKbId = null;
+                        }
+                        $updateData = [ 'last_scraped_at' => now() ];
+                        if ($targetKbId && $existingDocument->knowledge_base_id !== (int) $targetKbId) {
+                            $updateData['knowledge_base_id'] = (int) $targetKbId;
+                        }
+                        $existingDocument->update($updateData);
                         $skippedCount++;
                         $this->stats['skipped']++;
                         \Log::info("Documento invariato, skip", ['url' => $result['url']]);
@@ -438,8 +469,16 @@ class WebScraperService
         Storage::disk('public')->put($path, $markdownContent);
 
         // Crea record documento
+        // Associa alla KB target da config se presente, altrimenti KB di default
+        $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
+        $targetKbId = $config->target_knowledge_base_id ?? null;
+        if (!$targetKbId) {
+            $targetKbId = \App\Models\KnowledgeBase::where('tenant_id', $tenant->id)->where('is_default', true)->value('id');
+        }
+
         $document = Document::create([
             'tenant_id' => $tenant->id,
+            'knowledge_base_id' => $targetKbId,
             'title' => $result['title'] . ' (Scraped)',
             'path' => $path,
             'source_url' => $result['url'],
@@ -481,6 +520,10 @@ class WebScraperService
             Storage::disk('public')->delete($existingDocument->path);
         }
 
+        // Se configurata una KB target nello scraper, aggiorna anche la KB del documento
+        $config = ScraperConfig::where('tenant_id', $existingDocument->tenant_id)->first();
+        $targetKbId = $config->target_knowledge_base_id ?? null;
+
         // Aggiorna record documento
         $existingDocument->update([
             'title' => $result['title'] . ' (Scraped)',
@@ -489,7 +532,8 @@ class WebScraperService
             'last_scraped_at' => now(),
             'scrape_version' => $newVersion,
             'size' => strlen($markdownContent),
-            'ingestion_status' => 'pending'
+            'ingestion_status' => 'pending',
+            'knowledge_base_id' => $targetKbId ?: $existingDocument->knowledge_base_id,
         ]);
 
         // Avvia re-ingestion

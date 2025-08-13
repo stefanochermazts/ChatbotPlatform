@@ -12,6 +12,7 @@ class ScraperConfig extends Model
 
     protected $fillable = [
         'tenant_id',
+        'name',
         'seed_urls',
         'allowed_domains',
         'max_depth',
@@ -22,7 +23,13 @@ class ScraperConfig extends Model
         'include_patterns',
         'exclude_patterns',
         'link_only_patterns',
+        'target_knowledge_base_id',
+        'skip_known_urls',
+        'recrawl_days',
         'respect_robots',
+        'enabled',
+        'interval_minutes',
+        'last_run_at',
     ];
 
     protected $casts = [
@@ -37,6 +44,12 @@ class ScraperConfig extends Model
         'respect_robots' => 'boolean',
         'max_depth' => 'integer',
         'rate_limit_rps' => 'integer',
+        'target_knowledge_base_id' => 'integer',
+        'skip_known_urls' => 'boolean',
+        'recrawl_days' => 'integer',
+        'enabled' => 'boolean',
+        'interval_minutes' => 'integer',
+        'last_run_at' => 'datetime',
     ];
 
     public function tenant(): BelongsTo

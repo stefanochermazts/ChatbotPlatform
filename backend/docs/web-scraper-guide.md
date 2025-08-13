@@ -47,6 +47,13 @@ Pattern regex per includere solo URL specifici:
 
 #### **🚫 Exclude Patterns** (Opzionale)
 Pattern regex per escludere URL:
+```
+/admin/.*
+/private/.*
+\.pdf$
+\.jpg$
+```
+
 #### **🔗 Link-only Patterns** (Opzionale)
 Pattern regex delle pagine "indice" per cui vuoi solo seguire i link interni senza salvare la pagina stessa come documento. Utile per liste news, archivi, pagine di paginazione.
 
@@ -57,12 +64,6 @@ Esempi:
 ```
 
 Comportamento: se un URL matcha uno di questi pattern, lo scraper estrarrà i link e continuerà la ricorsione, ma non genererà un documento per quell'URL.
-```
-/admin/.*
-/private/.*
-\.pdf$
-\.jpg$
-```
 
 #### **🔧 Parametri Avanzati**
 
@@ -70,6 +71,23 @@ Comportamento: se un URL matcha uno di questi pattern, lo scraper estrarrà i li
 - **Rate Limit (RPS)**: Richieste per secondo (default: 1)
 - **Render JS**: Esegui JavaScript per SPA (default: false)
 - **Respect Robots**: Rispetta robots.txt (default: true)
+
+#### **🧠 Salta URL già noti** (Ottimizzazione)
+- Se attivo, lo scraper non salva pagine per cui esiste già un documento con lo stesso `source_url`.
+- Opzione correlata: **Recrawl dopo (giorni)**. Se impostata, le pagine verranno comunque riesaminate dopo N giorni (controllando `last_scraped_at`).
+- Vantaggi: riduce richieste e parsing ripetuti di elementi comuni (menu, footer, layout).
+
+#### **📚 Knowledge Base target** (Opzionale)
+- Se impostata, i documenti creati dallo scraper verranno associati automaticamente alla KB selezionata.
+- Se non impostata, verrà usata la KB di default del tenant.
+
+#### **🧩 Multi‑Scraper per Tenant**
+- Puoi creare più scraper per lo stesso tenant, ognuno con:
+  - **Nome scraper**
+  - **Regole di ambito** (seed/include/exclude/link‑only/domains)
+  - **KB target**
+  - **Frequenza (minuti)** e flag **Abilitato**
+- Nella UI trovi l’elenco “Scraper esistenti” per selezionare e caricare nel form uno scraper specifico; i pulsanti di esecuzione utilizzeranno lo scraper correntemente caricato.
 
 #### **🔐 Auth Headers** (Opzionale)
 Headers di autenticazione:
@@ -91,6 +109,8 @@ Cookie: session=abc123
 - Attendi il completamento (può richiedere tempo)
 - Ricevi feedback immediato
 
+Nota: nella pagina Scraper, i pulsanti eseguono lo scraper attualmente caricato nel form (id indicato accanto al nome nella lista “Scraper esistenti”).
+
 ## 📁 Output
 
 ### **Documenti Generati**
@@ -109,6 +129,8 @@ I contenuti vengono salvati come:
 
 [Contenuto estratto dalla pagina]
 ```
+
+Associazione KB: i documenti sono associati alla **KB target** configurata nello scraper, se presente; altrimenti alla **KB di default** del tenant.
 
 ### **Sistema di Versioning Intelligente**
 
@@ -208,8 +230,20 @@ php artisan queue:work --queue=scraping
 # Diretto (per debug)
 php artisan tinker
 >>> $scraper = app(\App\Services\Scraper\WebScraperService::class);
->>> $result = $scraper->scrapeForTenant(1);
+>>> $result = $scraper->scrapeForTenant(1, /* scraper_config_id opzionale */ null);
 >>> dd($result);
+```
+
+### **Esecuzione di scraper dovuti (scheduling)**
+```bash
+# Dry‑run (mostra cosa verrebbe dispatchato)
+php artisan scraper:run-due --dry-run
+
+# Solo per un tenant
+php artisan scraper:run-due --tenant=5
+
+# Solo uno scraper specifico
+php artisan scraper:run-due --id=123
 ```
 
 ### **Gestione Documenti Obsoleti**
@@ -277,17 +311,17 @@ php artisan tinker
 
 ## 🔄 Aggiornamenti Automatici
 
-Per aggiornamenti periodici, configura un cron job:
+Per aggiornamenti periodici, usa lo scheduler di Laravel per eseguire gli scraper dovuti:
 
 ```bash
-# Nel crontab
-0 2 * * * php /path/to/artisan queue:work --queue=scraping --once
+# Nel crontab di sistema (esegue lo scheduler ogni minuto)
+* * * * * php /path/to/artisan schedule:run >> /dev/null 2>&1
 ```
 
-O usa Laravel Task Scheduling nel file `app/Console/Kernel.php`:
+Kernel (già configurato per eseguire ogni 5 minuti):
 
 ```php
-$schedule->job(new RunWebScrapingJob($tenantId))->daily();
+$schedule->command('scraper:run-due')->everyFiveMinutes()->withoutOverlapping();
 ```
 
 ## 🚨 Considerazioni Legali

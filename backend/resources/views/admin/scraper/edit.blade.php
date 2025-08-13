@@ -3,6 +3,30 @@
 @section('content')
 <h1 class="text-xl font-semibold mb-4">🕷️ Web Scraper – {{ $tenant->name }}</h1>
 
+@if(isset($configs) && $configs->count())
+<div class="bg-white border rounded p-4 mb-4" id="scraper-list">
+  <div class="text-sm mb-3 font-medium">Scraper esistenti</div>
+  <div class="grid gap-2">
+    @foreach($configs as $cfg)
+      <div class="flex items-center justify-between p-2 border rounded hover:bg-gray-50 scraper-row">
+        <a href="#" data-id="{{ $cfg->id }}" onclick="event.preventDefault(); document.getElementById('scraper-id').value='{{ $cfg->id }}'; document.getElementById('run-scraper-id').value='{{ $cfg->id }}'; var rs=document.getElementById('run-scraper-id-sync'); if(rs){ rs.value='{{ $cfg->id }}'; } document.getElementById('scraper-name').value='{{ $cfg->name }}'; document.querySelector('[name=seed_urls]').value='{{ implode("\\n", $cfg->seed_urls ?? []) }}'; document.querySelector('[name=allowed_domains]').value='{{ implode("\\n", $cfg->allowed_domains ?? []) }}'; document.querySelector('[name=sitemap_urls]').value='{{ implode("\\n", $cfg->sitemap_urls ?? []) }}'; document.querySelector('[name=include_patterns]').value='{{ implode("\\n", $cfg->include_patterns ?? []) }}'; document.querySelector('[name=exclude_patterns]').value='{{ implode("\\n", $cfg->exclude_patterns ?? []) }}'; document.querySelector('[name=link_only_patterns]').value='{{ implode("\\n", $cfg->link_only_patterns ?? []) }}'; document.querySelector('[name=max_depth]').value='{{ $cfg->max_depth }}'; document.querySelector('[name=rate_limit_rps]').value='{{ $cfg->rate_limit_rps }}'; document.querySelector('[name=render_js]').checked={{ $cfg->render_js ? 'true' : 'false' }}; document.querySelector('[name=respect_robots]').checked={{ $cfg->respect_robots ? 'true' : 'false' }}; document.querySelector('[name=target_knowledge_base_id]').value='{{ $cfg->target_knowledge_base_id ?? '' }}'; document.querySelector('[name=interval_minutes]').value='{{ $cfg->interval_minutes ?? '' }}'; document.querySelector('[name=skip_known_urls]').checked={{ $cfg->skip_known_urls ? 'true' : 'false' }}; document.querySelector('[name=recrawl_days]').value='{{ $cfg->recrawl_days ?? '' }}'; var chips=document.querySelectorAll('#scraper-list .scraper-row'); chips.forEach(function(el){ el.classList.remove('bg-blue-50','border-blue-200'); }); this.closest('.scraper-row').classList.add('bg-blue-50','border-blue-200');" class="text-sm font-medium text-blue-600 hover:text-blue-800 flex-1">
+          📄 {{ $cfg->name }} 
+          <span class="text-xs text-gray-500">(ID {{ $cfg->id }}{{ $cfg->enabled ? ', Attivo' : ', Disattivo' }}{{ $cfg->interval_minutes ? ', ogni '.$cfg->interval_minutes.'min' : '' }})</span>
+        </a>
+        <div class="flex gap-2 ml-4">
+          <button type="button" onclick="if(confirm('Eliminare lo scraper \'{{ $cfg->name }}\'? Questa azione non può essere annullata.')) { document.getElementById('delete-form-{{ $cfg->id }}').submit(); }" class="px-2 py-1 bg-rose-600 text-white rounded text-xs hover:bg-rose-700">
+            🗑️ Elimina
+          </button>
+          <form id="delete-form-{{ $cfg->id }}" method="post" action="{{ route('admin.scraper.destroy', [$tenant, $cfg]) }}" class="hidden">
+            @csrf @method('delete')
+          </form>
+        </div>
+      </div>
+    @endforeach
+  </div>
+</div>
+@endif
+
 <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-6">
   <h2 class="font-semibold text-blue-800 mb-2">ℹ️ Come Configurare lo Scraper</h2>
   <p class="text-sm text-blue-700">
@@ -13,6 +37,17 @@
 
 <form method="post" action="{{ route('admin.scraper.update', $tenant) }}" class="bg-white border rounded p-4 grid gap-6">
   @csrf
+  <input type="hidden" name="id" id="scraper-id" value="{{ old('id') }}" />
+  <div class="grid md:grid-cols-2 gap-6">
+    <label class="block">
+      <span class="text-sm font-medium text-gray-700">Nome scraper</span>
+      <input id="scraper-name" name="name" value="{{ old('name', $config->name ?? 'Scraper') }}" class="w-full border rounded px-3 py-2" />
+    </label>
+    <label class="inline-flex items-center gap-2 mt-6">
+      <input type="checkbox" name="enabled" value="1" {{ old('enabled', $config->enabled ?? true) ? 'checked' : '' }} />
+      <span class="text-sm">Abilitato</span>
+    </label>
+  </div>
   
   <!-- URLs di Base -->
   <div class="grid md:grid-cols-2 gap-6">
@@ -179,6 +214,35 @@
               </div>
             </div>
           </label>
+          <label class="inline-flex items-start gap-3 p-3 border rounded hover:bg-gray-50">
+            <input type="checkbox" name="skip_known_urls" value="1" {{ old('skip_known_urls', $config->skip_known_urls ?? true) ? 'checked' : '' }} class="mt-1" />
+            <div class="text-sm">
+              <div class="font-medium">🧠 Salta URL già noti</div>
+              <div class="text-gray-600 text-xs mt-1">
+                Se attivo, non scarica pagine di cui esiste già un documento con lo stesso URL (riduce scraping su menu/footer ripetuti).<br>
+                <strong>Recrawl dopo (giorni):</strong>
+                <input type="number" min="1" step="1" name="recrawl_days" value="{{ old('recrawl_days', $config->recrawl_days ?? '') }}" class="border rounded px-2 py-1 text-xs ml-1 w-20" placeholder="Es: 7" />
+              </div>
+            </div>
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">📚 Knowledge Base target per lo scraper</span>
+            <select name="target_knowledge_base_id" class="w-full border rounded px-3 py-2">
+              <option value="">KB di default</option>
+              @php($kbOptions = \App\Models\KnowledgeBase::where('tenant_id',$tenant->id)->orderBy('name')->get())
+              @foreach($kbOptions as $kb)
+                <option value="{{ $kb->id }}" @selected(old('target_knowledge_base_id', $config->target_knowledge_base_id ?? null) == $kb->id)>{{ $kb->name }}</option>
+              @endforeach
+            </select>
+            <div class="text-xs text-gray-600 mt-1">Se impostata, i documenti creati dallo scraper verranno associati a questa KB.</div>
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700">⏱️ Frequenza (minuti)</span>
+            <input type="number" name="interval_minutes" min="5" step="5" placeholder="Es: 60" value="{{ old('interval_minutes', $config->interval_minutes ?? '') }}" class="w-full border rounded px-3 py-2" />
+            <div class="text-xs text-gray-600 mt-1">Imposta l'intervallo di esecuzione per questo scraper. Lascia vuoto per manuale.</div>
+          </label>
         </div>
       </div>
     </div>
@@ -267,6 +331,7 @@
     <div class="space-y-3">
       <form method="post" action="{{ route('admin.scraper.run', $tenant) }}" class="block">
         @csrf
+        <input type="hidden" name="id" id="run-scraper-id" value="{{ $config->id ?? '' }}" />
         <button type="submit" class="w-full px-4 py-3 bg-green-600 text-white rounded hover:bg-green-700 font-medium text-left">
           🚀 <strong>Avvia Scraping (Background)</strong>
         </button>
@@ -285,6 +350,7 @@
     <div class="space-y-3">
       <form method="post" action="{{ route('admin.scraper.run-sync', $tenant) }}" class="block">
         @csrf
+        <input type="hidden" name="id" id="run-scraper-id-sync" value="{{ $config->id ?? '' }}" />
         <button type="submit" class="w-full px-4 py-3 bg-orange-600 text-white rounded hover:bg-orange-700 font-medium text-left">
           ⚡ <strong>Esegui Ora (Sincrono)</strong>
         </button>
