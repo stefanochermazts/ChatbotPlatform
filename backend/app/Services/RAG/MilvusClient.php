@@ -5,6 +5,7 @@ namespace App\Services\RAG;
 use Hasanmertermis\MilvusPhpClient\Domain\Milvus;
 use Hasanmertermis\MilvusPhpClient\Domain\Schema\Field;
 use Milvus\Proto\Schema\DataType;
+use Illuminate\Support\Facades\Log;
 
 class MilvusClient
 {
@@ -23,10 +24,14 @@ class MilvusClient
         $this->metric = strtolower((string) config('rag.vector.metric', 'cosine')) === 'l2' ? 'L2' : 'COSINE';
 
         $this->client = new Milvus();
-        if ($uri !== '') {
-            $this->client->connectionByUri($uri, $token);
-        } else {
-            $this->client->connection($host, $port);
+        try {
+            if ($uri !== '') {
+                $this->client->connectionByUri($uri, $token);
+            } else {
+                $this->client->connection($host, $port);
+            }
+        } catch (\Throwable $e) {
+            Log::error('milvus.connection_failed', ['error' => $e->getMessage()]);
         }
 
         $this->ensureCollection();
@@ -41,27 +46,35 @@ class MilvusClient
     {
         $total = min(count($chunks), count($vectors));
         for ($i = 0; $i < $total; $i++) {
-            $id = (int) (($documentId * 100000) + $i);
-            $vec = array_map('floatval', (array) $vectors[$i]);
+            try {
+                $id = (int) (($documentId * 100000) + $i);
+                $vec = array_map('floatval', (array) $vectors[$i]);
 
-            $data = [
-                (new Field())->setFieldName('id')->setIsPrimaryField(true)->setFieldType(DataType::Int64)->setFieldData($id),
-                (new Field())->setFieldName('tenant_id')->setFieldType(DataType::Int64)->setFieldData((int) $tenantId),
-                (new Field())->setFieldName('document_id')->setFieldType(DataType::Int64)->setFieldData((int) $documentId),
-                (new Field())->setFieldName('chunk_index')->setFieldType(DataType::Int64)->setFieldData($i),
-                // l'SDK si aspetta vettore come array annidato: [ [floats...] ]
-                (new Field())->setFieldName('vector')->setFieldType(DataType::FloatVector)->setFieldData([$vec]),
-            ];
+                $data = [
+                    (new Field())->setFieldName('id')->setIsPrimaryField(true)->setFieldType(DataType::Int64)->setFieldData($id),
+                    (new Field())->setFieldName('tenant_id')->setFieldType(DataType::Int64)->setFieldData((int) $tenantId),
+                    (new Field())->setFieldName('document_id')->setFieldType(DataType::Int64)->setFieldData((int) $documentId),
+                    (new Field())->setFieldName('chunk_index')->setFieldType(DataType::Int64)->setFieldData($i),
+                    // l'SDK si aspetta vettore come array annidato: [ [floats...] ]
+                    (new Field())->setFieldName('vector')->setFieldType(DataType::FloatVector)->setFieldData([$vec]),
+                ];
 
-            // Insert di una sola riga alla volta (l'SDK imposta numRows=1)
-            $this->client->insert($data, $this->collection);
+                // Insert di una sola riga alla volta (l'SDK imposta numRows=1)
+                $this->client->insert($data, $this->collection);
+            } catch (\Throwable $e) {
+                Log::error('milvus.insert_failed', [
+                    'tenant_id' => $tenantId,
+                    'document_id' => $documentId,
+                    'chunk_index' => $i,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
     public function deleteByDocument(int $tenantId, int $documentId): void
     {
-        // L'SDK espone delete solo per primary key (id). Senza il numero di chunk non possiamo cancellare in massa.
-        // No-op per ora; la cancellazione completa richiederebbe mantenere il numero di chunk per documento.
+        // Deprecated in favore di deleteByPrimaryIds calcolati esternamente
     }
 
     public function searchTopK(int $tenantId, array $queryVector, int $k = 10): array
@@ -71,7 +84,12 @@ class MilvusClient
             ->setMetricType($this->metric)
             ->setFieldName('vector');
 
-        $result = $this->client->search($field, $this->collection, max(1, $k), 1000);
+        try {
+            $result = $this->client->search($field, $this->collection, max(1, $k), 1000);
+        } catch (\Throwable $e) {
+            Log::error('milvus.search_failed', ['error' => $e->getMessage()]);
+            return [];
+        }
 
         $hits = [];
         foreach ($result as $hit) { // l'SDK ritorna array di ['id'=>..., 'distance'=>...]
@@ -88,5 +106,118 @@ class MilvusClient
             ];
         }
         return $hits;
+    }
+
+    public function health(): array
+    {
+        try {
+            // Ping minimale: prova una ricerca con vettore nullo della giusta dimensione
+            $dim = (int) config('rag.embedding_dim');
+            $dummy = array_fill(0, max(1, $dim), 0.0);
+            $field = (new Field())
+                ->setFieldData($dummy)
+                ->setMetricType($this->metric)
+                ->setFieldName('vector');
+            // k=1, nprobe=1; ignora l'output
+            $this->client->search($field, $this->collection, 1, 1);
+            return ['ok' => true];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Prova a cancellare per primary ids. Accetta molti ID; gestisce in batch.
+     * Se lo SDK non supporta deleteByIds, logga e ignora.
+     */
+    public function deleteByPrimaryIds(array $primaryIds): void
+    {
+        if ($primaryIds === []) {
+            return;
+        }
+        $uniqueIds = array_values(array_unique(array_map('intval', $primaryIds)));
+        Log::info('milvus.delete.request', [
+            'total_ids' => count($uniqueIds),
+            'collection' => $this->collection,
+            'capabilities' => [
+                'delete' => method_exists($this->client, 'delete'),
+                'deleteByIds' => method_exists($this->client, 'deleteByIds'),
+                'deleteEntities' => method_exists($this->client, 'deleteEntities'),
+                'deleteByExpression' => method_exists($this->client, 'deleteByExpression'),
+                'deleteByExpr' => method_exists($this->client, 'deleteByExpr'),
+            ],
+        ]);
+        $chunks = array_chunk($uniqueIds, 50); // batch piccolo per evitare limiti gRPC
+        foreach ($chunks as $batch) {
+            $ids = array_map('intval', $batch);
+            $lastError = null;
+            // 1) Prova deleteByIds in entrambe le firme note (evitiamo delete(expr))
+            if (method_exists($this->client, 'deleteByIds')) {
+                try {
+                    // Firma 1: (collection, ids)
+                    Log::info('milvus.delete.try', ['method' => 'deleteByIds', 'signature' => 'collection,ids', 'count' => count($ids)]);
+                    $this->client->deleteByIds($this->collection, $ids);
+                    Log::info('milvus.delete.ok', ['count' => count($ids), 'mode' => 'deleteByIds(collection,ids)']);
+                    continue; // batch ok
+                } catch (\Throwable $e1) {
+                    $lastError = $e1;
+                    try {
+                        // Firma 2: (ids, collection)
+                        Log::info('milvus.delete.try', ['method' => 'deleteByIds', 'signature' => 'ids,collection', 'count' => count($ids)]);
+                        $this->client->deleteByIds($ids, $this->collection);
+                        Log::info('milvus.delete.ok', ['count' => count($ids), 'mode' => 'deleteByIds(ids,collection)']);
+                        continue; // batch ok
+                    } catch (\Throwable $e2) {
+                        $lastError = $e2;
+                    }
+                }
+            }
+            // 2) Fallback estremo: elimina uno per uno con deleteByIds
+            if (method_exists($this->client, 'deleteByIds')) {
+                $allOk = true;
+                foreach ($ids as $singleId) {
+                    try {
+                        $this->client->deleteByIds($this->collection, [(int) $singleId]);
+                    } catch (\Throwable $e1) {
+                        try {
+                            $this->client->deleteByIds([(int) $singleId], $this->collection);
+                        } catch (\Throwable $e2) {
+                            $allOk = false;
+                            $lastError = $e2;
+                            break;
+                        }
+                    }
+                }
+                if ($allOk) {
+                    Log::info('milvus.delete.ok', ['count' => count($ids), 'mode' => 'single-deleteByIds']);
+                    continue;
+                }
+            }
+            // 3) Se nessuna strada ha funzionato, logga
+            Log::error('milvus.delete_failed', [
+                'count' => count($batch),
+                'error' => $lastError ? $lastError->getMessage() : 'unknown',
+            ]);
+        }
+        Log::info('milvus.delete.completed');
+    }
+
+    /**
+     * Cancella tutti i vettori appartenenti a un tenant usando un'espressione di filtro.
+     * Se l'SDK non supporta delete(expr), verrà sollevata un'eccezione gestita dal chiamante.
+     */
+    public function deleteByTenant(int $tenantId): void
+    {
+        try {
+            if (method_exists($this->client, 'delete')) {
+                $expr = 'tenant_id == '.((int) $tenantId);
+                $this->client->delete($this->collection, $expr);
+            } else {
+                Log::warning('milvus.delete_by_tenant_unsupported');
+            }
+        } catch (\Throwable $e) {
+            Log::error('milvus.delete_by_tenant_failed', ['tenant_id' => $tenantId, 'error' => $e->getMessage()]);
+            throw $e;
+        }
     }
 }

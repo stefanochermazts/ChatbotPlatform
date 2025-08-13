@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\IngestUploadedDocumentJob;
+use App\Jobs\DeleteVectorsJob;
 use App\Models\Document;
 use App\Models\Tenant;
 use App\Services\RAG\MilvusClient;
@@ -91,13 +92,37 @@ class DocumentAdminController extends Controller
         if ($document->tenant_id !== $tenant->id) {
             abort(404);
         }
-        // Elimina vettori associati su Milvus
-        $milvus->deleteByDocument($tenant->id, $document->id);
+        // Cancella vettori su Milvus in background
+        DeleteVectorsJob::dispatch([$document->id])->onQueue('indexing');
         // Elimina file se esiste
         if ($document->path && Storage::disk('public')->exists($document->path)) {
             Storage::disk('public')->delete($document->path);
         }
+        // Elimina righe chunks e documento
+        \DB::table('document_chunks')->where('document_id', $document->id)->delete();
         $document->delete();
         return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Documento eliminato');
+    }
+
+    public function destroyAll(Tenant $tenant, MilvusClient $milvus)
+    {
+        $docs = Document::where('tenant_id', $tenant->id)->get(['id','path']);
+        if ($docs->isEmpty()) {
+            return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Nessun documento da eliminare');
+        }
+
+        // 1) Pulisci Milvus (rispetta QUEUE_CONNECTION=sync)
+        DeleteVectorsJob::dispatch($docs->pluck('id')->all())->onQueue('indexing');
+
+        // 2) Cancella dati strutturati e file
+        \DB::table('document_chunks')->whereIn('document_id', $docs->pluck('id'))->delete();
+        foreach ($docs as $d) {
+            if ($d->path && Storage::disk('public')->exists($d->path)) {
+                Storage::disk('public')->delete($d->path);
+            }
+        }
+        Document::whereIn('id', $docs->pluck('id'))->delete();
+
+        return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Tutti i documenti eliminati');
     }
 }

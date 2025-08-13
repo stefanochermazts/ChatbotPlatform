@@ -36,6 +36,7 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
     Route::post('/tenants/{tenant}/documents/upload', [DocumentAdminController::class, 'upload'])->name('documents.upload');
     Route::post('/tenants/{tenant}/documents/{document}/retry', [DocumentAdminController::class, 'retry'])->name('documents.retry');
     Route::delete('/tenants/{tenant}/documents/{document}', [DocumentAdminController::class, 'destroy'])->name('documents.destroy');
+    Route::delete('/tenants/{tenant}/documents', [DocumentAdminController::class, 'destroyAll'])->name('documents.destroyAll');
 
     // Scraper config
     Route::get('/tenants/{tenant}/scraper', [ScraperAdminController::class, 'edit'])->name('scraper.edit');

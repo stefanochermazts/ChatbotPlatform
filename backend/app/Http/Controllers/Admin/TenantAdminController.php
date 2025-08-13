@@ -26,7 +26,14 @@ class TenantAdminController extends Controller
             'slug' => ['required', 'string', 'max:255', 'unique:tenants,slug'],
             'domain' => ['nullable', 'string', 'max:255'],
             'plan' => ['nullable', 'string', 'max:64'],
+            'languages' => ['nullable', 'string'],
+            'default_language' => ['nullable', 'string', 'max:10'],
+            'custom_system_prompt' => ['nullable', 'string', 'max:4000'],
+            'custom_context_template' => ['nullable', 'string', 'max:2000'],
         ]);
+        $data['languages'] = isset($data['languages']) && $data['languages'] !== ''
+            ? array_values(array_filter(array_map('trim', explode(',', $data['languages']))))
+            : null;
         Tenant::create($data);
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant creato');
     }
@@ -43,7 +50,14 @@ class TenantAdminController extends Controller
             'slug' => ['required', 'string', 'max:255', 'unique:tenants,slug,'.$tenant->id],
             'domain' => ['nullable', 'string', 'max:255'],
             'plan' => ['nullable', 'string', 'max:64'],
+            'languages' => ['nullable', 'string'],
+            'default_language' => ['nullable', 'string', 'max:10'],
+            'custom_system_prompt' => ['nullable', 'string', 'max:4000'],
+            'custom_context_template' => ['nullable', 'string', 'max:2000'],
         ]);
+        $data['languages'] = isset($data['languages']) && $data['languages'] !== ''
+            ? array_values(array_filter(array_map('trim', explode(',', $data['languages']))))
+            : null;
         $tenant->update($data);
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant aggiornato');
     }

@@ -17,10 +17,15 @@ class Tenant extends Model
         'domain',
         'plan',
         'metadata',
+        'languages',
+        'default_language',
+        'custom_system_prompt',
+        'custom_context_template',
     ];
 
     protected $casts = [
         'metadata' => 'array',
+        'languages' => 'array',
     ];
 
     public function apiKeys(): HasMany

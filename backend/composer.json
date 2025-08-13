@@ -7,11 +7,14 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "hasanmertermis/milvus-php-client": "^1.0",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
-        "hasanmertermis/milvus-php-client": "^1.0",
-        "spatie/pdf-to-text": "^1.3",
-        "smalot/pdfparser": "^2.6"
+        "patrickschur/language-detection": "5.3",
+        "phpoffice/phpspreadsheet": "2.0",
+        "phpoffice/phpword": "1.1",
+        "smalot/pdfparser": "^2.6",
+        "spatie/pdf-to-text": "^1.3"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

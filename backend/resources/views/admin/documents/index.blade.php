@@ -38,6 +38,12 @@
       </div>
     </template>
   </div>
+  <div class="mt-3">
+    <form method="post" action="{{ route('admin.documents.destroyAll', $tenant) }}" onsubmit="return confirm('Cancellare TUTTI i file e i vettori su Milvus per questo tenant? Operazione irreversibile.')">
+      @csrf @method('delete')
+      <button class="px-3 py-2 text-sm bg-rose-600 text-white rounded">Cancella tutti i file</button>
+    </form>
+  </div>
 </div>
 <script>
   function uploader(){
