@@ -25,6 +25,7 @@ class RagTestController extends Controller
             'with_answer' => ['nullable', 'boolean'],
             'top_k' => ['nullable', 'integer', 'min:1', 'max:50'],
             'mmr_lambda' => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'max_output_tokens' => ['nullable', 'integer', 'min:32', 'max:8192'],
         ]);
         $tenantId = (int) $data['tenant_id'];
         $tenant = Tenant::find($tenantId);
@@ -85,6 +86,7 @@ class RagTestController extends Controller
             $payload = [
                 'model' => 'gpt-4o-mini',
                 'messages' => $messages,
+                'max_tokens' => (int) ($data['max_output_tokens'] ?? config('openai.max_output_tokens', 700)),
             ];
             $answer = $chat->chatCompletions($payload)['choices'][0]['message']['content'] ?? '';
             if (is_array($trace)) {

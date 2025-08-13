@@ -88,3 +88,4 @@ class CleanOldScrapedDocuments extends Command
         return 0;
     }
 }
+

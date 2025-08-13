@@ -114,23 +114,7 @@
       @foreach($docs as $d)
       <tr class="border-t align-top">
         <td class="p-2">{{ $d->id }}</td>
-        <td class="p-2">
-          <div>{{ $d->title }}</div>
-          @if($d->source_url)
-            <div class="text-xs text-blue-600 mt-1">
-              🌐 <a href="{{ $d->source_url }}" target="_blank" class="hover:underline">{{ Str::limit($d->source_url, 50) }}</a>
-            </div>
-          @endif
-          @if($d->source === 'web_scraper' && $d->scrape_version > 1)
-            <div class="text-xs text-purple-600 mt-1">
-              🔄 v{{ $d->scrape_version }} • Aggiornato {{ $d->last_scraped_at?->diffForHumans() }}
-            </div>
-          @elseif($d->source === 'web_scraper')
-            <div class="text-xs text-green-600 mt-1">
-              🕷️ Scraped {{ $d->last_scraped_at?->diffForHumans() }}
-            </div>
-          @endif
-        </td>
+        <td class="p-2">{{ $d->title }}</td>
         <td class="p-2">{{ $d->ingestion_status }}</td>
         <td class="p-2">
           <div class="w-44 bg-gray-200 rounded h-2">

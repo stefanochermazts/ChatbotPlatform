@@ -28,6 +28,7 @@ class ScraperConfigController extends Controller
             'sitemap_urls' => ['nullable', 'array'],
             'include_patterns' => ['nullable', 'array'],
             'exclude_patterns' => ['nullable', 'array'],
+            'link_only_patterns' => ['nullable', 'array'],
             'respect_robots' => ['nullable', 'boolean'],
         ]);
 

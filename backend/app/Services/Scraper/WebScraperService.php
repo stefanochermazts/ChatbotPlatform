@@ -71,17 +71,22 @@ class WebScraperService
             $content = $this->fetchUrl($url, $config);
             if (!$content) return;
 
-            // Estrai contenuto principale
-            $extractedContent = $this->extractContent($content, $url);
-            if (!$extractedContent) return;
+            // Determina se questa pagina è "link-only" in base alla configurazione
+            $isLinkOnly = $this->isLinkOnlyUrl($url, $config);
 
-            // Salva risultato
-            $this->results[] = [
-                'url' => $url,
-                'title' => $extractedContent['title'],
-                'content' => $extractedContent['content'],
-                'depth' => $depth
-            ];
+            if (!$isLinkOnly) {
+                // Estrai contenuto principale
+                $extractedContent = $this->extractContent($content, $url);
+                if ($extractedContent) {
+                    // Salva risultato
+                    $this->results[] = [
+                        'url' => $url,
+                        'title' => $extractedContent['title'],
+                        'content' => $extractedContent['content'],
+                        'depth' => $depth
+                    ];
+                }
+            }
 
             // Estrai link per ricorsione (solo se depth < max_depth)
             if ($depth < $config->max_depth) {
@@ -309,6 +314,20 @@ class WebScraperService
         }
 
         return true;
+    }
+
+    private function isLinkOnlyUrl(string $url, ScraperConfig $config): bool
+    {
+        if (empty($config->link_only_patterns)) {
+            return false;
+        }
+        foreach ($config->link_only_patterns as $pattern) {
+            $regex = $this->compileUserRegex($pattern);
+            if ($regex !== null && @preg_match($regex, $url)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -50,3 +50,4 @@ class RunWebScrapingJob implements ShouldQueue
         ]);
     }
 }
+

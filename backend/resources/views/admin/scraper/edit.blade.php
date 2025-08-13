@@ -78,6 +78,20 @@
     </div>
   </div>
 
+  <div class="space-y-2 mt-4">
+    <label class="block">
+      <span class="text-sm font-medium text-gray-700">🔗 Link-only Patterns (solo segui link interni, non salvare la pagina)</span>
+      <textarea name="link_only_patterns" rows="3" class="w-full border rounded px-3 py-2 font-mono text-sm" placeholder="Pattern regex per cui non salvare la pagina di listing ma seguire solo i link interni...">{{ old('link_only_patterns', implode("\n", $config->link_only_patterns ?? [])) }}</textarea>
+    </label>
+    <div class="bg-gray-50 p-3 rounded text-xs">
+      <strong>📝 Cosa inserire:</strong> Pattern regex delle pagine "indice" (es. lista news) da cui vuoi solo raccogliere gli articoli interni<br>
+      <strong>📋 Esempi:</strong><br>
+      <code class="bg-white px-1 rounded">/news/?$</code> <small>(pagina listing news)</small><br>
+      <code class="bg-white px-1 rounded">/news/page/\d+</code> <small>(pagine paginazione)</small><br>
+      <small class="text-gray-600">💡 Le pagine che matchano questi pattern non verranno salvate come documenti; i loro link sì (se permessi)</small>
+    </div>
+  </div>
+
   <div class="space-y-2">
     <label class="block">
       <span class="text-sm font-medium text-gray-700">🚫 Exclude Patterns (Raccomandato)</span>

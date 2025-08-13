@@ -21,6 +21,7 @@ class ScraperConfig extends Model
         'sitemap_urls',
         'include_patterns',
         'exclude_patterns',
+        'link_only_patterns',
         'respect_robots',
     ];
 
@@ -31,6 +32,7 @@ class ScraperConfig extends Model
         'sitemap_urls' => 'array',
         'include_patterns' => 'array',
         'exclude_patterns' => 'array',
+        'link_only_patterns' => 'array',
         'render_js' => 'boolean',
         'respect_robots' => 'boolean',
         'max_depth' => 'integer',

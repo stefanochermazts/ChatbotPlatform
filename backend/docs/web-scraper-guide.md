@@ -47,6 +47,16 @@ Pattern regex per includere solo URL specifici:
 
 #### **🚫 Exclude Patterns** (Opzionale)
 Pattern regex per escludere URL:
+#### **🔗 Link-only Patterns** (Opzionale)
+Pattern regex delle pagine "indice" per cui vuoi solo seguire i link interni senza salvare la pagina stessa come documento. Utile per liste news, archivi, pagine di paginazione.
+
+Esempi:
+```
+/news/?$
+/news/page/\d+
+```
+
+Comportamento: se un URL matcha uno di questi pattern, lo scraper estrarrà i link e continuerà la ricorsione, ma non genererà un documento per quell'URL.
 ```
 /admin/.*
 /private/.*

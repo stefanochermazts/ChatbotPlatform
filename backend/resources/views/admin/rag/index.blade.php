@@ -22,6 +22,10 @@
       <span class="text-sm">MMR λ (0-1)</span>
       <input type="number" name="mmr_lambda" step="0.05" min="0" max="1" value="{{ old('mmr_lambda', 0.3) }}" class="w-full border rounded px-3 py-2" />
     </label>
+    <label class="block">
+      <span class="text-sm">Max output tokens</span>
+      <input type="number" name="max_output_tokens" min="32" max="8192" value="{{ old('max_output_tokens', config('openai.max_output_tokens', 700)) }}" class="w-full border rounded px-3 py-2" />
+    </label>
   </div>
   <label class="block">
     <span class="text-sm">Query</span>
