@@ -60,6 +60,7 @@ class TenantAdminController extends Controller
             'extra_intent_keywords' => ['nullable', 'string'],
             'kb_scope_mode' => ['nullable', 'in:relaxed,strict'],
             'intent_min_score' => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'custom_synonyms' => ['nullable', 'string'],
         ]);
         $data['languages'] = isset($data['languages']) && $data['languages'] !== ''
             ? array_values(array_filter(array_map('trim', explode(',', $data['languages']))))
@@ -71,6 +72,20 @@ class TenantAdminController extends Controller
             $json = json_decode($data['extra_intent_keywords'] ?: '{}', true);
             $data['extra_intent_keywords'] = is_array($json) ? $json : null;
         }
+        
+        // Gestisci sinonimi personalizzati
+        if (isset($data['custom_synonyms'])) {
+            if (trim($data['custom_synonyms']) === '') {
+                $data['custom_synonyms'] = null; // Usa sinonimi di default
+            } else {
+                $json = json_decode($data['custom_synonyms'], true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    return back()->withErrors(['custom_synonyms' => 'Formato JSON non valido per i sinonimi'])->withInput();
+                }
+                $data['custom_synonyms'] = is_array($json) ? $json : null;
+            }
+        }
+        
         $tenant->update($data);
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant aggiornato');
     }

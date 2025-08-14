@@ -75,8 +75,8 @@
       
       <div>
         <span class="text-sm font-medium mb-2 block">Intent Abilitati</span>
-        <div class="grid md:grid-cols-4 gap-3">
-          @php($intents = ['phone' => 'Telefono', 'email' => 'Email', 'address' => 'Indirizzo', 'schedule' => 'Orari'])
+        <div class="grid md:grid-cols-5 gap-3">
+          @php($intents = ['thanks' => 'Ringraziamenti', 'phone' => 'Telefono', 'email' => 'Email', 'address' => 'Indirizzo', 'schedule' => 'Orari'])
           @foreach($intents as $key => $label)
           <label class="inline-flex items-center gap-2">
             <input type="checkbox" name="intents_enabled[{{ $key }}]" value="1" {{ old('intents_enabled.'.$key, data_get($tenant->intents_enabled, $key, true)) ? 'checked' : '' }} />
@@ -110,6 +110,52 @@
       
       <div class="flex justify-end pt-2">
         <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Impostazioni Intent</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Sinonimi Personalizzati -->
+  <div class="bg-white border rounded p-6">
+    <h2 class="text-lg font-semibold mb-4">Sinonimi Personalizzati</h2>
+    <form method="post" action="{{ route('admin.tenants.update', $tenant) }}" class="grid gap-4">
+      @csrf @method('put')
+      
+      <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+        <h3 class="font-medium text-blue-800 mb-2">ℹ️ Come Funzionano i Sinonimi</h3>
+        <p class="text-sm text-blue-700 mb-2">
+          I sinonimi migliorano la ricerca permettendo al sistema di trovare risultati anche quando l'utente usa terminologia diversa.
+        </p>
+        <p class="text-sm text-blue-700">
+          <strong>Esempio:</strong> Se configuri <code>"vigili" → "polizia locale municipale"</code>, 
+          una ricerca per "vigili urbani" troverà anche documenti che parlano di "polizia locale".
+        </p>
+      </div>
+      
+      <label class="block">
+        <span class="text-sm font-medium">Configurazione Sinonimi (JSON)</span>
+        <textarea name="custom_synonyms" rows="10" class="w-full border rounded px-3 py-2 mt-1 font-mono text-sm" placeholder='{"vigili urbani": "polizia locale municipale", "comune": "municipio ufficio comunale"}'>{{ old('custom_synonyms', json_encode($tenant->custom_synonyms ?? new stdClass(), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)) }}</textarea>
+        <small class="text-gray-600">
+          Formato: <code>{"termine_originale": "sinonimi alternativi"}</code>. 
+          Se vuoto, verranno usati i sinonimi di default del sistema.
+        </small>
+      </label>
+      
+      <div class="bg-gray-50 border rounded p-4">
+        <h4 class="font-medium mb-2">📋 Sinonimi di Default del Sistema</h4>
+        <div class="text-xs text-gray-600 space-y-1">
+          <div><strong>Servizi Pubblici:</strong> vigili urbani, polizia locale, comune, municipio, anagrafe</div>
+          <div><strong>Sanità:</strong> pronto soccorso, ospedale, asl, guardia medica</div>
+          <div><strong>Trasporti:</strong> stazione, fermata, parcheggio, ztl</div>
+          <div><strong>Istruzione:</strong> scuola, università, biblioteca</div>
+          <div><strong>Geografia:</strong> centro storico, periferia, frazione</div>
+          <div class="mt-2">
+            <em>Questi sinonimi vengono applicati automaticamente se il campo sopra è vuoto.</em>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flex justify-end pt-2">
+        <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Sinonimi</button>
       </div>
     </form>
   </div>

@@ -25,6 +25,7 @@ class Tenant extends Model
         'extra_intent_keywords',
         'kb_scope_mode',
         'intent_min_score',
+        'custom_synonyms',
     ];
 
     protected $casts = [
@@ -32,6 +33,7 @@ class Tenant extends Model
         'languages' => 'array',
         'intents_enabled' => 'array',
         'extra_intent_keywords' => 'array',
+        'custom_synonyms' => 'array',
     ];
 
     public function apiKeys(): HasMany

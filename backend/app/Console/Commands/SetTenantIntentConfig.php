@@ -28,7 +28,7 @@ class SetTenantIntentConfig extends Command
         $intentsEnabled = $tenant->intents_enabled ?? [];
         if ($enable !== null) {
             $list = array_filter(array_map('trim', explode(',', (string) $enable)));
-            $keys = ['phone','email','address','schedule'];
+            $keys = ['thanks','phone','email','address','schedule'];
             foreach ($keys as $k) {
                 $intentsEnabled[$k] = in_array($k, $list, true);
             }

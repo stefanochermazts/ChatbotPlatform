@@ -37,19 +37,20 @@ class KbSearchService
         $this->activeLangs = $this->getTenantLanguages($tenantId);
 
         // Determina l'intent primario più specifico
-        $intents = $this->detectIntents($query);
+        $intents = $this->detectIntents($query, $tenantId);
         $intentDebug = null;
         
         if ($debug) {
             // Calcola scores per debug
             $q = mb_strtolower($query);
-            $expandedQ = $this->expandQueryWithSynonyms($q);
+            $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
             $intentDebug = [
                 'original_query' => $query,
                 'lowercased_query' => $q,
                 'expanded_query' => $expandedQ,
                 'intents_detected' => $intents,
                 'intent_scores' => [
+                    'thanks' => $this->scoreIntent($q, $expandedQ, $this->keywordsThanks($this->activeLangs)),
                     'schedule' => $this->scoreIntent($q, $expandedQ, $this->keywordsSchedule($this->activeLangs)),
                     'address' => $this->scoreIntent($q, $expandedQ, $this->keywordsAddress($this->activeLangs)),
                     'email' => $this->scoreIntent($q, $expandedQ, $this->keywordsEmail($this->activeLangs)),
@@ -59,22 +60,20 @@ class KbSearchService
             ];
         }
         
-        // Esegui l'intent con priorità più alta
-        foreach (['schedule', 'address', 'email', 'phone'] as $intentType) {
-            if (in_array($intentType, $intents)) {
-                // Selezione KB prima del lookup intent (per scoping)
-                $kbSelIntent = $this->kbSelector->selectForQuery($tenantId, $query);
-                $selectedKbIdIntent = $kbSelIntent['knowledge_base_id'] ?? null;
-                $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
-                if ($result !== null) {
-                    // Aggiungi debug intent se disponibile
-                    if ($intentDebug) {
-                        $intentDebug['executed_intent'] = isset($result['debug']['semantic_fallback']) ? $intentType . '_semantic' : $intentType;
-                        $result['debug']['intent_detection'] = $intentDebug;
-                        $result['debug']['selected_kb'] = $kbSelIntent;
-                    }
-                    return $result;
+        // Esegui l'intent con score più alto (già ordinati per priorità in detectIntents)
+        foreach ($intents as $intentType) {
+            // Selezione KB prima del lookup intent (per scoping)
+            $kbSelIntent = $this->kbSelector->selectForQuery($tenantId, $query);
+            $selectedKbIdIntent = $kbSelIntent['knowledge_base_id'] ?? null;
+            $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
+            if ($result !== null) {
+                // Aggiungi debug intent se disponibile
+                if ($intentDebug) {
+                    $intentDebug['executed_intent'] = isset($result['debug']['semantic_fallback']) ? $intentType . '_semantic' : $intentType;
+                    $result['debug']['intent_detection'] = $intentDebug;
+                    $result['debug']['selected_kb'] = $kbSelIntent;
                 }
+                return $result;
             }
         }
 
@@ -325,6 +324,40 @@ class KbSearchService
         return $langs === [] ? ['it'] : $langs;
     }
 
+    private function keywordsThanks(array $langs): array
+    {
+        $it = [
+            // Ringraziamenti diretti (alta priorità)
+            'grazie','grazie mille','ti ringrazio','la ringrazio','vi ringrazio','molte grazie',
+            'tante grazie','grazie tante','grazie di tutto','grazie per tutto','grazie dell\'aiuto',
+            'grazie per l\'aiuto','grazie per la risposta','perfetto grazie','ok grazie',
+            // Apprezzamenti
+            'ottimo','perfetto','bene','molto bene','eccellente','fantastico',
+            'sei stato di aiuto','sei stata utile','molto utile','molto gentile',
+            // Formule di cortesia
+            'la ringrazio sentitamente','cordiali ringraziamenti','distinti saluti',
+            'cordiali saluti','buona giornata','buon lavoro','arrivederci'
+        ];
+        $en = [
+            'thanks','thank you','thank you very much','thanks a lot','many thanks',
+            'thanks so much','appreciate it','much appreciated','perfect thanks',
+            'great thanks','excellent','perfect','awesome','wonderful',
+            'you\'ve been helpful','very helpful','very kind','good job',
+            'have a nice day','goodbye','bye','see you'
+        ];
+        $es = [
+            'gracias','muchas gracias','mil gracias','te agradezco','perfecto gracias',
+            'excelente','fantástico','muy bien','muy útil','muy amable',
+            'que tengas buen día','adiós','hasta luego'
+        ];
+        $fr = [
+            'merci','merci beaucoup','mille mercis','je vous remercie','parfait merci',
+            'excellent','fantastique','très bien','très utile','très gentil',
+            'bonne journée','au revoir','à bientôt'
+        ];
+        return $this->mergeLangKeywords($langs, compact('it','en','es','fr'));
+    }
+
     private function keywordsSchedule(array $langs): array
     {
         $it = [
@@ -412,19 +445,34 @@ class KbSearchService
     /**
      * Rileva tutti gli intent possibili in una query, ordinati per priorità
      */
-    private function detectIntents(string $query): array
+    private function detectIntents(string $query, int $tenantId = null): array
     {
         $q = mb_strtolower($query);
-        $expandedQ = $this->expandQueryWithSynonyms($q);
+        $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
         $intents = [];
         
+        // Ottieni configurazione intent del tenant
+        $enabledIntents = $this->getTenantEnabledIntents($tenantId);
+        $extraKeywords = $this->getTenantExtraKeywords($tenantId);
+        
         // Score per ogni intent basato su specificitá keywords
-        $scores = [
-            'schedule' => $this->scoreIntent($q, $expandedQ, $this->keywordsSchedule($this->activeLangs)),
-            'address' => $this->scoreIntent($q, $expandedQ, $this->keywordsAddress($this->activeLangs)),
-            'email' => $this->scoreIntent($q, $expandedQ, $this->keywordsEmail($this->activeLangs)),  
-            'phone' => $this->scoreIntent($q, $expandedQ, $this->keywordsPhone($this->activeLangs)),
-        ];
+        $scores = [];
+        $allIntentTypes = ['thanks', 'schedule', 'address', 'email', 'phone'];
+        
+        foreach ($allIntentTypes as $intentType) {
+            if (!($enabledIntents[$intentType] ?? true)) {
+                continue; // Skip intent disabilitati
+            }
+            
+            $keywords = $this->getIntentKeywords($intentType, $this->activeLangs);
+            
+            // Aggiungi keyword extra se configurate
+            if (!empty($extraKeywords[$intentType])) {
+                $keywords = array_merge($keywords, (array) $extraKeywords[$intentType]);
+            }
+            
+            $scores[$intentType] = $this->scoreIntent($q, $expandedQ, $keywords);
+        }
         
         // Filtra e ordina per score (più alto = più specifico)
         arsort($scores);
@@ -468,9 +516,12 @@ class KbSearchService
         $name = $this->extractNameFromQuery($query, $intentType);
         
         // Espandi il nome con sinonimi per migliorare la ricerca
-        $expandedName = $this->expandNameWithSynonyms($name);
+        $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
         
         switch ($intentType) {
+            case 'thanks':
+                // Intent speciale: restituisce direttamente una risposta cortese senza cercare documenti
+                return $this->executeThanksIntent($tenantId, $query, $debug);
             case 'schedule':
                 $results = $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'schedule';
@@ -570,6 +621,7 @@ class KbSearchService
     private function getMatchedKeywords(string $query, string $expandedQuery): array
     {
         $matched = [
+            'thanks' => [],
             'schedule' => [],
             'address' => [],
             'email' => [],
@@ -577,6 +629,7 @@ class KbSearchService
         ];
         
         $allKeywords = [
+            'thanks' => $this->keywordsThanks($this->activeLangs),
             'schedule' => $this->keywordsSchedule($this->activeLangs),
             'address' => $this->keywordsAddress($this->activeLangs),
             'email' => $this->keywordsEmail($this->activeLangs),
@@ -599,9 +652,9 @@ class KbSearchService
     /**
      * Espande il nome estratto con sinonimi per migliorare la ricerca nei documenti
      */
-    private function expandNameWithSynonyms(string $name): string
+    private function expandNameWithSynonyms(string $name, ?int $tenantId = null): string
     {
-        $synonyms = $this->getSynonymsMap();
+        $synonyms = $this->getTenantSynonyms($tenantId);
         
         $expanded = $name;
         foreach ($synonyms as $term => $synonymList) {
@@ -617,9 +670,9 @@ class KbSearchService
     /**
      * Espande la query con sinonimi comuni per migliorare l'intent detection
      */
-    private function expandQueryWithSynonyms(string $query): string
+    private function expandQueryWithSynonyms(string $query, ?int $tenantId = null): string
     {
-        $synonyms = $this->getSynonymsMap();
+        $synonyms = $this->getTenantSynonyms($tenantId);
 
         $expanded = $query;
         foreach ($synonyms as $term => $synonymList) {
@@ -637,7 +690,7 @@ class KbSearchService
     private function executeSemanticFallback(string $intentType, int $tenantId, string $name, string $originalQuery, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
         // Costruisci query semantica combinando termine originale + sinonimi
-        $semanticQuery = $this->buildSemanticQuery($name, $intentType);
+        $semanticQuery = $this->buildSemanticQuery($name, $intentType, $tenantId);
         
         $debugInfo = [
             'semantic_fallback' => [
@@ -757,9 +810,9 @@ class KbSearchService
     /**
      * Costruisce query semantica combinando termine originale + sinonimi + contesto intent
      */
-    private function buildSemanticQuery(string $name, string $intentType): string
+    private function buildSemanticQuery(string $name, string $intentType, ?int $tenantId = null): string
     {
-        $expandedName = $this->expandNameWithSynonyms($name);
+        $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
         
         // Aggiungi contesto dell'intent per migliorare la ricerca semantica
         $intentContext = match($intentType) {
@@ -911,7 +964,7 @@ class KbSearchService
     private function attemptTextFallback(string $intentType, int $tenantId, string $name, string $originalQuery, ?int $knowledgeBaseId = null): array
     {
         // Usa la ricerca testuale diretta come ultima risorsa
-        $expandedName = $this->expandNameWithSynonyms($name);
+        $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
         
         $results = match($intentType) {
             'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
@@ -948,7 +1001,173 @@ class KbSearchService
     }
 
     /**
-     * Mappa centralizzata dei sinonimi
+     * Esegue l'intent di ringraziamento restituendo una risposta cortese diretta
+     */
+    private function executeThanksIntent(int $tenantId, string $query, bool $debug): array
+    {
+        // Ottieni informazioni del tenant per personalizzare la risposta
+        $tenant = Tenant::find($tenantId);
+        $tenantName = $tenant ? $tenant->name : '';
+        
+        // Array di risposte cortesi in base alla lingua del tenant
+        $languages = $this->getTenantLanguages($tenantId);
+        $responses = $this->getThanksResponses($languages, $tenantName);
+        
+        // Seleziona una risposta casuale per varietà
+        $response = $responses[array_rand($responses)];
+        
+        // Crea una citazione fittizia per mantenere la struttura standard
+        $citation = [
+            'id' => 0,
+            'title' => 'Assistente Virtuale',
+            'url' => '#',
+            'snippet' => $response,
+            'score' => 1.0,
+            'knowledge_base' => null,
+        ];
+        
+        $debugInfo = $debug ? [
+            'thanks_intent' => [
+                'detected_languages' => $languages,
+                'tenant_name' => $tenantName,
+                'available_responses' => count($responses),
+                'selected_response' => $response,
+            ]
+        ] : null;
+        
+        return [
+            'citations' => [$citation],
+            'confidence' => 1.0,
+            'debug' => $debugInfo,
+        ];
+    }
+    
+    /**
+     * Restituisce risposte di cortesia appropriate in base alla lingua
+     */
+    private function getThanksResponses(array $languages, string $tenantName = ''): array
+    {
+        $responses = [];
+        
+        // Risposte in italiano (sempre incluse come fallback)
+        $responses = array_merge($responses, [
+            'Prego, sono felice di averti aiutato!',
+            'Di niente, è stato un piacere assisterti.',
+            'Figurati! Se hai altre domande, sono qui per aiutarti.',
+            'Prego! Spero che le informazioni siano state utili.',
+            'È stato un piacere aiutarti. Buona giornata!',
+            'Di niente! Non esitare a contattarmi se hai altre domande.',
+            'Sono contento di essere stato utile!',
+        ]);
+        
+        // Personalizza con nome tenant se disponibile
+        if ($tenantName !== '') {
+            $responses[] = "Prego! Sono qui per aiutarti con i servizi di {$tenantName}.";
+            $responses[] = "Di niente! Per altre informazioni su {$tenantName}, sono sempre disponibile.";
+        }
+        
+        // Aggiungi risposte in altre lingue se supportate
+        if (in_array('en', $languages)) {
+            $responses = array_merge($responses, [
+                'You\'re welcome! I\'m glad I could help.',
+                'No problem! Feel free to ask if you have more questions.',
+                'My pleasure! I hope the information was useful.',
+                'You\'re welcome! Have a great day!',
+            ]);
+        }
+        
+        if (in_array('es', $languages)) {
+            $responses = array_merge($responses, [
+                '¡De nada! Me alegra haber podido ayudarte.',
+                '¡No hay problema! Si tienes más preguntas, estoy aquí.',
+                '¡Un placer! Espero que la información haya sido útil.',
+            ]);
+        }
+        
+        if (in_array('fr', $languages)) {
+            $responses = array_merge($responses, [
+                'De rien! Je suis content d\'avoir pu vous aider.',
+                'Pas de problème! N\'hésitez pas si vous avez d\'autres questions.',
+                'Je vous en prie! J\'espère que les informations ont été utiles.',
+            ]);
+        }
+        
+        return $responses;
+    }
+    
+    /**
+     * Ottieni intent abilitati per il tenant
+     */
+    private function getTenantEnabledIntents(?int $tenantId): array
+    {
+        if ($tenantId === null) {
+            return []; // Tutti abilitati di default se nessun tenant
+        }
+        
+        $tenant = Tenant::find($tenantId);
+        if (!$tenant || empty($tenant->intents_enabled)) {
+            return []; // Tutti abilitati di default se configurazione vuota
+        }
+        
+        return (array) $tenant->intents_enabled;
+    }
+    
+    /**
+     * Ottieni keyword extra per il tenant
+     */
+    private function getTenantExtraKeywords(?int $tenantId): array
+    {
+        if ($tenantId === null) {
+            return [];
+        }
+        
+        $tenant = Tenant::find($tenantId);
+        if (!$tenant || empty($tenant->extra_intent_keywords)) {
+            return [];
+        }
+        
+        return (array) $tenant->extra_intent_keywords;
+    }
+    
+    /**
+     * Ottieni keywords per un intent specifico
+     */
+    private function getIntentKeywords(string $intentType, array $languages): array
+    {
+        return match($intentType) {
+            'thanks' => $this->keywordsThanks($languages),
+            'schedule' => $this->keywordsSchedule($languages),
+            'address' => $this->keywordsAddress($languages),
+            'email' => $this->keywordsEmail($languages),
+            'phone' => $this->keywordsPhone($languages),
+            default => []
+        };
+    }
+    
+    /**
+     * Ottieni sinonimi personalizzati del tenant con fallback ai sinonimi globali
+     */
+    private function getTenantSynonyms(?int $tenantId): array
+    {
+        if ($tenantId === null) {
+            return $this->getSynonymsMap(); // Fallback a sinonimi globali
+        }
+        
+        $tenant = Tenant::find($tenantId);
+        if (!$tenant) {
+            return $this->getSynonymsMap(); // Fallback se tenant non trovato
+        }
+        
+        // Se il tenant ha sinonimi personalizzati, usali; altrimenti fallback
+        if (!empty($tenant->custom_synonyms)) {
+            return (array) $tenant->custom_synonyms;
+        }
+        
+        return $this->getSynonymsMap(); // Fallback a sinonimi globali
+    }
+
+    /**
+     * Mappa centralizzata dei sinonimi (fallback globale)
      */
     private function getSynonymsMap(): array
     {

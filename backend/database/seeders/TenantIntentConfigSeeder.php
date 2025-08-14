@@ -21,6 +21,7 @@ class TenantIntentConfigSeeder extends Seeder
 
         // Abilita tutti gli intent
         $tenant->intents_enabled = [
+            'thanks' => true,
             'phone' => true,
             'email' => true,
             'address' => true,
@@ -29,6 +30,7 @@ class TenantIntentConfigSeeder extends Seeder
 
         // Configura keyword aggiuntive per ogni intent
         $tenant->extra_intent_keywords = [
+            'thanks' => ['mille grazie', 'ti ringrazio molto', 'molto gentile'],
             'phone' => ['centralino', 'call center'],
             'schedule' => ['ricevimento', 'sportello'],
             'address' => ['sede legale', 'ubicazione'],
@@ -44,7 +46,7 @@ class TenantIntentConfigSeeder extends Seeder
         $tenant->save();
 
         $this->command->info('Configurazione intent per tenant 5 completata:');
-        $this->command->info('- Intent abilitati: phone, email, address, schedule');
+        $this->command->info('- Intent abilitati: thanks, phone, email, address, schedule');
         $this->command->info('- Keywords extra configurate per ogni intent');
         $this->command->info('- KB scope mode: relaxed');
         $this->command->info('- Intent min score: null');
