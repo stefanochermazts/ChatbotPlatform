@@ -1,0 +1,13 @@
+Questo è un file di test per verificare il parsing dei documenti Word.
+
+Contenuto del documento:
+- Lista item 1
+- Lista item 2
+- Lista item 3
+
+Tabella esempio:
+Colonna A | Colonna B
+Valore 1  | Valore 2
+Valore 3  | Valore 4
+
+Testo finale del documento.

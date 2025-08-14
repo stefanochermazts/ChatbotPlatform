@@ -1,94 +1,102 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Console\Commands;
 
-use App\Models\Document;
-use App\Services\LLM\OpenAIEmbeddingsService;
-use App\Services\RAG\MilvusClient;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
-class IngestUploadedDocumentJob implements ShouldQueue
+class TestDocumentParsing extends Command
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
+    protected $signature = 'document:test-parsing {file_path : Percorso del file da testare (relativo a storage/app/public)}';
 
-    public function __construct(private readonly int $documentId)
-    {
-        $this->onQueue('ingestion');
-    }
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Testa il parsing di un documento per verificare l\'estrazione del testo';
 
-    public function handle(OpenAIEmbeddingsService $embeddings, MilvusClient $milvus): void
+    /**
+     * Execute the console command.
+     */
+    public function handle(): int
     {
-        /** @var Document|null $doc */
-        $doc = Document::find($this->documentId);
-        if ($doc === null) {
-            return;
+        $filePath = $this->argument('file_path');
+        
+        if (!Storage::disk('public')->exists($filePath)) {
+            $this->error("❌ File non trovato: {$filePath}");
+            $this->info("💡 Assicurati che il file sia in storage/app/public/{$filePath}");
+            return 1;
         }
 
-        $this->updateDoc($doc, ['ingestion_status' => 'processing', 'ingestion_progress' => 0, 'last_error' => null]);
-
+        $this->info("🔍 Testando parsing del file: {$filePath}");
+        
+        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $size = Storage::disk('public')->size($filePath);
+        
+        $this->info("📄 Estensione: {$ext}");
+        $this->info("📏 Dimensione: " . $this->formatBytes($size));
+        
         try {
-            // 1) Carica testo dal file
-            $text = $this->readTextFromStoragePath((string) $doc->path);
-            if ($text === '') {
-                throw new \RuntimeException('File vuoto o non parsabile');
+            $text = $this->readTextFromStoragePath($filePath);
+            
+            if (empty($text)) {
+                $this->warn("⚠️  Nessun testo estratto dal file");
+                return 1;
             }
-
-            // 2) Chunking
+            
+            $wordCount = str_word_count($text);
+            $charCount = mb_strlen($text);
+            
+            $this->info("✅ Testo estratto con successo!");
+            $this->info("📊 Statistiche:");
+            $this->info("   - Caratteri: {$charCount}");
+            $this->info("   - Parole: {$wordCount}");
+            
+            // Mostra preview del testo
+            $preview = mb_substr($text, 0, 200);
+            if (mb_strlen($text) > 200) {
+                $preview .= '...';
+            }
+            
+            $this->info("\n📝 Preview del testo estratto:");
+            $this->line($preview);
+            
+            // Test chunking
             $chunks = $this->chunkText($text);
-            if ($chunks === []) {
-                throw new \RuntimeException('Nessun chunk generato');
+            $this->info("\n🧩 Test chunking:");
+            $this->info("   - Chunk generati: " . count($chunks));
+            
+            if (count($chunks) > 0) {
+                $firstChunkLength = mb_strlen($chunks[0]);
+                $this->info("   - Lunghezza primo chunk: {$firstChunkLength} caratteri");
             }
-            $total = count($chunks);
-            $this->updateDoc($doc, ['ingestion_progress' => 10]);
-
-            // 3) Embeddings
-            $vectors = $embeddings->embedTexts($chunks);
-            if (count($vectors) !== $total) {
-                throw new \RuntimeException('Dimensione vettori non corrisponde ai chunk');
-            }
-            $this->updateDoc($doc, ['ingestion_progress' => 60]);
-
-            // 4) Persistenza chunk su DB (sostituzione completa)
-            DB::table('document_chunks')->where('document_id', $doc->id)->delete();
-            $now = now();
-            $rows = [];
-            foreach ($chunks as $i => $content) {
-                $rows[] = [
-                    'tenant_id' => (int) $doc->tenant_id,
-                    'document_id' => (int) $doc->id,
-                    'chunk_index' => (int) $i,
-                    'content' => (string) $content,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
-            }
-            foreach (array_chunk($rows, 500) as $batch) {
-                DB::table('document_chunks')->insert($batch);
-            }
-            $this->updateDoc($doc, ['ingestion_progress' => 80]);
-
-            // 5) Indicizzazione vettori su Milvus
-            $milvus->upsertVectors((int) $doc->tenant_id, (int) $doc->id, $chunks, $vectors);
-            $this->updateDoc($doc, ['ingestion_status' => 'completed', 'ingestion_progress' => 100]);
+            
+            return 0;
+            
         } catch (\Throwable $e) {
-            Log::error('ingestion.failed', ['document_id' => $doc->id, 'error' => $e->getMessage()]);
-            $this->updateDoc($doc, ['ingestion_status' => 'failed', 'last_error' => $e->getMessage()]);
+            $this->error("❌ Errore durante il parsing:");
+            $this->error("Classe: " . get_class($e));
+            $this->error("Messaggio: " . $e->getMessage());
+            
+            $this->info("\n💡 Suggerimenti:");
+            $this->info("- Verifica che il file non sia corrotto");
+            $this->info("- Controlla che le librerie PHPOffice siano installate");
+            $this->info("- Controlla i log in storage/logs/laravel.log");
+            
+            return 1;
         }
     }
 
-    private function updateDoc(Document $doc, array $attrs): void
-    {
-        $doc->fill($attrs);
-        $doc->save();
-    }
-
+    /**
+     * Copia del metodo di parsing dal Job (per testing)
+     */
     private function readTextFromStoragePath(string $path): string
     {
         if ($path === '' || !Storage::disk('public')->exists($path)) {
@@ -217,34 +225,6 @@ class IngestUploadedDocumentJob implements ShouldQueue
     }
 
     /**
-     * Spezza il testo in chunk con overlap, rispettando i limiti da config.
-     * @return array<int, string>
-     */
-    private function chunkText(string $text): array
-    {
-        $max = (int) config('rag.chunk.max_chars', 1500);
-        $overlap = (int) config('rag.chunk.overlap_chars', 200);
-        $text = trim(preg_replace('/\s+/', ' ', $text));
-        if ($text === '') {
-            return [];
-        }
-        $chunks = [];
-        $start = 0;
-        $len = mb_strlen($text);
-        while ($start < $len) {
-            $end = min($len, $start + $max);
-            $slice = mb_substr($text, $start, $end - $start);
-            $chunks[] = $slice;
-            if ($end >= $len) {
-                break;
-            }
-            $start = $end - $overlap;
-            if ($start < 0) { $start = 0; }
-        }
-        return $chunks;
-    }
-
-    /**
      * Estrae testo da elementi complessi di Word (tabelle, liste, etc.)
      */
     private function extractTextFromComplexElement($element): string
@@ -301,6 +281,45 @@ class IngestUploadedDocumentJob implements ShouldQueue
             return '';
         }
     }
+
+    /**
+     * Copia del metodo di chunking dal Job (per testing)
+     */
+    private function chunkText(string $text): array
+    {
+        $max = (int) config('rag.chunk.max_chars', 1500);
+        $overlap = (int) config('rag.chunk.overlap_chars', 200);
+        $text = trim(preg_replace('/\s+/', ' ', $text));
+        if ($text === '') {
+            return [];
+        }
+        $chunks = [];
+        $start = 0;
+        $len = mb_strlen($text);
+        while ($start < $len) {
+            $end = min($len, $start + $max);
+            $slice = mb_substr($text, $start, $end - $start);
+            $chunks[] = $slice;
+            if ($end >= $len) {
+                break;
+            }
+            $start = $end - $overlap;
+            if ($start < 0) { $start = 0; }
+        }
+        return $chunks;
+    }
+
+    /**
+     * Formatta i byte in una stringa leggibile
+     */
+    private function formatBytes(int $bytes, int $precision = 2): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        
+        for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
+            $bytes /= 1024;
+        }
+        
+        return round($bytes, $precision) . ' ' . $units[$i];
+    }
 }
-
-

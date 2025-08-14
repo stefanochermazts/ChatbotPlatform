@@ -24,6 +24,15 @@ class CreateMilvusPartitionJob implements ShouldQueue
 
     public function handle(): void
     {
+        // Verifica se le partizioni Milvus sono abilitate
+        if (!config('rag.vector.milvus.partitions_enabled', true)) {
+            Log::info('milvus.partition.disabled', [
+                'tenant_id' => $this->tenantId,
+                'reason' => 'partitions_disabled_in_config',
+            ]);
+            return;
+        }
+
         $collectionName = config('rag.vector.milvus.collection', 'kb_chunks_v1');
         $partitionName = "tenant_{$this->tenantId}";
 
@@ -49,9 +58,61 @@ class CreateMilvusPartitionJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
 
-            // Fallback: usa lo script Python esistente
-            $this->createPartitionWithPython($collectionName, $partitionName);
+            // Determina se siamo su Windows
+            $isWindows = PHP_OS_FAMILY === 'Windows';
+            
+            if ($isWindows && $this->isPythonGrpcIssue($e)) {
+                // Su Windows, se è un problema noto di grpcio, non provare Python
+                Log::warning('milvus.partition.skipped_on_windows', [
+                    'tenant_id' => $this->tenantId,
+                    'reason' => 'grpcio_windows_compatibility_issue',
+                    'error' => $e->getMessage(),
+                    'solution' => 'Disable partitions in config or fix grpcio installation',
+                ]);
+                return;
+            }
+
+            // Su altri sistemi o per errori diversi, prova il fallback Python
+            try {
+                $this->createPartitionWithPython($collectionName, $partitionName);
+            } catch (\Throwable $pythonError) {
+                Log::error('milvus.partition.both_methods_failed', [
+                    'tenant_id' => $this->tenantId,
+                    'php_error' => $e->getMessage(),
+                    'python_error' => $pythonError->getMessage(),
+                ]);
+                
+                // Non rilancio l'eccezione per non bloccare la creazione del tenant
+                // La partizione può essere creata manualmente se necessario
+            }
         }
+    }
+
+    /**
+     * Verifica se l'errore è dovuto a problemi noti di grpcio su Windows
+     */
+    private function isPythonGrpcIssue(\Throwable $e): bool
+    {
+        $message = $e->getMessage();
+        
+        // Controlla pattern tipici di errori grpcio su Windows
+        $grpcioPatterns = [
+            'WinError 10106',
+            'Impossibile caricare o inizializzare il provider del servizio richiesto',
+            'OSError.*provider del servizio',
+            'grpc.*_cython.*cygrpc',
+            'from grpc._cython import cygrpc',
+            'asyncio.*windows_events',
+            '_overlapped.*OSError',
+        ];
+        
+        foreach ($grpcioPatterns as $pattern) {
+            if (preg_match('/' . preg_quote($pattern, '/') . '/i', $message)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     private function createPartitionWithPython(string $collectionName, string $partitionName): void

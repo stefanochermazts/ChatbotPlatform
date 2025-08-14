@@ -222,12 +222,31 @@ class MilvusClient
     }
 
     /**
+     * Verifica se il client è connesso a Milvus
+     */
+    private function isConnected(): bool
+    {
+        try {
+            // Prova un'operazione semplice per verificare la connessione
+            return $this->client !== null;
+        } catch (\Throwable $e) {
+            Log::warning('milvus.connection.check_failed', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
      * Crea una partizione nella collection per isolare i dati del tenant.
      * Se la partizione esiste già, non fa nulla.
      */
     public function createPartition(string $partitionName): void
     {
         try {
+            // Verifica connessione prima di procedere
+            if (!$this->isConnected()) {
+                throw new \RuntimeException('Cliente Milvus non connesso');
+            }
+
             // Verifica se la partizione esiste già
             if ($this->hasPartition($partitionName)) {
                 Log::info('milvus.partition.already_exists', [
@@ -237,15 +256,29 @@ class MilvusClient
                 return;
             }
 
+            // Log dei metodi disponibili per debug
+            $availableMethods = [];
+            foreach (['createPartition', 'partition', 'partitionCreate'] as $method) {
+                if (method_exists($this->client, $method)) {
+                    $availableMethods[] = $method;
+                }
+            }
+
+            Log::debug('milvus.partition.create_attempt', [
+                'collection' => $this->collection,
+                'partition' => $partitionName,
+                'available_methods' => $availableMethods,
+            ]);
+
             // Crea la partizione
             if (method_exists($this->client, 'createPartition')) {
                 $this->client->createPartition($this->collection, $partitionName);
-            } elseif (method_exists($this->client, 'partition') || method_exists($this->client, 'partitionCreate')) {
-                // Fallback per diverse API dell'SDK
-                $method = method_exists($this->client, 'partition') ? 'partition' : 'partitionCreate';
-                $this->client->$method($this->collection, $partitionName);
+            } elseif (method_exists($this->client, 'partition')) {
+                $this->client->partition($this->collection, $partitionName);
+            } elseif (method_exists($this->client, 'partitionCreate')) {
+                $this->client->partitionCreate($this->collection, $partitionName);
             } else {
-                throw new \RuntimeException('SDK Milvus non supporta creazione partizioni');
+                throw new \RuntimeException('SDK Milvus non supporta creazione partizioni. Metodi disponibili: ' . implode(', ', get_class_methods($this->client)));
             }
 
             Log::info('milvus.partition.created', [
@@ -257,6 +290,8 @@ class MilvusClient
                 'collection' => $this->collection,
                 'partition' => $partitionName,
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
+                'trace' => $e->getTraceAsString(),
             ]);
             throw $e;
         }

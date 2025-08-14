@@ -34,6 +34,9 @@ return [
             'token' => env('MILVUS_TOKEN'),
             'tls' => filter_var(env('MILVUS_TLS', false), FILTER_VALIDATE_BOOLEAN),
             'collection' => env('MILVUS_COLLECTION', 'kb_chunks_v1'),
+            // Abilita/disabilita la creazione automatica di partizioni per tenant
+            // Su Windows può causare problemi con grpcio, impostare a false se necessario
+            'partitions_enabled' => filter_var(env('MILVUS_PARTITIONS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             'index' => [
                 'type' => env('MILVUS_INDEX_TYPE', 'HNSW'), // HNSW | IVF_FLAT | IVF_SQ8 | AUTOINDEX
                 'params' => [
