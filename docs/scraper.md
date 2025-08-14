@@ -661,3 +661,4 @@ php artisan queue:work --queue=scraping --memory=256
 
 Per supporto tecnico o domande specifiche, consulta i log di sistema o contatta l'amministratore della piattaforma.
 
+
