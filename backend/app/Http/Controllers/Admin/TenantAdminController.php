@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\CreateMilvusPartitionJob;
 use App\Models\Tenant;
 use App\Models\KnowledgeBase;
 use App\Models\Document;
@@ -36,7 +37,12 @@ class TenantAdminController extends Controller
         $data['languages'] = isset($data['languages']) && $data['languages'] !== ''
             ? array_values(array_filter(array_map('trim', explode(',', $data['languages']))))
             : null;
-        Tenant::create($data);
+        
+        $tenant = Tenant::create($data);
+        
+        // Crea automaticamente la partizione Milvus per questo tenant
+        CreateMilvusPartitionJob::dispatch($tenant->id);
+        
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant creato');
     }
 

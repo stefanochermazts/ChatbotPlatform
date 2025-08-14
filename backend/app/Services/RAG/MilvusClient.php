@@ -220,4 +220,82 @@ class MilvusClient
             throw $e;
         }
     }
+
+    /**
+     * Crea una partizione nella collection per isolare i dati del tenant.
+     * Se la partizione esiste già, non fa nulla.
+     */
+    public function createPartition(string $partitionName): void
+    {
+        try {
+            // Verifica se la partizione esiste già
+            if ($this->hasPartition($partitionName)) {
+                Log::info('milvus.partition.already_exists', [
+                    'collection' => $this->collection,
+                    'partition' => $partitionName,
+                ]);
+                return;
+            }
+
+            // Crea la partizione
+            if (method_exists($this->client, 'createPartition')) {
+                $this->client->createPartition($this->collection, $partitionName);
+            } elseif (method_exists($this->client, 'partition') || method_exists($this->client, 'partitionCreate')) {
+                // Fallback per diverse API dell'SDK
+                $method = method_exists($this->client, 'partition') ? 'partition' : 'partitionCreate';
+                $this->client->$method($this->collection, $partitionName);
+            } else {
+                throw new \RuntimeException('SDK Milvus non supporta creazione partizioni');
+            }
+
+            Log::info('milvus.partition.created', [
+                'collection' => $this->collection,
+                'partition' => $partitionName,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('milvus.partition.create_failed', [
+                'collection' => $this->collection,
+                'partition' => $partitionName,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Verifica se una partizione esiste nella collection.
+     */
+    public function hasPartition(string $partitionName): bool
+    {
+        try {
+            // Prova diversi metodi per verificare l'esistenza della partizione
+            if (method_exists($this->client, 'hasPartition')) {
+                return $this->client->hasPartition($this->collection, $partitionName);
+            }
+
+            if (method_exists($this->client, 'listPartitions')) {
+                $partitions = $this->client->listPartitions($this->collection);
+                return in_array($partitionName, $partitions, true);
+            }
+
+            if (method_exists($this->client, 'getPartitions')) {
+                $partitions = $this->client->getPartitions($this->collection);
+                return in_array($partitionName, $partitions, true);
+            }
+
+            // Fallback: assume che non esista se non possiamo verificare
+            Log::warning('milvus.partition.check_unsupported', [
+                'collection' => $this->collection,
+                'partition' => $partitionName,
+            ]);
+            return false;
+        } catch (\Throwable $e) {
+            Log::warning('milvus.partition.check_failed', [
+                'collection' => $this->collection,
+                'partition' => $partitionName,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\CreateMilvusPartitionJob;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -26,6 +27,9 @@ class TenantController extends Controller
             'plan' => $validated['plan'] ?? 'free',
             'metadata' => $validated['metadata'] ?? null,
         ]);
+
+        // Crea automaticamente la partizione Milvus per questo tenant
+        CreateMilvusPartitionJob::dispatch($tenant->id);
 
         return response()->json($tenant, 201);
     }
