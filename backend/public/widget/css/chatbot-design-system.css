@@ -1,0 +1,435 @@
+/*
+ * 🎨 Chatbot Design System - CSS Custom Properties
+ * 
+ * Sistema di design completo per widget chatbot personalizzabili
+ * Accessibilità WCAG 2.1 AA compliant
+ * Supporto dark mode e high contrast
+ * Vanilla CSS - No framework dependencies
+ */
+
+:root {
+  /* =================================================================
+   * 🎨 COLOR SYSTEM
+   * Personalizzabile per ogni tenant via CSS variables override
+   * ================================================================= */
+  
+  /* Brand Colors - Personalizzabili per tenant */
+  --chatbot-primary-50: #eff6ff;
+  --chatbot-primary-100: #dbeafe;
+  --chatbot-primary-200: #bfdbfe;
+  --chatbot-primary-300: #93c5fd;
+  --chatbot-primary-400: #60a5fa;
+  --chatbot-primary-500: #3b82f6; /* Main brand color */
+  --chatbot-primary-600: #2563eb;
+  --chatbot-primary-700: #1d4ed8;
+  --chatbot-primary-800: #1e40af;
+  --chatbot-primary-900: #1e3a8a;
+  --chatbot-primary-950: #172554;
+  
+  /* Secondary Colors */
+  --chatbot-secondary-50: #f8fafc;
+  --chatbot-secondary-100: #f1f5f9;
+  --chatbot-secondary-200: #e2e8f0;
+  --chatbot-secondary-300: #cbd5e1;
+  --chatbot-secondary-400: #94a3b8;
+  --chatbot-secondary-500: #64748b;
+  --chatbot-secondary-600: #475569;
+  --chatbot-secondary-700: #334155;
+  --chatbot-secondary-800: #1e293b;
+  --chatbot-secondary-900: #0f172a;
+  
+  /* Neutral Colors - Layout e testi */
+  --chatbot-neutral-0: #ffffff;
+  --chatbot-neutral-50: #f9fafb;
+  --chatbot-neutral-100: #f3f4f6;
+  --chatbot-neutral-200: #e5e7eb;
+  --chatbot-neutral-300: #d1d5db;
+  --chatbot-neutral-400: #9ca3af;
+  --chatbot-neutral-500: #6b7280;
+  --chatbot-neutral-600: #4b5563;
+  --chatbot-neutral-700: #374151;
+  --chatbot-neutral-800: #1f2937;
+  --chatbot-neutral-900: #111827;
+  --chatbot-neutral-950: #030712;
+  
+  /* Semantic Colors */
+  --chatbot-success-50: #f0fdf4;
+  --chatbot-success-500: #22c55e;
+  --chatbot-success-600: #16a34a;
+  --chatbot-success-700: #15803d;
+  
+  --chatbot-warning-50: #fffbeb;
+  --chatbot-warning-500: #f59e0b;
+  --chatbot-warning-600: #d97706;
+  --chatbot-warning-700: #b45309;
+  
+  --chatbot-error-50: #fef2f2;
+  --chatbot-error-500: #ef4444;
+  --chatbot-error-600: #dc2626;
+  --chatbot-error-700: #b91c1c;
+  
+  --chatbot-info-50: #eff6ff;
+  --chatbot-info-500: #3b82f6;
+  --chatbot-info-600: #2563eb;
+  --chatbot-info-700: #1d4ed8;
+  
+  /* =================================================================
+   * 📝 TYPOGRAPHY SYSTEM
+   * ================================================================= */
+  
+  /* Font Families - Personalizzabili */
+  --chatbot-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  --chatbot-font-mono: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+  
+  /* Font Sizes - Scala modulare */
+  --chatbot-text-xs: 0.75rem;    /* 12px */
+  --chatbot-text-sm: 0.875rem;   /* 14px */
+  --chatbot-text-base: 1rem;     /* 16px */
+  --chatbot-text-lg: 1.125rem;   /* 18px */
+  --chatbot-text-xl: 1.25rem;    /* 20px */
+  --chatbot-text-2xl: 1.5rem;    /* 24px */
+  --chatbot-text-3xl: 1.875rem;  /* 30px */
+  --chatbot-text-4xl: 2.25rem;   /* 36px */
+  
+  /* Font Weights */
+  --chatbot-font-thin: 100;
+  --chatbot-font-light: 300;
+  --chatbot-font-normal: 400;
+  --chatbot-font-medium: 500;
+  --chatbot-font-semibold: 600;
+  --chatbot-font-bold: 700;
+  --chatbot-font-extrabold: 800;
+  --chatbot-font-black: 900;
+  
+  /* Line Heights */
+  --chatbot-leading-none: 1;
+  --chatbot-leading-tight: 1.25;
+  --chatbot-leading-snug: 1.375;
+  --chatbot-leading-normal: 1.5;
+  --chatbot-leading-relaxed: 1.625;
+  --chatbot-leading-loose: 2;
+  
+  /* =================================================================
+   * 📏 SPACING SYSTEM
+   * Scala basata su multipli di 4px (0.25rem)
+   * ================================================================= */
+  
+  --chatbot-space-0: 0;
+  --chatbot-space-px: 1px;
+  --chatbot-space-0_5: 0.125rem;  /* 2px */
+  --chatbot-space-1: 0.25rem;     /* 4px */
+  --chatbot-space-1_5: 0.375rem;  /* 6px */
+  --chatbot-space-2: 0.5rem;      /* 8px */
+  --chatbot-space-2_5: 0.625rem;  /* 10px */
+  --chatbot-space-3: 0.75rem;     /* 12px */
+  --chatbot-space-3_5: 0.875rem;  /* 14px */
+  --chatbot-space-4: 1rem;        /* 16px */
+  --chatbot-space-5: 1.25rem;     /* 20px */
+  --chatbot-space-6: 1.5rem;      /* 24px */
+  --chatbot-space-7: 1.75rem;     /* 28px */
+  --chatbot-space-8: 2rem;        /* 32px */
+  --chatbot-space-9: 2.25rem;     /* 36px */
+  --chatbot-space-10: 2.5rem;     /* 40px */
+  --chatbot-space-11: 2.75rem;    /* 44px */
+  --chatbot-space-12: 3rem;       /* 48px */
+  --chatbot-space-14: 3.5rem;     /* 56px */
+  --chatbot-space-16: 4rem;       /* 64px */
+  --chatbot-space-20: 5rem;       /* 80px */
+  --chatbot-space-24: 6rem;       /* 96px */
+  --chatbot-space-28: 7rem;       /* 112px */
+  --chatbot-space-32: 8rem;       /* 128px */
+  
+  /* =================================================================
+   * 🔲 BORDER RADIUS SYSTEM
+   * ================================================================= */
+  
+  --chatbot-radius-none: 0;
+  --chatbot-radius-sm: 0.125rem;   /* 2px */
+  --chatbot-radius-default: 0.25rem; /* 4px */
+  --chatbot-radius-md: 0.375rem;   /* 6px */
+  --chatbot-radius-lg: 0.5rem;     /* 8px */
+  --chatbot-radius-xl: 0.75rem;    /* 12px */
+  --chatbot-radius-2xl: 1rem;      /* 16px */
+  --chatbot-radius-3xl: 1.5rem;    /* 24px */
+  --chatbot-radius-full: 9999px;   /* Circle */
+  
+  /* =================================================================
+   * 🔲 BOX SHADOW SYSTEM
+   * ================================================================= */
+  
+  --chatbot-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --chatbot-shadow-default: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --chatbot-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --chatbot-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --chatbot-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --chatbot-shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --chatbot-shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+  
+  /* =================================================================
+   * 📱 RESPONSIVE BREAKPOINTS
+   * ================================================================= */
+  
+  --chatbot-screen-sm: 640px;
+  --chatbot-screen-md: 768px;
+  --chatbot-screen-lg: 1024px;
+  --chatbot-screen-xl: 1280px;
+  --chatbot-screen-2xl: 1536px;
+  
+  /* =================================================================
+   * 🎛️ WIDGET SPECIFIC DIMENSIONS
+   * Personalizzabili per ogni tenant
+   * ================================================================= */
+  
+  /* Widget Container */
+  --chatbot-widget-width: 380px;
+  --chatbot-widget-height: 600px;
+  --chatbot-widget-max-width: 90vw;
+  --chatbot-widget-max-height: 80vh;
+  
+  /* Widget Button (floating) */
+  --chatbot-button-size: 60px;
+  --chatbot-button-offset: 20px;
+  
+  /* Message Container */
+  --chatbot-message-max-width: 80%;
+  --chatbot-avatar-size: 32px;
+  
+  /* Input Area */
+  --chatbot-input-height: 44px;
+  --chatbot-input-max-height: 120px;
+  
+  /* Header */
+  --chatbot-header-height: 60px;
+  
+  /* =================================================================
+   * ⚡ ANIMATION & TRANSITIONS
+   * ================================================================= */
+  
+  --chatbot-transition-fast: 150ms ease;
+  --chatbot-transition-normal: 250ms ease;
+  --chatbot-transition-slow: 350ms ease;
+  
+  --chatbot-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --chatbot-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --chatbot-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* =================================================================
+   * ♿ ACCESSIBILITY & FOCUS SYSTEM
+   * WCAG 2.1 AA Compliant
+   * ================================================================= */
+  
+  /* Focus Ring */
+  --chatbot-focus-ring-width: 2px;
+  --chatbot-focus-ring-offset: 2px;
+  --chatbot-focus-ring-color: var(--chatbot-primary-500);
+  
+  /* High Contrast Mode Support */
+  --chatbot-high-contrast-border: 1px solid;
+  --chatbot-high-contrast-outline: 2px solid;
+  
+  /* Minimum Touch Target Size (44px WCAG) */
+  --chatbot-min-touch-target: 44px;
+  
+  /* =================================================================
+   * 🌙 DARK MODE SUPPORT
+   * ================================================================= */
+  
+  /* Text Colors */
+  --chatbot-text-primary: var(--chatbot-neutral-900);
+  --chatbot-text-secondary: var(--chatbot-neutral-600);
+  --chatbot-text-tertiary: var(--chatbot-neutral-500);
+  --chatbot-text-inverse: var(--chatbot-neutral-0);
+  
+  /* Background Colors */
+  --chatbot-bg-primary: var(--chatbot-neutral-0);
+  --chatbot-bg-secondary: var(--chatbot-neutral-50);
+  --chatbot-bg-tertiary: var(--chatbot-neutral-100);
+  
+  /* Border Colors */
+  --chatbot-border-primary: var(--chatbot-neutral-200);
+  --chatbot-border-secondary: var(--chatbot-neutral-300);
+  
+  /* =================================================================
+   * 🎨 SEMANTIC COLOR ASSIGNMENTS
+   * ================================================================= */
+  
+  /* Message Bubbles */
+  --chatbot-message-user-bg: var(--chatbot-primary-500);
+  --chatbot-message-user-text: var(--chatbot-neutral-0);
+  --chatbot-message-bot-bg: var(--chatbot-neutral-100);
+  --chatbot-message-bot-text: var(--chatbot-neutral-900);
+  
+  /* Buttons */
+  --chatbot-button-primary-bg: var(--chatbot-primary-500);
+  --chatbot-button-primary-text: var(--chatbot-neutral-0);
+  --chatbot-button-primary-hover: var(--chatbot-primary-600);
+  
+  --chatbot-button-secondary-bg: var(--chatbot-neutral-100);
+  --chatbot-button-secondary-text: var(--chatbot-neutral-700);
+  --chatbot-button-secondary-hover: var(--chatbot-neutral-200);
+  
+  /* Status Colors */
+  --chatbot-status-online: var(--chatbot-success-500);
+  --chatbot-status-offline: var(--chatbot-neutral-400);
+  --chatbot-status-away: var(--chatbot-warning-500);
+  --chatbot-status-busy: var(--chatbot-error-500);
+  
+  /* Citation Colors */
+  --chatbot-citation-bg: var(--chatbot-info-50);
+  --chatbot-citation-border: var(--chatbot-info-200);
+  --chatbot-citation-text: var(--chatbot-info-700);
+}
+
+/* =================================================================
+ * 🌙 DARK MODE OVERRIDES
+ * ================================================================= */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Text Colors - Dark Mode */
+    --chatbot-text-primary: var(--chatbot-neutral-50);
+    --chatbot-text-secondary: var(--chatbot-neutral-400);
+    --chatbot-text-tertiary: var(--chatbot-neutral-500);
+    --chatbot-text-inverse: var(--chatbot-neutral-900);
+    
+    /* Background Colors - Dark Mode */
+    --chatbot-bg-primary: var(--chatbot-neutral-900);
+    --chatbot-bg-secondary: var(--chatbot-neutral-800);
+    --chatbot-bg-tertiary: var(--chatbot-neutral-700);
+    
+    /* Border Colors - Dark Mode */
+    --chatbot-border-primary: var(--chatbot-neutral-700);
+    --chatbot-border-secondary: var(--chatbot-neutral-600);
+    
+    /* Message Bubbles - Dark Mode */
+    --chatbot-message-bot-bg: var(--chatbot-neutral-800);
+    --chatbot-message-bot-text: var(--chatbot-neutral-100);
+    
+    /* Buttons - Dark Mode */
+    --chatbot-button-secondary-bg: var(--chatbot-neutral-700);
+    --chatbot-button-secondary-text: var(--chatbot-neutral-200);
+    --chatbot-button-secondary-hover: var(--chatbot-neutral-600);
+    
+    /* Citations - Dark Mode */
+    --chatbot-citation-bg: var(--chatbot-info-900);
+    --chatbot-citation-border: var(--chatbot-info-700);
+    --chatbot-citation-text: var(--chatbot-info-300);
+  }
+}
+
+/* =================================================================
+ * 📱 FORCED DARK MODE CLASS
+ * Per quando si vuole forzare dark mode indipendentemente dalle preferenze
+ * ================================================================= */
+
+.chatbot-dark {
+  /* Stessi override del media query ma applicati via classe */
+  --chatbot-text-primary: var(--chatbot-neutral-50);
+  --chatbot-text-secondary: var(--chatbot-neutral-400);
+  --chatbot-text-tertiary: var(--chatbot-neutral-500);
+  --chatbot-text-inverse: var(--chatbot-neutral-900);
+  
+  --chatbot-bg-primary: var(--chatbot-neutral-900);
+  --chatbot-bg-secondary: var(--chatbot-neutral-800);
+  --chatbot-bg-tertiary: var(--chatbot-neutral-700);
+  
+  --chatbot-border-primary: var(--chatbot-neutral-700);
+  --chatbot-border-secondary: var(--chatbot-neutral-600);
+  
+  --chatbot-message-bot-bg: var(--chatbot-neutral-800);
+  --chatbot-message-bot-text: var(--chatbot-neutral-100);
+  
+  --chatbot-button-secondary-bg: var(--chatbot-neutral-700);
+  --chatbot-button-secondary-text: var(--chatbot-neutral-200);
+  --chatbot-button-secondary-hover: var(--chatbot-neutral-600);
+  
+  --chatbot-citation-bg: var(--chatbot-info-900);
+  --chatbot-citation-border: var(--chatbot-info-700);
+  --chatbot-citation-text: var(--chatbot-info-300);
+}
+
+/* =================================================================
+ * ♿ HIGH CONTRAST MODE SUPPORT
+ * Windows High Contrast / prefers-contrast: high
+ * ================================================================= */
+
+@media (prefers-contrast: high) {
+  :root {
+    /* Aumenta contrasti per accessibilità */
+    --chatbot-border-primary: var(--chatbot-neutral-900);
+    --chatbot-border-secondary: var(--chatbot-neutral-800);
+    
+    /* Focus ring più evidente */
+    --chatbot-focus-ring-width: 3px;
+    --chatbot-focus-ring-color: var(--chatbot-neutral-900);
+    
+    /* Ombre più definite */
+    --chatbot-shadow-default: 0 2px 8px 0 rgb(0 0 0 / 0.3);
+    --chatbot-shadow-lg: 0 15px 30px -5px rgb(0 0 0 / 0.3);
+  }
+}
+
+/* =================================================================
+ * 🎯 REDUCED MOTION SUPPORT
+ * prefers-reduced-motion: reduce
+ * ================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    /* Transizioni più veloci o rimosse */
+    --chatbot-transition-fast: 50ms ease;
+    --chatbot-transition-normal: 100ms ease;
+    --chatbot-transition-slow: 150ms ease;
+  }
+}
+
+/* =================================================================
+ * 📱 RESPONSIVE UTILITIES
+ * Mobile-first approach
+ * ================================================================= */
+
+@media (max-width: 640px) {
+  :root {
+    /* Widget più piccolo su mobile */
+    --chatbot-widget-width: 100vw;
+    --chatbot-widget-height: 100vh;
+    --chatbot-widget-max-width: 100vw;
+    --chatbot-widget-max-height: 100vh;
+    
+    /* Button più piccolo */
+    --chatbot-button-size: 56px;
+    --chatbot-button-offset: 16px;
+    
+    /* Messaggi più stretti */
+    --chatbot-message-max-width: 250px;
+    
+    /* Font leggermente più grande per mobile */
+    --chatbot-text-base: 1.125rem; /* 18px */
+  }
+}
+
+/* =================================================================
+ * 🎨 TENANT CUSTOMIZATION EXAMPLE
+ * Esempio di come un tenant può personalizzare i colori
+ * ================================================================= */
+
+/*
+Esempio per Tenant "AziendaRossa":
+
+.chatbot-widget[data-tenant="azienda-rossa"] {
+  --chatbot-primary-500: #dc2626; // Brand red
+  --chatbot-primary-600: #b91c1c;
+  --chatbot-primary-700: #991b1b;
+  
+  --chatbot-font-sans: 'Roboto', sans-serif; // Custom font
+  
+  --chatbot-widget-width: 420px; // Larger widget
+  --chatbot-border-radius-default: 12px; // More rounded
+}
+
+.chatbot-widget[data-tenant="azienda-blu"] {
+  --chatbot-primary-500: #1e40af; // Brand blue
+  --chatbot-primary-600: #1e3a8a;
+  --chatbot-primary-700: #1e293b;
+}
+*/

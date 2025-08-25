@@ -1,0 +1,518 @@
+/* ChatBot Fallback States Styles */
+
+.chatbot-fallback-container {
+    padding: var(--chatbot-spacing-md, 16px);
+    margin: var(--chatbot-spacing-sm, 8px) 0;
+    border-radius: var(--chatbot-border-radius, 8px);
+    font-family: var(--chatbot-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    position: relative;
+    overflow: hidden;
+}
+
+.fallback-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--chatbot-spacing-md, 16px);
+    align-items: center;
+    text-align: center;
+    position: relative;
+}
+
+/* Fallback Types */
+.fallback-offline {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #f59e0b;
+    color: #92400e;
+}
+
+.fallback-maintenance {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    border: 1px solid #3b82f6;
+    color: #1e40af;
+}
+
+.fallback-rateLimit {
+    background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+    border: 1px solid #ec4899;
+    color: #be185d;
+}
+
+.fallback-serverError {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    border: 1px solid #ef4444;
+    color: #dc2626;
+}
+
+.fallback-apiKeyInvalid {
+    background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+    border: 1px solid #f87171;
+    color: #b91c1c;
+}
+
+.fallback-timeout {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    border: 1px solid #6b7280;
+    color: #374151;
+}
+
+.fallback-degraded {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border: 1px solid #0ea5e9;
+    color: #0c4a6e;
+}
+
+/* Fallback Icon */
+.fallback-icon {
+    font-size: 32px;
+    line-height: 1;
+    margin-bottom: var(--chatbot-spacing-sm, 8px);
+    animation: fallback-pulse 2s ease-in-out infinite;
+}
+
+@keyframes fallback-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+}
+
+/* Fallback Text */
+.fallback-text {
+    flex: 1;
+    max-width: 100%;
+}
+
+.fallback-title {
+    margin: 0 0 var(--chatbot-spacing-sm, 8px);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.fallback-message {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+    opacity: 0.9;
+}
+
+/* Fallback Actions */
+.fallback-actions {
+    display: flex;
+    gap: var(--chatbot-spacing-sm, 8px);
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: var(--chatbot-spacing-sm, 8px);
+}
+
+.fallback-action-btn {
+    padding: 8px 16px;
+    border: 1px solid;
+    border-radius: var(--chatbot-border-radius-sm, 6px);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    min-height: 32px;
+    background: transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.fallback-action-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.fallback-action-btn.primary {
+    background-color: currentColor;
+    color: white;
+    border-color: currentColor;
+}
+
+.fallback-action-btn.primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.fallback-action-btn.secondary {
+    background-color: transparent;
+    color: currentColor;
+    border-color: currentColor;
+}
+
+.fallback-action-btn.secondary:hover:not(:disabled) {
+    background-color: currentColor;
+    color: white;
+    transform: translateY(-1px);
+}
+
+.fallback-action-btn:focus {
+    outline: 2px solid var(--chatbot-primary-color, #3b82f6);
+    outline-offset: 2px;
+}
+
+/* Notifications */
+.fallback-notification {
+    position: absolute;
+    top: -60px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: var(--chatbot-border-radius-sm, 6px);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    z-index: 1000;
+    animation: notification-slide-in 0.3s ease-out, notification-slide-out 0.3s ease-in 4.7s;
+    max-width: 90%;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.notification-success {
+    background: #10b981;
+    color: white;
+}
+
+.notification-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.notification-error {
+    background: #ef4444;
+    color: white;
+}
+
+.notification-info {
+    background: #3b82f6;
+    color: white;
+}
+
+@keyframes notification-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes notification-slide-out {
+    from {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+    }
+}
+
+/* Contact Modal */
+.fallback-contact-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000000;
+    font-family: var(--chatbot-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    animation: modal-fade-in 0.3s ease-out;
+}
+
+@keyframes modal-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.fallback-contact-modal .modal-content {
+    background: #ffffff;
+    border-radius: var(--chatbot-border-radius, 8px);
+    max-width: 400px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: modal-slide-in 0.3s ease-out;
+}
+
+@keyframes modal-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.fallback-contact-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.fallback-contact-modal .modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.fallback-contact-modal .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.2s ease;
+}
+
+.fallback-contact-modal .modal-close:hover {
+    color: #374151;
+}
+
+.fallback-contact-modal .modal-body {
+    padding: 20px 24px;
+}
+
+.fallback-contact-modal .modal-body p {
+    margin: 0 0 16px;
+    color: #374151;
+    line-height: 1.5;
+}
+
+.fallback-contact-modal .modal-body ul {
+    margin: 0;
+    padding-left: 20px;
+    color: #374151;
+}
+
+.fallback-contact-modal .modal-body li {
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.fallback-contact-modal .modal-actions {
+    padding: 16px 24px 24px;
+    text-align: right;
+}
+
+.fallback-contact-modal .btn-primary {
+    background: var(--chatbot-primary-color, #3b82f6);
+    color: white;
+    border: 1px solid var(--chatbot-primary-color, #3b82f6);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.fallback-contact-modal .btn-primary:hover {
+    background: var(--chatbot-primary-hover, #2563eb);
+    border-color: var(--chatbot-primary-hover, #2563eb);
+}
+
+/* Loading Indicator for Retry States */
+.fallback-loading {
+    position: relative;
+}
+
+.fallback-loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: loading-shimmer 1.5s infinite;
+}
+
+@keyframes loading-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Responsive Design */
+@media (max-width: 640px) {
+    .chatbot-fallback-container {
+        padding: var(--chatbot-spacing-sm, 12px);
+    }
+    
+    .fallback-content {
+        gap: var(--chatbot-spacing-sm, 12px);
+    }
+    
+    .fallback-icon {
+        font-size: 28px;
+    }
+    
+    .fallback-title {
+        font-size: 15px;
+    }
+    
+    .fallback-message {
+        font-size: 13px;
+    }
+    
+    .fallback-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .fallback-action-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .fallback-notification {
+        max-width: 95%;
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .fallback-contact-modal .modal-content {
+        width: 95%;
+        margin: 20px;
+    }
+    
+    .fallback-contact-modal .modal-header,
+    .fallback-contact-modal .modal-body,
+    .fallback-contact-modal .modal-actions {
+        padding: 16px 20px;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .fallback-offline {
+        background: linear-gradient(135deg, #451a03 0%, #78350f 100%);
+        border-color: #d97706;
+        color: #fbbf24;
+    }
+    
+    .fallback-maintenance {
+        background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+        border-color: #3b82f6;
+        color: #93c5fd;
+    }
+    
+    .fallback-rateLimit {
+        background: linear-gradient(135deg, #831843 0%, #be185d 100%);
+        border-color: #ec4899;
+        color: #f9a8d4;
+    }
+    
+    .fallback-serverError {
+        background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%);
+        border-color: #ef4444;
+        color: #fca5a5;
+    }
+    
+    .fallback-apiKeyInvalid {
+        background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+        border-color: #dc2626;
+        color: #fca5a5;
+    }
+    
+    .fallback-timeout {
+        background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+        border-color: #6b7280;
+        color: #d1d5db;
+    }
+    
+    .fallback-degraded {
+        background: linear-gradient(135deg, #0c4a6e 0%, #075985 100%);
+        border-color: #0ea5e9;
+        color: #7dd3fc;
+    }
+    
+    .fallback-contact-modal .modal-content {
+        background: #1f2937;
+        color: #f9fafb;
+    }
+    
+    .fallback-contact-modal .modal-header {
+        border-color: #374151;
+    }
+    
+    .fallback-contact-modal .modal-header h3 {
+        color: #f9fafb;
+    }
+    
+    .fallback-contact-modal .modal-body p,
+    .fallback-contact-modal .modal-body li {
+        color: #e5e7eb;
+    }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+    .chatbot-fallback-container {
+        border-width: 2px;
+    }
+    
+    .fallback-action-btn {
+        border-width: 2px;
+    }
+    
+    .fallback-action-btn:focus {
+        outline-width: 3px;
+    }
+    
+    .fallback-notification {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    .fallback-icon,
+    .fallback-loading::after,
+    .fallback-notification,
+    .fallback-contact-modal,
+    .fallback-contact-modal .modal-content {
+        animation: none;
+    }
+    
+    .fallback-action-btn:hover {
+        transform: none;
+    }
+    
+    .fallback-icon {
+        animation: none;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .chatbot-fallback-container {
+        background: white !important;
+        border: 1px solid #000 !important;
+        color: #000 !important;
+    }
+    
+    .fallback-actions {
+        display: none;
+    }
+    
+    .fallback-notification,
+    .fallback-contact-modal {
+        display: none;
+    }
+}

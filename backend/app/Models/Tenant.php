@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Tenant extends Model
 {
@@ -46,6 +47,40 @@ class Tenant extends Model
         return $this->belongsToMany(User::class, 'tenant_user')
             ->withPivot(['role'])
             ->withTimestamps();
+    }
+
+    public function widgetConfig(): HasOne
+    {
+        return $this->hasOne(WidgetConfig::class);
+    }
+
+    /**
+     * Get the API key for widget integration
+     */
+    public function getWidgetApiKey(): ?string
+    {
+        // Prefer the stored (encrypted) key if available; fallback to null
+        $apiKey = $this->apiKeys()->whereNull('revoked_at')->latest()->first();
+        if (!$apiKey) {
+            return null;
+        }
+        return $apiKey->key ?? null;
+    }
+
+    /**
+     * Get tenant forms for this tenant
+     */
+    public function forms(): HasMany
+    {
+        return $this->hasMany(TenantForm::class);
+    }
+
+    /**
+     * Get form submissions for this tenant
+     */
+    public function formSubmissions(): HasMany
+    {
+        return $this->hasMany(FormSubmission::class);
     }
 }
 

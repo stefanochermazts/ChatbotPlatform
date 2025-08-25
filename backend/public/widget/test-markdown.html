@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Markdown Parser</title>
+    <link rel="stylesheet" href="css/chatbot-design-system.css">
+    <link rel="stylesheet" href="css/chatbot-widget.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .test-header {
+            background: var(--chatbot-color-primary, #2563eb);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .test-content {
+            padding: 20px;
+        }
+        .test-input {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+        .test-output {
+            background: var(--chatbot-color-surface, #f8fafc);
+            border: 2px solid var(--chatbot-color-border, #e5e7eb);
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 150px;
+        }
+        .test-button {
+            background: var(--chatbot-color-primary, #2563eb);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        .test-button:hover {
+            background: var(--chatbot-color-primary-dark, #1d4ed8);
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="test-header">
+            <h1>🧪 Test Markdown Parser</h1>
+            <p>Testa il parser Markdown del chatbot widget</p>
+        </div>
+        
+        <div class="test-content">
+            <h2>📝 Input Markdown:</h2>
+            <textarea id="markdown-input" class="test-input" placeholder="Inserisci qui il markdown da testare...">## 🚀 Benvenuto nel sistema RAG!
+
+Ecco cosa posso fare per te:
+
+### 📋 Funzionalità disponibili:
+* **Ricerca semantica** nella knowledge base
+* *Risposta contextualizzata* con citazioni
+* `Elaborazione` del linguaggio naturale
+* ~~Vecchi metodi~~ → Nuove tecnologie!
+
+### 🔗 Link utili:
+- [Documentazione](https://example.com/docs)
+- [GitHub Repository](https://github.com/example/repo)
+
+### 💻 Esempio di codice:
+```javascript
+function saluta(nome) {
+    return `Ciao **${nome}**!`;
+}
+```
+
+#### 📞 Contatti:
+Per maggiori informazioni scrivi a `support@example.com`
+
+---
+
+> **Nota importante**: Il sistema supporta `markdown completo`!</textarea>
+
+            <button id="parse-button" class="test-button">🔄 Converti Markdown</button>
+            
+            <h2>✨ Output HTML:</h2>
+            <div id="markdown-output" class="test-output chatbot-message-bubble">
+                <em>Clicca "Converti Markdown" per vedere il risultato...</em>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple Markdown Parser for testing (replica di quello nel widget)
+        class MarkdownParser {
+            static parse(text) {
+                if (!text || typeof text !== 'string') {
+                    return text;
+                }
+
+                let html = text;
+
+                // Escape HTML di base per sicurezza
+                html = html.replace(/&/g, '&amp;')
+                          .replace(/</g, '&lt;')
+                          .replace(/>/g, '&gt;');
+
+                // Code blocks
+                html = html.replace(/```(\w+)?\n([\s\S]*?)\n?```/g, (match, lang, code) => {
+                    const language = lang ? ` class="language-${lang}"` : '';
+                    return `<pre class="chatbot-code-block"><code${language}>${code.trim()}</code></pre>`;
+                });
+
+                // Inline code
+                html = html.replace(/`([^`\n]+)`/g, '<code class="chatbot-inline-code">$1</code>');
+
+                // Links
+                html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>');
+
+                // Bold
+                html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong class="chatbot-bold">$1</strong>')
+                          .replace(/__([^_\n]+)__/g, '<strong class="chatbot-bold">$1</strong>');
+
+                // Italic
+                html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
+                          .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
+
+                // Headings
+                html = html.replace(/^### (.*$)/gm, '<h3 class="chatbot-heading-3">$1</h3>')
+                          .replace(/^## (.*$)/gm, '<h2 class="chatbot-heading-2">$1</h2>')
+                          .replace(/^# (.*$)/gm, '<h1 class="chatbot-heading-1">$1</h1>');
+
+                // Lists
+                html = html.replace(/^\s*[\*\-]\s+(.+)/gm, '<li class="chatbot-list-item">$1</li>');
+                
+                // Wrap consecutive list items in <ul>
+                html = html.replace(/(<li class="chatbot-list-item">.*?<\/li>)(\s*<li class="chatbot-list-item">.*?<\/li>)*/g, (match) => {
+                    return '<ul class="chatbot-list">' + match + '</ul>';
+                });
+
+                // Line breaks
+                html = html.replace(/  \n/g, '<br>')
+                          .replace(/\n\n/g, '<br><br>')
+                          .replace(/\n/g, '<br>');
+
+                // Strikethrough
+                html = html.replace(/~~([^~\n]+)~~/g, '<del class="chatbot-strikethrough">$1</del>');
+
+                return html;
+            }
+        }
+        
+        document.getElementById('parse-button').addEventListener('click', function() {
+            const input = document.getElementById('markdown-input').value;
+            const output = document.getElementById('markdown-output');
+            
+            try {
+                const parsed = MarkdownParser.parse(input);
+                output.innerHTML = parsed;
+            } catch (error) {
+                output.innerHTML = `<span style="color: red;">Errore: ${error.message}</span>`;
+            }
+        });
+
+        // Auto-parse on load
+        window.addEventListener('load', function() {
+            document.getElementById('parse-button').click();
+        });
+    </script>
+</body>
+</html>

@@ -7,8 +7,10 @@ use App\Models\Tenant;
 use App\Services\LLM\OpenAIChatService;
 use App\Services\RAG\KbSearchService;
 use App\Services\RAG\ContextBuilder;
+use App\Services\RAG\ConversationContextEnhancer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
 
 class ChatCompletionsController extends Controller
 {
@@ -16,6 +18,7 @@ class ChatCompletionsController extends Controller
         private readonly OpenAIChatService $chat,
         private readonly KbSearchService $kb,
         private readonly ContextBuilder $ctx,
+        private readonly ConversationContextEnhancer $conversationEnhancer,
     ) {}
 
     public function create(Request $request): JsonResponse
@@ -32,38 +35,105 @@ class ChatCompletionsController extends Controller
             'response_format' => ['nullable', 'array'],
         ]);
 
-        // Carica il tenant per accedere ai prompt personalizzati
         $tenant = Tenant::query()->find($tenantId);
-
         $queryText = $this->extractUserQuery($validated['messages']);
-        $retrieval = $this->kb->retrieve($tenantId, $queryText);
+        
+        // Conversational enhancement solo per retrieval (come nel tester)
+        $conversationContext = null;
+        $finalQuery = $queryText;
+        if ($this->conversationEnhancer->isEnabled() && count($validated['messages']) > 1) {
+            $conversationContext = $this->conversationEnhancer->enhanceQuery(
+                $queryText,
+                $validated['messages'],
+                $tenantId
+            );
+            if ($conversationContext['context_used']) {
+                $finalQuery = $conversationContext['enhanced_query'];
+            }
+        }
+
+        // Stesse config avanzate del tester
+        $kb = $this->forceAdvancedRagConfiguration();
+
+        // Retrieval come nel RAG tester (usa la query originale per intent detection)
+        $retrieval = $kb->retrieve($tenantId, $queryText, true);
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
 
-        // Costruisci il contesto compresso/deduplicato
-        $built = $this->ctx->build($citations);
-        $context = (string) ($built['context'] ?? '');
-        $sources = (array) ($built['sources'] ?? []);
+        // Debug esteso per tracciare configurazioni e comportamento
+        $debug = $retrieval['debug'] ?? [];
+        $debug['query_info'] = [
+            'original_query' => $queryText,
+            'final_query' => $finalQuery,
+            'conversation_used' => $conversationContext ? $conversationContext['context_used'] : false,
+        ];
+        $debug['rag_config'] = [
+            'hyde_enabled' => config('rag.advanced.hyde.enabled'),
+            'reranker_driver' => config('rag.reranker.driver'),
+            'vector_top_k' => config('rag.hybrid.vector_top_k'),
+            'bm25_top_k' => config('rag.hybrid.bm25_top_k'),
+            'mmr_take' => config('rag.hybrid.mmr_take'),
+            'mmr_lambda' => config('rag.hybrid.mmr_lambda'),
+            'neighbor_radius' => config('rag.hybrid.neighbor_radius'),
+            'reranker_top_n' => config('rag.reranker.top_n'),
+        ];
+        $debug['kb_info'] = [
+            'selected_kb' => $retrieval['debug']['selected_kb'] ?? null,
+            'tenant_id' => $tenantId,
+        ];
+        $retrieval['debug'] = $debug;
 
+        // Costruzione contextText come nel RAG tester
+        $contextText = $this->buildRagTesterContextText($tenant, $queryText, $citations);
+
+        // Costruisci payload partendo dai messaggi forniti, ma inserendo system prompt e context come nel tester
         $payload = $validated;
-        $payload['__citations'] = $citations;
-        
-        // Usa template personalizzato per il contesto se configurato
-        if ($context !== '') {
-            $contextMessage = $this->buildContextMessage($tenant, $context);
-            $payload['messages'] = array_merge([$contextMessage], $payload['messages']);
+
+        // Forza il modello del tester
+        $payload['model'] = 'gpt-4o-mini';
+
+        // Inserisci system prompt: custom del tenant oppure default come nel tester
+        $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
+            ? $tenant->custom_system_prompt
+            : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". Riporta sempre le fonti (titoli) usate.';
+        $payload['messages'] = array_merge([
+            ['role' => 'system', 'content' => $systemPrompt],
+        ], $payload['messages']);
+
+        // Appendi il contextText all'ultimo messaggio user, prefissando "Domanda: ..."
+        for ($i = count($payload['messages']) - 1; $i >= 0; $i--) {
+            if (($payload['messages'][$i]['role'] ?? '') === 'user') {
+                $original = (string) ($payload['messages'][$i]['content'] ?? $queryText);
+                $payload['messages'][$i]['content'] = 'Domanda: '.$queryText.(
+                    $contextText !== '' ? "\n".$contextText : ''
+                );
+                break;
+            }
         }
 
-        // Aggiungi prompt di sistema personalizzato se configurato
-        if ($tenant && !empty($tenant->custom_system_prompt)) {
-            $payload['messages'] = array_merge([
-                ['role' => 'system', 'content' => $tenant->custom_system_prompt],
-            ], $payload['messages']);
-        }
-
+        // Non aggiungiamo ulteriori system messages legati a expansion
         $result = $this->chat->chatCompletions($payload);
 
-        // Fallback “Non lo so” se confidenza/citazioni insufficienti
+        // Mantieni salvaguardia contro output più povero se era presente un'expansion (ma non sovrascrivere per schedule)
+        if (!empty($retrieval['response_text'])) {
+            $expansionText = (string) $retrieval['response_text'];
+            $expectsAddress = str_contains($expansionText, '📍') || str_contains($expansionText, 'Indirizzo');
+            $expectsPhone   = str_contains($expansionText, '📞') || str_contains($expansionText, 'Telefono');
+            $expectsEmail   = str_contains($expansionText, '📧') || str_contains($expansionText, 'Email');
+            $expectsHours   = str_contains($expansionText, '🕒') || str_contains($expansionText, 'Orari');
+            $finalContent = (string) ($result['choices'][0]['message']['content'] ?? '');
+            $hasAddress = str_contains($finalContent, '📍') || str_contains($finalContent, 'Indirizzo');
+            $hasPhone   = str_contains($finalContent, '📞') || str_contains($finalContent, 'Telefono');
+            $hasEmail   = str_contains($finalContent, '📧') || str_contains($finalContent, 'Email');
+            $hasHours   = str_contains($finalContent, '🕒') || str_contains($finalContent, 'Orari');
+            $isScheduleFocus = $expectsHours && !$expectsAddress && !$expectsPhone && !$expectsEmail;
+            $missing = ($expectsAddress && !$hasAddress) || ($expectsPhone && !$hasPhone) || ($expectsEmail && !$hasEmail) || ($expectsHours && !$hasHours);
+            if ($missing && !$isScheduleFocus) {
+                $result['choices'][0]['message']['content'] = $expansionText;
+            }
+        }
+
+        // Fallback controllato
         $minCit = (int) config('rag.answer.min_citations', 2);
         $minConf = (float) config('rag.answer.min_confidence', 0.15);
         $forceIfHas = (bool) config('rag.answer.force_if_has_citations', true);
@@ -73,7 +143,16 @@ class ChatCompletionsController extends Controller
         }
 
         $result['citations'] = $citations;
-        $result['retrieval'] = [ 'confidence' => $confidence, 'sources' => $sources ];
+        $result['retrieval'] = [ 'confidence' => $confidence ];
+        if ($conversationContext && $conversationContext['context_used']) {
+            $result['conversation_debug'] = [
+                'original_query' => $conversationContext['original_query'],
+                'enhanced_query' => $conversationContext['enhanced_query'],
+                'conversation_summary' => $conversationContext['conversation_summary'],
+                'processing_time_ms' => $conversationContext['processing_time_ms'],
+                'context_used' => true,
+            ];
+        }
 
         return response()->json($result);
     }
@@ -88,20 +167,60 @@ class ChatCompletionsController extends Controller
         return '';
     }
 
-    /**
-     * Costruisce il messaggio di contesto utilizzando il template personalizzato del tenant
-     */
-    private function buildContextMessage(?Tenant $tenant, string $context): array
+    private function forceAdvancedRagConfiguration(): \App\Services\RAG\KbSearchService
     {
-        if ($tenant && !empty($tenant->custom_context_template)) {
-            // Sostituisci il placeholder {context} nel template personalizzato
-            $content = str_replace('{context}', $context, $tenant->custom_context_template);
-        } else {
-            // Usa il template di default
-            $content = 'Contesto della knowledge base (compresso):\n'.$context;
-        }
+        // Configurazioni bilanciate per il widget (meno aggressive del tester)
+        // Disabilita HyDE per evitare timeout con OpenAI
+        Config::set('rag.advanced.hyde.enabled', false);
+        
+        // Usa embedding reranker invece di LLM per velocità
+        Config::set('rag.reranker.driver', 'embedding');
+        
+        // Usa configurazioni standard per il retrieval (più veloci)
+        Config::set('rag.hybrid.vector_top_k', 30);
+        Config::set('rag.hybrid.bm25_top_k', 50);
+        Config::set('rag.hybrid.mmr_take', 8);
+        Config::set('rag.hybrid.mmr_lambda', 0.3);
+        Config::set('rag.hybrid.neighbor_radius', 1);
+        Config::set('rag.reranker.top_n', 30);
+        
+        // Parametri LLM e fallback più permissivi
+        Config::set('rag.answer.min_citations', 1);
+        Config::set('rag.answer.min_confidence', 0.1);
+        Config::set('rag.answer.force_if_has_citations', true);
+        Config::set('rag.context.max_chars', 8000);
+        Config::set('rag.context.compress_if_over_chars', 1200);
+        Config::set('rag.context.compress_target_chars', 600);
+        
+        // Usa il KbSearchService esistente (no HyDE per evitare timeout)
+        return $this->kb;
+    }
 
-        return ['role' => 'system', 'content' => $content];
+    private function buildRagTesterContextText(?Tenant $tenant, string $query, array $citations): string
+    {
+        $contextText = '';
+        if (!empty($citations)) {
+            $parts = [];
+            foreach ($citations as $c) {
+                $title = $c['title'] ?? ('Doc '.($c['id'] ?? ''));
+                $snippet = trim((string) ($c['snippet'] ?? ''));
+                $extra = '';
+                if (!empty($c['phone'])) { $extra .= ($extra ? "\n" : '').'Telefono: '.$c['phone']; }
+                if (!empty($c['email'])) { $extra .= ($extra ? "\n" : '').'Email: '.$c['email']; }
+                if (!empty($c['address'])) { $extra .= ($extra ? "\n" : '').'Indirizzo: '.$c['address']; }
+                if (!empty($c['schedule'])) { $extra .= ($extra ? "\n" : '').'Orario: '.$c['schedule']; }
+                if ($snippet !== '') {
+                    $parts[] = '['.$title."]\n".$snippet.($extra !== '' ? "\n".$extra : '');
+                } elseif ($extra !== '') {
+                    $parts[] = '['.$title."]\n".$extra;
+                }
+            }
+            if ($parts !== []) {
+                $raw = implode("\n\n---\n\n", $parts);
+                $contextText = "Contesto (estratti rilevanti):\n".$raw;
+            }
+        }
+        return $contextText;
     }
 }
 

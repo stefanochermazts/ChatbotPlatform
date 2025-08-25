@@ -13,6 +13,7 @@ class ApiKey extends Model
     protected $fillable = [
         'tenant_id',
         'name',
+        'key',
         'key_hash',
         'scopes',
         'revoked_at',
@@ -21,6 +22,7 @@ class ApiKey extends Model
     protected $casts = [
         'scopes' => 'array',
         'revoked_at' => 'datetime',
+        'key' => 'encrypted',
     ];
 
     public function tenant(): BelongsTo

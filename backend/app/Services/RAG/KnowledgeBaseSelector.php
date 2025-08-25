@@ -20,7 +20,37 @@ class KnowledgeBaseSelector
      */
     public function selectForQuery(int $tenantId, string $query): array
     {
-        $hits = $this->text->searchTopK($tenantId, $query, 200, null);
+        // Boost per keyword specifiche SOW
+        $sowKeywords = ['sow', 'statement of work', 'contratto quadro', 'contratti quadro', 'servizi it'];
+        $queryLower = mb_strtolower($query);
+        foreach ($sowKeywords as $kw) {
+            if (str_contains($queryLower, $kw)) {
+                // Se la query contiene keyword SOW, cerca solo nelle KB con documenti SOW
+                $kbs = DB::table('knowledge_bases as kb')
+                    ->join('documents as d', 'd.knowledge_base_id', '=', 'kb.id')
+                    ->where('kb.tenant_id', $tenantId)
+                    ->where(function($q) {
+                        $q->where('d.title', 'like', '%SOW%')
+                          ->orWhere('d.title', 'like', '%Statement of Work%')
+                          ->orWhere('d.title', 'like', '%Contratto Quadro%');
+                    })
+                    ->select('kb.id', 'kb.name')
+                    ->distinct()
+                    ->get();
+                
+                if ($kbs->isNotEmpty()) {
+                    $kb = $kbs->first();
+                    return [
+                        'knowledge_base_id' => $kb->id,
+                        'kb_name' => $kb->name,
+                        'reason' => 'sow_keyword_match'
+                    ];
+                }
+            }
+        }
+
+        // Ridotto da 200 a 50 per evitare diluizione score
+        $hits = $this->text->searchTopK($tenantId, $query, 50, null);
         if ($hits === []) {
             $kb = $this->getDefaultKb($tenantId);
             return ['knowledge_base_id' => $kb?->id, 'kb_name' => $kb?->name, 'reason' => 'fallback_default_no_hits'];

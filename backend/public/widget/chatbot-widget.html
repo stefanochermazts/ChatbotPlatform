@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Chatbot widget accessibile per assistenza clienti">
+  <title>Chatbot Widget - Demo</title>
+  
+  <!-- Widget Styles -->
+  <link rel="stylesheet" href="./css/chatbot-design-system.css">
+  <link rel="stylesheet" href="./css/chatbot-widget.css">
+  <link rel="stylesheet" href="./css/chatbot-accessibility.css">
+  <link rel="stylesheet" href="./css/chatbot-citations.css">
+  <link rel="stylesheet" href="./css/chatbot-responsive.css">
+  <link rel="stylesheet" href="./css/chatbot-dark-mode.css">
+  <link rel="stylesheet" href="./css/chatbot-error-handling.css">
+  <link rel="stylesheet" href="./css/chatbot-quick-actions.css">
+  <link rel="stylesheet" href="./css/chatbot-fallback-states.css">
+  
+  <!-- Preload per performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- 
+    🤖 CHATBOT WIDGET STRUCTURE
+    
+    Questo è il template HTML del widget chatbot.
+    In produzione, questo viene iniettato dinamicamente nel DOM
+    del sito cliente tramite JavaScript.
+    
+    Accessibilità WCAG 2.1 AA:
+    - Semantic HTML5
+    - ARIA labels e roles
+    - Focus management
+    - Screen reader support
+    - Keyboard navigation
+    - High contrast support
+   -->
+
+  <!-- =================================================================
+       🚀 FLOATING TOGGLE BUTTON
+       Il pulsante che appare sempre visibile per aprire il widget
+       ================================================================= -->
+  <button 
+    id="chatbot-toggle-btn"
+    class="chatbot-toggle-button"
+    type="button"
+    aria-label="Apri chat assistente"
+    aria-haspopup="dialog"
+    aria-expanded="false"
+    title="Hai bisogno di aiuto? Clicca per aprire la chat"
+  >
+    <!-- Icon: Message Circle -->
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </svg>
+    <span class="chatbot-sr-only">Chat assistente</span>
+  </button>
+
+  <!-- =================================================================
+       💬 MAIN WIDGET DIALOG
+       Il widget principale che contiene tutta l'interfaccia chat
+       ================================================================= -->
+  <div 
+    id="chatbot-widget"
+    class="chatbot-widget"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="chatbot-title"
+    aria-describedby="chatbot-description"
+    data-tenant="demo"
+    data-theme="light"
+  >
+    <!-- Hidden description per screen readers -->
+    <div id="chatbot-description" class="chatbot-sr-only">
+      Finestra di chat con assistente virtuale. Puoi digitare messaggi e ricevere risposte in tempo reale. 
+      Usa Tab per navigare tra i controlli, Escape per chiudere la chat.
+    </div>
+
+    <!-- =================================================================
+         📝 HEADER
+         Titolo, avatar, status e pulsante chiudi
+         ================================================================= -->
+    <header class="chatbot-header" role="banner">
+      <!-- Avatar dell'assistente -->
+      <div class="chatbot-avatar" role="img" aria-label="Avatar assistente">
+        <span aria-hidden="true">🤖</span>
+      </div>
+
+      <!-- Informazioni assistente -->
+      <div class="chatbot-header-content">
+        <h1 id="chatbot-title" class="chatbot-title">
+          Assistente Virtuale
+        </h1>
+        <p class="chatbot-subtitle">
+          <span id="chatbot-status" aria-live="polite">
+            <span class="chatbot-status-indicator" aria-label="Online"></span>
+            Online
+          </span>
+        </p>
+      </div>
+
+      <!-- Theme Toggle Button -->
+      <button 
+        id="chatbot-theme-toggle" 
+        class="chatbot-theme-toggle" 
+        type="button" 
+        aria-label="Cambia tema (attuale: chiaro)"
+        title="Cambia tra tema chiaro e scuro"
+      >
+        <svg class="chatbot-theme-icon chatbot-theme-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="chatbot-theme-icon chatbot-theme-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+
+      <!-- Pulsante chiudi -->
+      <button 
+        id="chatbot-close-btn"
+        class="chatbot-close-button"
+        type="button"
+        aria-label="Chiudi chat"
+        title="Chiudi finestra chat (Esc)"
+      >
+        <!-- Icon: X -->
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </header>
+
+    <!-- =================================================================
+         💬 MESSAGES AREA
+         Contenitore principale per tutti i messaggi della conversazione
+         ================================================================= -->
+    <main 
+      id="chatbot-messages"
+      class="chatbot-messages"
+      role="log"
+      aria-live="polite"
+      aria-label="Conversazione chat"
+      tabindex="0"
+    >
+      <!-- Messaggio di benvenuto iniziale -->
+      <div class="chatbot-message bot" role="article" aria-label="Messaggio assistente">
+        <div class="chatbot-message-avatar" role="img" aria-label="Assistente">
+          🤖
+        </div>
+        <div class="chatbot-message-content">
+          <div class="chatbot-message-bubble">
+            Ciao! 👋 Sono il tuo assistente virtuale. Come posso aiutarti oggi?
+          </div>
+          <div class="chatbot-message-time" aria-label="Orario messaggio">
+            <time datetime="" id="welcome-time"></time>
+          </div>
+        </div>
+      </div>
+
+      <!-- Template per messaggi utente (hidden, clonato via JS) -->
+      <template id="chatbot-user-message-template">
+        <div class="chatbot-message user" role="article" aria-label="Tuo messaggio">
+          <div class="chatbot-message-avatar" role="img" aria-label="Tu">
+            👤
+          </div>
+          <div class="chatbot-message-content">
+            <div class="chatbot-message-bubble"></div>
+            <div class="chatbot-message-time" aria-label="Orario messaggio">
+              <time datetime=""></time>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Template per messaggi bot (hidden, clonato via JS) -->
+      <template id="chatbot-bot-message-template">
+        <div class="chatbot-message bot" role="article" aria-label="Messaggio assistente">
+          <div class="chatbot-message-avatar" role="img" aria-label="Assistente">
+            🤖
+          </div>
+          <div class="chatbot-message-content">
+            <div class="chatbot-message-bubble"></div>
+            <div class="chatbot-message-time" aria-label="Orario messaggio">
+              <time datetime=""></time>
+            </div>
+            <!-- Citations container (aggiunto dinamicamente) -->
+            <div class="chatbot-citations" style="display: none;">
+              <div class="chatbot-citations-title" id="citations-title">
+                🔗 Fonti consultate:
+              </div>
+              <div class="chatbot-citations-list" role="list" aria-labelledby="citations-title">
+                <!-- Citations aggiunte dinamicamente -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Template per indicatore di typing -->
+      <template id="chatbot-typing-template">
+        <div class="chatbot-message bot" role="article" aria-label="L'assistente sta scrivendo">
+          <div class="chatbot-message-avatar" role="img" aria-label="Assistente">
+            🤖
+          </div>
+          <div class="chatbot-message-content">
+            <div class="chatbot-typing" aria-live="polite">
+              <div class="chatbot-typing-indicator" aria-label="Sto scrivendo">
+                <div class="chatbot-typing-dot"></div>
+                <div class="chatbot-typing-dot"></div>
+                <div class="chatbot-typing-dot"></div>
+              </div>
+              <span class="chatbot-sr-only">L'assistente sta scrivendo una risposta</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Template per errori -->
+      <template id="chatbot-error-template">
+        <div class="chatbot-error" role="alert" aria-live="assertive">
+          <strong>Ops! Si è verificato un errore.</strong>
+          <p class="chatbot-error-message"></p>
+          <button class="chatbot-retry-button" type="button">
+            🔄 Riprova
+          </button>
+        </div>
+      </template>
+    </main>
+
+    <!-- =================================================================
+         ⌨️ INPUT AREA
+         Area per digitare e inviare messaggi
+         ================================================================= -->
+    <footer class="chatbot-input-container" role="contentinfo">
+      <form id="chatbot-form" class="chatbot-input-wrapper" novalidate>
+        <label for="chatbot-input" class="chatbot-sr-only">
+          Scrivi il tuo messaggio
+        </label>
+        <textarea
+          id="chatbot-input"
+          class="chatbot-input"
+          name="message"
+          placeholder="Scrivi un messaggio..."
+          rows="1"
+          maxlength="2000"
+          aria-describedby="chatbot-input-help"
+          aria-invalid="false"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="sentences"
+          spellcheck="true"
+        ></textarea>
+        
+        <!-- Hidden help text per screen readers -->
+        <div id="chatbot-input-help" class="chatbot-sr-only">
+          Premi Invio per inviare il messaggio, Shift+Invio per andare a capo. Massimo 2000 caratteri.
+        </div>
+
+        <button 
+          id="chatbot-send-btn"
+          class="chatbot-send-button"
+          type="submit"
+          aria-label="Invia messaggio"
+          title="Invia messaggio (Invio)"
+          disabled
+        >
+          <!-- Icon: Send -->
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22,2 15,22 11,13 2,9"></polygon>
+          </svg>
+          <span class="chatbot-sr-only">Invia</span>
+        </button>
+      </form>
+
+      <!-- Character counter (hidden per default, mostrato quando vicino al limite) -->
+      <div id="chatbot-char-counter" class="chatbot-char-counter" style="display: none;" aria-live="polite">
+        <span id="chatbot-char-count">0</span>/2000
+      </div>
+    </footer>
+  </div>
+
+  <!-- =================================================================
+       🐛 FALLBACK CONTENT
+       Contenuto mostrato se JavaScript è disabilitato
+       ================================================================= -->
+  <noscript>
+    <div class="chatbot-noscript" role="alert">
+      <h2>JavaScript Richiesto</h2>
+      <p>
+        Il widget di chat richiede JavaScript per funzionare. 
+        Per favore abilita JavaScript nel tuo browser per utilizzare l'assistente virtuale.
+      </p>
+      <p>
+        <strong>Alternative di contatto:</strong><br>
+        Email: <a href="mailto:support@example.com">support@example.com</a><br>
+        Telefono: <a href="tel:+390123456789">+39 012 345 6789</a>
+      </p>
+    </div>
+  </noscript>
+
+  <!-- =================================================================
+       ♿ ACCESSIBILITY ENHANCEMENTS
+       Script per miglioramenti accessibilità (caricato per primo)
+       ================================================================= -->
+  <script>
+    // Set initial timestamp for welcome message
+    document.addEventListener('DOMContentLoaded', function() {
+      const welcomeTime = document.getElementById('welcome-time');
+      if (welcomeTime) {
+        const now = new Date();
+        welcomeTime.setAttribute('datetime', now.toISOString());
+        welcomeTime.textContent = now.toLocaleTimeString('it-IT', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        });
+      }
+    });
+
+    // Basic accessibility helpers
+    (function() {
+      'use strict';
+      
+      // Announce to screen readers when widget opens/closes
+      function announceWidgetState(isOpen) {
+        const announcement = document.createElement('div');
+        announcement.setAttribute('aria-live', 'polite');
+        announcement.className = 'chatbot-sr-only';
+        announcement.textContent = isOpen 
+          ? 'Finestra chat aperta' 
+          : 'Finestra chat chiusa';
+        document.body.appendChild(announcement);
+        
+        // Remove after announcement
+        setTimeout(() => {
+          document.body.removeChild(announcement);
+        }, 1000);
+      }
+      
+      // Make available globally
+      window.chatbotAnnounce = announceWidgetState;
+    })();
+  </script>
+
+  <!-- Main widget JavaScript (loaded last) -->
+  <!-- Widget JavaScript -->
+  <script src="./js/chatbot-accessibility.js" defer></script>
+  <script src="./js/chatbot-citations.js" defer></script>
+  <script src="./js/chatbot-responsive.js" defer></script>
+  <script src="./js/chatbot-dark-mode.js" defer></script>
+  <script src="./js/chatbot-error-handling.js" defer></script>
+  <script src="./js/chatbot-quick-actions.js" defer></script>
+  <script src="./js/chatbot-fallback-manager.js" defer></script>
+  <script src="./js/chatbot-widget.js" defer></script>
+  <script src="./js/chatbot-theming.js" defer></script>
+  <script src="./js/chatbot-theme-toggle.js" defer></script>
+
+  <!-- =================================================================
+       🎨 INLINE STYLES FOR CRITICAL CSS
+       Stili critici inline per evitare FOUC (Flash of Unstyled Content)
+       ================================================================= -->
+  <style>
+    /* Critical CSS per evitare FOUC */
+    .chatbot-widget {
+      visibility: hidden;
+    }
+    
+    .chatbot-toggle-button {
+      visibility: hidden;
+    }
+    
+    /* Mostrato quando JS ha caricato */
+    .chatbot-widget.js-loaded,
+    .chatbot-toggle-button.js-loaded {
+      visibility: visible;
+    }
+    
+    /* NoScript styles */
+    .chatbot-noscript {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      max-width: 300px;
+      padding: 20px;
+      background: #fee;
+      border: 1px solid #fcc;
+      border-radius: 8px;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      color: #c53030;
+      z-index: 1000;
+    }
+    
+    .chatbot-noscript h2 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    .chatbot-noscript p {
+      margin: 10px 0;
+      line-height: 1.4;
+    }
+    
+    .chatbot-noscript a {
+      color: #c53030;
+      text-decoration: underline;
+    }
+  </style>
+</body>
+</html>

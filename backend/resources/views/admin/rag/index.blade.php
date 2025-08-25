@@ -31,9 +31,46 @@
     <span class="text-sm">Query</span>
     <textarea name="query" rows="3" class="w-full border rounded px-3 py-2" required>{{ $query ?? '' }}</textarea>
   </label>
-  <label class="inline-flex items-center gap-2">
-    <input type="checkbox" name="with_answer" value="1" /> Genera risposta con LLM
-  </label>
+  <div class="grid md:grid-cols-2 gap-3">
+    <label class="inline-flex items-center gap-2">
+      <input type="checkbox" name="with_answer" value="1" /> Genera risposta con LLM
+    </label>
+    <label class="inline-flex items-center gap-2">
+      <input type="checkbox" name="enable_hyde" value="1" @checked(old('enable_hyde', request('enable_hyde'))) /> 🔬 Abilita HyDE (Hypothetical Document Embeddings)
+    </label>
+  </div>
+  
+  <div class="grid md:grid-cols-2 gap-3">
+    <label class="inline-flex items-center gap-2">
+      <input type="checkbox" name="enable_conversation" value="1" @checked(old('enable_conversation', request('enable_conversation'))) onchange="toggleConversationMessages(this.checked)" /> 💬 Abilita Contesto Conversazionale
+    </label>
+    <div class="text-xs text-gray-600 self-end pb-2">
+      🧠 Usa la chat history per query context-aware (richiede messaggi precedenti)
+    </div>
+  </div>
+  
+  <div id="conversation-messages" class="hidden">
+    <label class="block">
+      <span class="text-sm">💬 Messaggi Conversazione (JSON)</span>
+      <textarea name="conversation_messages" rows="4" class="w-full border rounded px-3 py-2 font-mono text-xs" placeholder='[{"role": "user", "content": "Che orari ha la biblioteca?"}, {"role": "assistant", "content": "La biblioteca è aperta..."}, {"role": "user", "content": "E quanto costa il prestito?"}]'>{{ old('conversation_messages', request('conversation_messages')) }}</textarea>
+    </label>
+    <div class="text-xs text-gray-600 mt-1">
+      📝 Inserisci una conversazione in formato JSON per testare il context enhancement
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-3">
+    <label class="block">
+      <span class="text-sm">🎯 Reranker Strategy</span>
+      <select name="reranker_driver" class="w-full border rounded px-3 py-2">
+        <option value="embedding" @selected(old('reranker_driver', request('reranker_driver', 'embedding')) === 'embedding')>Embedding Similarity (Default)</option>
+        <option value="llm" @selected(old('reranker_driver', request('reranker_driver')) === 'llm')>🤖 LLM Reranker usa AI per valutare rilevanza (più accurato ma +costo)</option>
+        <option value="cohere" @selected(old('reranker_driver', request('reranker_driver')) === 'cohere')>Cohere Rerank API</option>
+      </select>
+    </label>
+    <div class="text-xs text-gray-600 self-end pb-2">
+      📊 LLM Reranker usa AI per valutare rilevanza (più accurato ma +costo)
+    </div>
+  </div>
   <div>
     <button class="px-3 py-2 bg-indigo-600 text-white rounded">Esegui</button>
   </div>
@@ -257,6 +294,182 @@ Fonti:
             <h3 class="font-medium">Queries</h3>
             <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['queries'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
+          
+          @if(!empty($result['trace']['hyde']))
+          <div>
+            <h3 class="font-medium text-purple-600">🔬 HyDE (Hypothetical Document Embeddings)</h3>
+            <div class="bg-purple-50 border border-purple-200 rounded p-3 space-y-2">
+              <div class="grid md:grid-cols-2 gap-3">
+                <div>
+                  <h4 class="font-medium text-sm text-purple-700">Status</h4>
+                  <div class="text-sm">
+                    <span class="inline-flex items-center px-2 py-1 rounded text-xs {{ $result['trace']['hyde']['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                      {{ $result['trace']['hyde']['success'] ? '✅ Success' : '❌ Failed' }}
+                    </span>
+                    <span class="ml-2 text-gray-600">{{ $result['trace']['hyde']['processing_time_ms'] ?? 0 }}ms</span>
+                  </div>
+                </div>
+                
+                @if($result['trace']['hyde']['success'] && !empty($result['trace']['hyde']['weights']))
+                <div>
+                  <h4 class="font-medium text-sm text-purple-700">Embedding Weights</h4>
+                  <div class="text-sm text-gray-600">
+                    Original: {{ $result['trace']['hyde']['weights']['original'] ?? 0 }}% • 
+                    Hypothetical: {{ $result['trace']['hyde']['weights']['hypothetical'] ?? 0 }}%
+                  </div>
+                </div>
+                @endif
+              </div>
+              
+              @if($result['trace']['hyde']['success'])
+              <div>
+                <h4 class="font-medium text-sm text-purple-700">Original Query</h4>
+                <div class="text-sm bg-white border rounded p-2">{{ $result['trace']['hyde']['original_query'] ?? '' }}</div>
+              </div>
+              
+              <div>
+                <h4 class="font-medium text-sm text-purple-700">Generated Hypothetical Document</h4>
+                <div class="text-sm bg-white border rounded p-2 max-h-32 overflow-auto">{{ $result['trace']['hyde']['hypothetical_document'] ?? '' }}</div>
+              </div>
+              @endif
+              
+              @if(!$result['trace']['hyde']['success'] && !empty($result['trace']['hyde']['error']))
+              <div>
+                <h4 class="font-medium text-sm text-red-700">Error</h4>
+                <div class="text-sm text-red-600 bg-white border rounded p-2">{{ $result['trace']['hyde']['error'] }}</div>
+              </div>
+              @endif
+            </div>
+          </div>
+          @endif
+          
+          @if(!empty($result['trace']['conversation']))
+          <div>
+            <h3 class="font-medium text-teal-600">💬 Conversation Context Enhancement</h3>
+            <div class="bg-teal-50 border border-teal-200 rounded p-3 space-y-2">
+              <div class="grid md:grid-cols-2 gap-3">
+                <div>
+                  <h4 class="font-medium text-sm text-teal-700">Context Status</h4>
+                  <div class="text-sm">
+                    <span class="inline-flex items-center px-2 py-1 rounded text-xs {{ $result['trace']['conversation']['context_used'] ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800' }}">
+                      {{ $result['trace']['conversation']['context_used'] ? '✅ Context Applied' : '🔄 No Context Used' }}
+                    </span>
+                    <span class="ml-2 text-gray-600">{{ $result['trace']['conversation']['processing_time_ms'] ?? 0 }}ms</span>
+                  </div>
+                </div>
+                
+                @if($result['trace']['conversation']['context_used'])
+                <div>
+                  <h4 class="font-medium text-sm text-teal-700">Enhancement Info</h4>
+                  <div class="text-sm text-gray-600">
+                    <div>Original: {{ mb_strlen($result['trace']['conversation']['original_query'] ?? '') }} chars</div>
+                    <div>Enhanced: {{ mb_strlen($result['trace']['conversation']['enhanced_query'] ?? '') }} chars</div>
+                  </div>
+                </div>
+                @endif
+              </div>
+              
+              @if($result['trace']['conversation']['context_used'])
+              <div>
+                <h4 class="font-medium text-sm text-teal-700">Original Query</h4>
+                <div class="text-sm bg-white border rounded p-2">{{ $result['trace']['conversation']['original_query'] ?? '' }}</div>
+              </div>
+              
+              <div>
+                <h4 class="font-medium text-sm text-teal-700">Enhanced Query (with conversation context)</h4>
+                <div class="text-sm bg-white border rounded p-2 max-h-32 overflow-auto">{{ $result['trace']['conversation']['enhanced_query'] ?? '' }}</div>
+              </div>
+              
+              @if(!empty($result['trace']['conversation']['conversation_summary']))
+              <div>
+                <h4 class="font-medium text-sm text-teal-700">Conversation Summary</h4>
+                <div class="text-sm bg-teal-25 border rounded p-2 max-h-24 overflow-auto">{{ $result['trace']['conversation']['conversation_summary'] }}</div>
+              </div>
+              @endif
+              @endif
+            </div>
+          </div>
+          @endif
+          
+          @if(!empty($result['trace']['reranking']) && $result['trace']['reranking']['driver'] === 'llm')
+          <div>
+            <h3 class="font-medium text-blue-600">🤖 LLM-as-a-Judge Reranking</h3>
+            <div class="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+              <div class="grid md:grid-cols-3 gap-3">
+                <div>
+                  <h4 class="font-medium text-sm text-blue-700">Reranker Info</h4>
+                  <div class="text-sm">
+                    <div>🎯 Driver: {{ $result['trace']['reranking']['driver'] }}</div>
+                    <div>🔄 Input: {{ $result['trace']['reranking']['input_candidates'] }} candidates</div>
+                    <div>✨ Output: {{ $result['trace']['reranking']['output_candidates'] }} candidates</div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 class="font-medium text-sm text-blue-700">LLM Scores</h4>
+                  <div class="text-sm max-h-32 overflow-auto">
+                    @foreach(array_slice($result['trace']['reranking']['top_candidates'] ?? [], 0, 5) as $i => $candidate)
+                    <div class="text-xs border-b pb-1 mb-1">
+                      {{ $i + 1 }}. Doc {{ $candidate['document_id'] ?? 'N/A' }}.{{ $candidate['chunk_index'] ?? 'N/A' }} 
+                      <span class="inline-flex items-center px-1 py-0.5 rounded text-xs {{ ($candidate['llm_score'] ?? 0) >= 70 ? 'bg-green-100 text-green-800' : (($candidate['llm_score'] ?? 0) >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
+                        🤖 {{ $candidate['llm_score'] ?? 0 }}/100
+                      </span>
+                      @if(isset($candidate['original_score']))
+                      <span class="text-gray-500 ml-1">(was {{ number_format($candidate['original_score'], 3) }})</span>
+                      @endif
+                    </div>
+                    @endforeach
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 class="font-medium text-sm text-blue-700">Score Distribution</h4>
+                  <div class="text-xs space-y-1">
+                    @php
+                    $scores = array_column($result['trace']['reranking']['top_candidates'] ?? [], 'llm_score');
+                    $excellent = count(array_filter($scores, fn($s) => $s >= 80));
+                    $good = count(array_filter($scores, fn($s) => $s >= 60 && $s < 80));
+                    $average = count(array_filter($scores, fn($s) => $s >= 40 && $s < 60));
+                    $poor = count(array_filter($scores, fn($s) => $s < 40));
+                    @endphp
+                    <div class="flex justify-between">
+                      <span>🚀 Excellent (80-100):</span> <span class="font-bold text-green-600">{{ $excellent }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>😊 Good (60-79):</span> <span class="font-bold text-blue-600">{{ $good }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>😐 Average (40-59):</span> <span class="font-bold text-yellow-600">{{ $average }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>😟 Poor (0-39):</span> <span class="font-bold text-red-600">{{ $poor }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              @if(!empty($result['trace']['reranking']['top_candidates']))
+              <div>
+                <h4 class="font-medium text-sm text-blue-700">Top Reranked Results Preview</h4>
+                <div class="bg-white border rounded p-2 max-h-40 overflow-auto">
+                  @foreach(array_slice($result['trace']['reranking']['top_candidates'] ?? [], 0, 3) as $i => $candidate)
+                  <div class="text-xs border-b pb-2 mb-2">
+                    <div class="flex justify-between items-center">
+                      <span class="font-medium">{{ $i + 1 }}. Doc {{ $candidate['document_id'] ?? 'N/A' }}.{{ $candidate['chunk_index'] ?? 'N/A' }}</span>
+                      <span class="inline-flex items-center px-2 py-1 rounded text-xs font-bold {{ ($candidate['llm_score'] ?? 0) >= 70 ? 'bg-green-100 text-green-800' : (($candidate['llm_score'] ?? 0) >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
+                        🤖 {{ $candidate['llm_score'] ?? 0 }}/100
+                      </span>
+                    </div>
+                    <div class="text-gray-600 mt-1">{{ mb_substr($candidate['text'] ?? '', 0, 150) }}{{ mb_strlen($candidate['text'] ?? '') > 150 ? '...' : '' }}</div>
+                  </div>
+                  @endforeach
+                </div>
+              </div>
+              @endif
+            </div>
+          </div>
+          @endif
+          
           <div>
             <h3 class="font-medium">Milvus health</h3>
             <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['milvus'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
@@ -324,5 +537,24 @@ Fonti:
     @endif
   </div>
 @endif
+<script>
+function toggleConversationMessages(enabled) {
+  const messagesDiv = document.getElementById('conversation-messages');
+  if (enabled) {
+    messagesDiv.classList.remove('hidden');
+  } else {
+    messagesDiv.classList.add('hidden');
+  }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+  const checkbox = document.querySelector('input[name="enable_conversation"]');
+  if (checkbox) {
+    toggleConversationMessages(checkbox.checked);
+  }
+});
+</script>
+
 @endsection
 

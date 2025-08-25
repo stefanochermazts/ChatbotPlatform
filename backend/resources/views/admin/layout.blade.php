@@ -13,6 +13,9 @@
       <a href="{{ route('admin.dashboard') }}" class="font-semibold">Admin</a>
       <div class="flex gap-4">
         <a class="hover:text-blue-600" href="{{ route('admin.tenants.index') }}">Clienti</a>
+        <a class="hover:text-blue-600" href="{{ route('admin.forms.index') }}">📝 Form</a>
+        <a class="hover:text-blue-600" href="{{ route('admin.widget-config.index') }}">Widget</a>
+        <a class="hover:text-blue-600" href="{{ route('admin.widget-analytics.index') }}">Analytics</a>
         <a class="hover:text-blue-600" href="{{ route('admin.rag.index') }}">RAG Tester</a>
         <form method="post" action="{{ route('admin.logout') }}">
           @csrf

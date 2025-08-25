@@ -1,0 +1,519 @@
+/*
+ * 🌐 Chatbot Widget - Accessibility Enhancements (WCAG 2.1 AA)
+ *
+ * This file provides comprehensive accessibility features for the chatbot widget:
+ * - Focus management and keyboard navigation
+ * - Screen reader support with ARIA attributes
+ * - High contrast mode support
+ * - Reduced motion preferences
+ * - Touch target accessibility
+ * - Color contrast compliance
+ */
+
+/* =================================================================
+   🎯 FOCUS MANAGEMENT
+   ================================================================= */
+
+/* Custom focus ring for better visibility */
+.chatbot-focus-ring {
+  position: relative;
+}
+
+.chatbot-focus-ring:focus {
+  outline: none;
+}
+
+.chatbot-focus-ring:focus::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 2px solid var(--chatbot-primary-500);
+  border-radius: inherit;
+  z-index: 1;
+  animation: chatbot-focus-pulse 0.2s ease-out;
+}
+
+@keyframes chatbot-focus-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Focus styles for interactive elements */
+.chatbot-input:focus,
+.chatbot-send-button:focus,
+.chatbot-close-button:focus,
+.chatbot-fab:focus {
+  outline: 2px solid var(--chatbot-primary-500);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+}
+
+/* Focus trap container */
+.chatbot-focus-trap {
+  position: relative;
+}
+
+.chatbot-focus-trap::before,
+.chatbot-focus-trap::after {
+  content: '';
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Skip link for keyboard users */
+.chatbot-skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background-color: var(--chatbot-primary-600);
+  color: white;
+  padding: 8px;
+  text-decoration: none;
+  border-radius: 4px;
+  z-index: 1000;
+  font-size: 14px;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.2s ease;
+}
+
+.chatbot-skip-link:focus {
+  opacity: 1;
+  transform: translateY(0);
+  top: 6px;
+}
+
+/* =================================================================
+   📢 SCREEN READER SUPPORT
+   ================================================================= */
+
+/* Screen reader only text */
+.chatbot-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Live regions for dynamic content announcements */
+.chatbot-live-region {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Status announcements */
+.chatbot-status-announcement {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Enhanced message roles for screen readers */
+.chatbot-message[role="group"] {
+  position: relative;
+}
+
+.chatbot-message[role="group"]::before {
+  content: attr(aria-label);
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* =================================================================
+   🎨 HIGH CONTRAST & FORCED COLORS
+   ================================================================= */
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+  .chatbot-container {
+    background-color: Canvas;
+    border: 1px solid ButtonText;
+    color: CanvasText;
+  }
+
+  .chatbot-header {
+    background-color: ButtonFace;
+    border-bottom: 1px solid ButtonText;
+    color: ButtonText;
+  }
+
+  .chatbot-message.user .chatbot-message-bubble {
+    background-color: Highlight;
+    color: HighlightText;
+    border: 1px solid HighlightText;
+  }
+
+  .chatbot-message.bot .chatbot-message-bubble {
+    background-color: Canvas;
+    color: CanvasText;
+    border: 1px solid ButtonText;
+  }
+
+  .chatbot-input {
+    background-color: Field;
+    color: FieldText;
+    border: 1px solid ButtonText;
+  }
+
+  .chatbot-send-button,
+  .chatbot-fab {
+    background-color: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+
+  .chatbot-send-button:hover,
+  .chatbot-send-button:focus,
+  .chatbot-fab:hover,
+  .chatbot-fab:focus {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  /* Ensure all interactive elements have visible borders */
+  button, input[type="text"], [role="button"] {
+    border: 1px solid ButtonText !important;
+  }
+}
+
+/* =================================================================
+   🎬 REDUCED MOTION
+   ================================================================= */
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .chatbot-container,
+  .chatbot-fab,
+  .chatbot-message,
+  .chatbot-input,
+  .chatbot-send-button,
+  .chatbot-loading-dots span {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Keep essential transitions but reduce them */
+  .chatbot-container {
+    transition: opacity 0.1s ease !important;
+  }
+
+  .chatbot-message {
+    transition: opacity 0.1s ease !important;
+  }
+
+  /* Disable loading animations */
+  .chatbot-loading-dots span {
+    animation: none !important;
+    opacity: 0.7;
+  }
+
+  /* Show loading state without animation */
+  .chatbot-loading-dots span:nth-child(1) { opacity: 1; }
+  .chatbot-loading-dots span:nth-child(2) { opacity: 0.7; }
+  .chatbot-loading-dots span:nth-child(3) { opacity: 0.4; }
+}
+
+/* =================================================================
+   📱 TOUCH & POINTER ACCESSIBILITY
+   ================================================================= */
+
+/* Minimum touch target size (44x44px per WCAG) */
+.chatbot-fab,
+.chatbot-send-button,
+.chatbot-close-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Larger touch targets on mobile */
+@media (max-width: 768px) {
+  .chatbot-fab {
+    width: 56px;
+    height: 56px;
+  }
+
+  .chatbot-send-button,
+  .chatbot-close-button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .chatbot-input {
+    min-height: 44px;
+    padding: 12px 16px;
+  }
+}
+
+/* Hover states only for devices that support hover */
+@media (hover: hover) {
+  .chatbot-fab:hover,
+  .chatbot-send-button:hover,
+  .chatbot-close-button:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* =================================================================
+   🔤 TEXT & READABILITY
+   ================================================================= */
+
+/* Ensure text scales properly with user zoom */
+.chatbot-container {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* Maintain readability at 200% zoom */
+@media (min-resolution: 2dppx) {
+  .chatbot-container {
+    font-size: 0.9rem;
+  }
+}
+
+/* Enhanced text contrast */
+.chatbot-message-bubble {
+  background-color: var(--chatbot-bg-message-bot);
+  color: var(--chatbot-text-primary);
+  /* Ensure minimum 4.5:1 contrast ratio */
+}
+
+.chatbot-message.user .chatbot-message-bubble {
+  background-color: var(--chatbot-bg-message-user);
+  color: var(--chatbot-text-inverted);
+  /* Ensure minimum 4.5:1 contrast ratio */
+}
+
+/* Error states with sufficient contrast */
+.chatbot-error-message {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chatbot-error-message {
+    background-color: #450a0a;
+    color: #fca5a5;
+    border: 1px solid #7f1d1d;
+  }
+}
+
+/* =================================================================
+   ⌨️ KEYBOARD NAVIGATION
+   ================================================================= */
+
+/* Visual feedback for keyboard navigation */
+.chatbot-container[data-keyboard-nav="true"] .chatbot-message:focus {
+  outline: 2px solid var(--chatbot-primary-500);
+  outline-offset: 2px;
+}
+
+/* Tab order indicators */
+.chatbot-tab-order {
+  position: relative;
+}
+
+.chatbot-tab-order::after {
+  content: attr(data-tab-index);
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: var(--chatbot-primary-600);
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Show tab order when debugging */
+.chatbot-container[data-debug-a11y="true"] .chatbot-tab-order::after {
+  opacity: 1;
+}
+
+/* =================================================================
+   🎯 LANDMARKS & STRUCTURE
+   ================================================================= */
+
+/* Proper landmark structure */
+.chatbot-container[role="dialog"] {
+  position: relative;
+}
+
+.chatbot-header[role="banner"] {
+  position: relative;
+}
+
+.chatbot-messages[role="log"] {
+  position: relative;
+}
+
+.chatbot-input-area[role="form"] {
+  position: relative;
+}
+
+/* =================================================================
+   🚨 ERROR STATES & ALERTS
+   ================================================================= */
+
+/* Accessible error styling */
+.chatbot-error-state {
+  border: 2px solid var(--chatbot-error-500);
+  background-color: var(--chatbot-error-50);
+  padding: var(--chatbot-spacing-md);
+  border-radius: var(--chatbot-border-radius-md);
+  margin: var(--chatbot-spacing-sm) 0;
+}
+
+.chatbot-error-state .chatbot-error-icon {
+  color: var(--chatbot-error-500);
+  margin-right: var(--chatbot-spacing-sm);
+}
+
+/* Alert role styling */
+[role="alert"] {
+  padding: var(--chatbot-spacing-md);
+  border-radius: var(--chatbot-border-radius-sm);
+  border-left: 4px solid var(--chatbot-warning-500);
+  background-color: var(--chatbot-warning-50);
+  color: var(--chatbot-warning-800);
+  margin: var(--chatbot-spacing-sm) 0;
+}
+
+/* Status role styling */
+[role="status"] {
+  padding: var(--chatbot-spacing-sm);
+  border-radius: var(--chatbot-border-radius-sm);
+  background-color: var(--chatbot-info-50);
+  color: var(--chatbot-info-800);
+  border: 1px solid var(--chatbot-info-200);
+}
+
+/* =================================================================
+   🔧 UTILITY CLASSES
+   ================================================================= */
+
+/* Hide decorative content from screen readers */
+.chatbot-decorative[aria-hidden="true"] {
+  pointer-events: none;
+}
+
+/* Skip navigation for complex widgets */
+.chatbot-skip-nav {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: 8px;
+  background-color: var(--chatbot-primary-600);
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.chatbot-skip-nav:focus {
+  left: 6px;
+  top: 6px;
+}
+
+/* Accessible hiding/showing */
+.chatbot-hidden-accessible {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* =================================================================
+   🎨 COLOR CONTRAST ENHANCEMENTS
+   ================================================================= */
+
+/* Ensure all text meets WCAG AA contrast requirements */
+:root {
+  /* Enhanced contrast ratios for accessibility */
+  --chatbot-contrast-aa-normal: 4.5; /* Normal text */
+  --chatbot-contrast-aa-large: 3.0;  /* Large text (18pt+) */
+  
+  /* High contrast variants */
+  --chatbot-text-high-contrast: #000000;
+  --chatbot-bg-high-contrast: #ffffff;
+  --chatbot-border-high-contrast: #000000;
+}
+
+/* High contrast preference */
+@media (prefers-contrast: high) {
+  :root {
+    --chatbot-text-primary: var(--chatbot-text-high-contrast);
+    --chatbot-bg-body: var(--chatbot-bg-high-contrast);
+    --chatbot-border-color: var(--chatbot-border-high-contrast);
+  }
+
+  .chatbot-message.user .chatbot-message-bubble {
+    background-color: #000000;
+    color: #ffffff;
+    border: 2px solid #000000;
+  }
+
+  .chatbot-message.bot .chatbot-message-bubble {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #000000;
+  }
+}
+
+/* =================================================================
+   📱 RESPONSIVE ACCESSIBILITY
+   ================================================================= */
+
+/* Accessibility enhancements for small screens */
+@media (max-width: 480px) {
+  /* Larger text for readability */
+  .chatbot-container {
+    font-size: 1.1rem;
+  }
+
+  /* More spacing for touch targets */
+  .chatbot-input-area {
+    padding: var(--chatbot-spacing-lg);
+  }
+
+  /* Simplified focus indicators */
+  .chatbot-input:focus {
+    outline: 3px solid var(--chatbot-primary-500);
+    outline-offset: 1px;
+  }
+}

@@ -7,7 +7,10 @@ use App\Models\Tenant;
 use App\Services\LLM\OpenAIChatService;
 use App\Services\RAG\MilvusClient;
 use App\Services\RAG\KbSearchService;
+use App\Services\RAG\HyDEExpander;
+use App\Services\RAG\ConversationContextEnhancer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
 
 class RagTestController extends Controller
 {
@@ -23,6 +26,10 @@ class RagTestController extends Controller
             'tenant_id' => ['required', 'integer', 'exists:tenants,id'],
             'query' => ['required', 'string'],
             'with_answer' => ['nullable', 'boolean'],
+            'enable_hyde' => ['nullable', 'boolean'],
+            'enable_conversation' => ['nullable', 'boolean'],
+            'conversation_messages' => ['nullable', 'string'],
+            'reranker_driver' => ['nullable', 'string', 'in:embedding,llm,cohere'],
             'top_k' => ['nullable', 'integer', 'min:1', 'max:50'],
             'mmr_lambda' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'max_output_tokens' => ['nullable', 'integer', 'min:32', 'max:8192'],
@@ -30,7 +37,81 @@ class RagTestController extends Controller
         $tenantId = (int) $data['tenant_id'];
         $tenant = Tenant::find($tenantId);
         $health = $milvus->health();
-        $retrieval = $kb->retrieve($tenantId, $data['query'], true);
+        
+        // Gestisci configurazioni temporanee per test
+        $originalHydeConfig = config('rag.advanced.hyde.enabled');
+        $originalRerankerDriver = config('rag.reranker.driver');
+        $originalConversationConfig = config('rag.conversation.enabled');
+        
+        $hydeEnabled = (bool) ($data['enable_hyde'] ?? false);
+        $conversationEnabled = (bool) ($data['enable_conversation'] ?? false);
+        $rerankerDriver = $data['reranker_driver'] ?? 'embedding';
+        
+        // Parse conversation messages se forniti
+        $conversationMessages = [];
+        if ($conversationEnabled && !empty($data['conversation_messages'])) {
+            try {
+                $parsedMessages = json_decode($data['conversation_messages'], true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($parsedMessages)) {
+                    $conversationMessages = $parsedMessages;
+                    // Aggiungi la query corrente come ultimo messaggio
+                    $conversationMessages[] = ['role' => 'user', 'content' => $data['query']];
+                }
+            } catch (\JsonException $e) {
+                // Ignora errori JSON, usa conversazione vuota
+            }
+        }
+        
+        try {
+            // Applica configurazioni temporanee
+            if ($hydeEnabled) {
+                Config::set('rag.advanced.hyde.enabled', true);
+            }
+            
+            if ($conversationEnabled) {
+                Config::set('rag.conversation.enabled', true);
+            }
+            
+            if ($rerankerDriver !== $originalRerankerDriver) {
+                Config::set('rag.reranker.driver', $rerankerDriver);
+            }
+            
+            // Crea KbSearchService con configurazioni aggiornate
+            if ($hydeEnabled) {
+                $hyde = app(HyDEExpander::class);
+                $kb = app()->makeWith(KbSearchService::class, ['hyde' => $hyde]);
+            }
+            
+            // Gestione query con contesto conversazionale
+            $finalQuery = $data['query'];
+            $conversationContext = null;
+            
+            if ($conversationEnabled && !empty($conversationMessages)) {
+                $conversationEnhancer = app(ConversationContextEnhancer::class);
+                $conversationContext = $conversationEnhancer->enhanceQuery(
+                    $data['query'],
+                    $conversationMessages,
+                    $tenantId
+                );
+                
+                if ($conversationContext['context_used']) {
+                    $finalQuery = $conversationContext['enhanced_query'];
+                }
+            }
+            
+            $retrieval = $kb->retrieve($tenantId, $finalQuery, true);
+            
+            // Aggiungi debug conversazione al trace
+            if ($conversationContext) {
+                $retrieval['debug']['conversation'] = $conversationContext;
+            }
+            
+        } finally {
+            // Ripristina configurazioni originali
+            Config::set('rag.advanced.hyde.enabled', $originalHydeConfig);
+            Config::set('rag.reranker.driver', $originalRerankerDriver);
+            Config::set('rag.conversation.enabled', $originalConversationConfig);
+        }
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
         $trace = $retrieval['debug'] ?? null;

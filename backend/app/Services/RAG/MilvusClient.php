@@ -79,8 +79,16 @@ class MilvusClient
 
     public function searchTopK(int $tenantId, array $queryVector, int $k = 10): array
     {
+        return $this->searchTopKWithEmbedding($tenantId, $queryVector, $k);
+    }
+    
+    /**
+     * Cerca usando un embedding già generato (per HyDE e altre tecniche avanzate)
+     */
+    public function searchTopKWithEmbedding(int $tenantId, array $queryEmbedding, int $k = 10): array
+    {
         $field = (new Field())
-            ->setFieldData(array_map('floatval', $queryVector))
+            ->setFieldData(array_map('floatval', $queryEmbedding))
             ->setMetricType($this->metric)
             ->setFieldName('vector');
 

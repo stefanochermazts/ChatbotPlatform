@@ -1,0 +1,637 @@
+/*
+ * 📎 Chatbot Widget - Citations Styles
+ *
+ * Stili per le citazioni RAG con deep-link ai documenti:
+ * - Citazioni interattive cliccabili
+ * - Modal per visualizzazione documenti
+ * - Stati di caricamento ed errore
+ * - Design responsive e accessibile
+ */
+
+/* =================================================================
+   📎 CITATIONS CONTAINER
+   ================================================================= */
+
+.chatbot-citations {
+  margin-top: var(--chatbot-spacing-md);
+  padding: var(--chatbot-spacing-md);
+  background-color: var(--chatbot-neutral-50);
+  border: 1px solid var(--chatbot-neutral-200);
+  border-radius: var(--chatbot-border-radius-md);
+  font-size: 0.875rem;
+}
+
+.chatbot-citations-header {
+  display: flex;
+  align-items: center;
+  gap: var(--chatbot-spacing-sm);
+  margin-bottom: var(--chatbot-spacing-sm);
+  font-weight: 600;
+  color: var(--chatbot-neutral-700);
+}
+
+.chatbot-citations-icon {
+  font-size: 1rem;
+}
+
+.chatbot-citations-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chatbot-citations-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--chatbot-spacing-sm);
+}
+
+/* =================================================================
+   📄 INDIVIDUAL CITATION
+   ================================================================= */
+
+.chatbot-citation {
+  background-color: var(--chatbot-neutral-0, white);
+  border: 1px solid var(--chatbot-neutral-200);
+  border-radius: var(--chatbot-border-radius-sm);
+  padding: var(--chatbot-spacing-sm);
+  transition: all 0.2s ease;
+}
+
+.chatbot-citation:hover {
+  border-color: var(--chatbot-primary-300);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+  transform: translateY(-1px);
+}
+
+.chatbot-citation-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--chatbot-spacing-sm);
+  margin-bottom: var(--chatbot-spacing-xs);
+}
+
+.chatbot-citation-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.chatbot-citation-title {
+  flex: 1;
+  background: none;
+  border: none;
+  text-align: left;
+  font-weight: 600;
+  color: var(--chatbot-primary-600);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: all 0.2s ease;
+}
+
+.chatbot-citation-title:hover,
+.chatbot-citation-title:focus {
+  color: var(--chatbot-primary-700);
+  text-decoration-color: currentColor;
+  outline: none;
+}
+
+.chatbot-citation-title:focus {
+  outline: 2px solid var(--chatbot-primary-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.chatbot-citation-snippet {
+  color: var(--chatbot-neutral-600);
+  line-height: 1.5;
+  font-size: 0.8rem;
+  margin-left: calc(1.25rem + var(--chatbot-spacing-sm)); /* Align with title */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* =================================================================
+   📱 RESPONSIVE CITATIONS
+   ================================================================= */
+
+@media (max-width: 480px) {
+  .chatbot-citations {
+    padding: var(--chatbot-spacing-sm);
+    margin-top: var(--chatbot-spacing-sm);
+  }
+
+  .chatbot-citation {
+    padding: var(--chatbot-spacing-xs);
+  }
+
+  .chatbot-citation-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--chatbot-spacing-xs);
+  }
+
+  .chatbot-citation-snippet {
+    margin-left: 0;
+    -webkit-line-clamp: 2;
+  }
+}
+
+/* =================================================================
+   🖼️ CITATION MODAL
+   ================================================================= */
+
+.chatbot-citation-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: calc(var(--chatbot-widget-z-index) + 100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--chatbot-spacing-lg);
+  font-family: var(--chatbot-font-sans);
+}
+
+.chatbot-citation-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+.chatbot-citation-modal-container {
+  position: relative;
+  background-color: var(--chatbot-neutral-0, white);
+  border-radius: var(--chatbot-border-radius-lg);
+  box-shadow: var(--chatbot-shadow-lg);
+  width: 100%;
+  max-width: 900px;
+  height: 80vh;
+  max-height: 700px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* =================================================================
+   📋 MODAL HEADER
+   ================================================================= */
+
+.chatbot-citation-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--chatbot-spacing-lg);
+  border-bottom: 1px solid var(--chatbot-neutral-200);
+  background-color: var(--chatbot-neutral-50);
+  flex-shrink: 0;
+}
+
+.chatbot-citation-modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--chatbot-neutral-900);
+  flex: 1;
+  margin-right: var(--chatbot-spacing-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatbot-citation-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--chatbot-neutral-500);
+  cursor: pointer;
+  padding: var(--chatbot-spacing-xs);
+  border-radius: var(--chatbot-border-radius-sm);
+  transition: all 0.2s ease;
+  line-height: 1;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chatbot-citation-modal-close:hover,
+.chatbot-citation-modal-close:focus {
+  background-color: var(--chatbot-neutral-100);
+  color: var(--chatbot-neutral-700);
+  outline: none;
+}
+
+.chatbot-citation-modal-close:focus {
+  outline: 2px solid var(--chatbot-primary-500);
+  outline-offset: 2px;
+}
+
+/* =================================================================
+   📄 MODAL BODY
+   ================================================================= */
+
+.chatbot-citation-modal-body {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--chatbot-neutral-25, #fafafa);
+}
+
+.chatbot-citation-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: white;
+}
+
+/* =================================================================
+   ⏳ LOADING STATE
+   ================================================================= */
+
+.chatbot-citation-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--chatbot-spacing-md);
+  color: var(--chatbot-neutral-600);
+}
+
+.chatbot-citation-loading .chatbot-loading-dots {
+  display: flex;
+  gap: var(--chatbot-spacing-xs);
+}
+
+.chatbot-citation-loading .chatbot-loading-dots span {
+  width: 8px;
+  height: 8px;
+  background-color: var(--chatbot-primary-500);
+  border-radius: 50%;
+  animation: chatbot-citation-bounce 1.4s infinite ease-in-out both;
+}
+
+.chatbot-citation-loading .chatbot-loading-dots span:nth-child(1) { 
+  animation-delay: -0.32s; 
+}
+
+.chatbot-citation-loading .chatbot-loading-dots span:nth-child(2) { 
+  animation-delay: -0.16s; 
+}
+
+@keyframes chatbot-citation-bounce {
+  0%, 80%, 100% { 
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* =================================================================
+   ❌ ERROR STATE
+   ================================================================= */
+
+.chatbot-citation-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--chatbot-spacing-md);
+  padding: var(--chatbot-spacing-xl);
+  text-align: center;
+  color: var(--chatbot-neutral-600);
+}
+
+.chatbot-citation-error-icon {
+  font-size: 3rem;
+  margin-bottom: var(--chatbot-spacing-sm);
+}
+
+.chatbot-citation-error-message {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--chatbot-neutral-700);
+  margin-bottom: var(--chatbot-spacing-md);
+}
+
+.chatbot-citation-retry {
+  background-color: var(--chatbot-primary-600);
+  color: white;
+  border: none;
+  padding: var(--chatbot-spacing-sm) var(--chatbot-spacing-lg);
+  border-radius: var(--chatbot-border-radius-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chatbot-citation-retry:hover,
+.chatbot-citation-retry:focus {
+  background-color: var(--chatbot-primary-700);
+  outline: none;
+}
+
+.chatbot-citation-retry:focus {
+  outline: 2px solid var(--chatbot-primary-300);
+  outline-offset: 2px;
+}
+
+/* =================================================================
+   🦶 MODAL FOOTER
+   ================================================================= */
+
+.chatbot-citation-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--chatbot-spacing-md) var(--chatbot-spacing-lg);
+  border-top: 1px solid var(--chatbot-neutral-200);
+  background-color: var(--chatbot-neutral-50);
+  flex-shrink: 0;
+}
+
+.chatbot-citation-info {
+  display: flex;
+  align-items: center;
+  gap: var(--chatbot-spacing-md);
+  font-size: 0.875rem;
+  color: var(--chatbot-neutral-600);
+}
+
+.chatbot-citation-document-type {
+  background-color: var(--chatbot-neutral-200);
+  color: var(--chatbot-neutral-700);
+  padding: 2px 6px;
+  border-radius: var(--chatbot-border-radius-sm);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.chatbot-citation-actions {
+  display: flex;
+  gap: var(--chatbot-spacing-sm);
+}
+
+.chatbot-citation-download {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--chatbot-spacing-xs);
+  color: var(--chatbot-primary-600);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: var(--chatbot-spacing-xs) var(--chatbot-spacing-sm);
+  border-radius: var(--chatbot-border-radius-sm);
+  transition: all 0.2s ease;
+}
+
+.chatbot-citation-download:hover,
+.chatbot-citation-download:focus {
+  background-color: var(--chatbot-primary-50);
+  color: var(--chatbot-primary-700);
+  text-decoration: none;
+  outline: none;
+}
+
+.chatbot-citation-download:focus {
+  outline: 2px solid var(--chatbot-primary-500);
+  outline-offset: 2px;
+}
+
+/* =================================================================
+   📱 RESPONSIVE MODAL
+   ================================================================= */
+
+@media (max-width: 768px) {
+  .chatbot-citation-modal {
+    padding: var(--chatbot-spacing-sm);
+  }
+
+  .chatbot-citation-modal-container {
+    height: 90vh;
+    max-height: none;
+  }
+
+  .chatbot-citation-modal-header {
+    padding: var(--chatbot-spacing-md);
+  }
+
+  .chatbot-citation-modal-title {
+    font-size: 1.125rem;
+  }
+
+  .chatbot-citation-modal-footer {
+    flex-direction: column;
+    gap: var(--chatbot-spacing-sm);
+    align-items: flex-start;
+  }
+
+  .chatbot-citation-info {
+    order: 2;
+  }
+
+  .chatbot-citation-actions {
+    order: 1;
+    align-self: stretch;
+  }
+
+  .chatbot-citation-download {
+    justify-content: center;
+    padding: var(--chatbot-spacing-sm);
+  }
+}
+
+@media (max-width: 480px) {
+  .chatbot-citation-modal {
+    padding: 0;
+  }
+
+  .chatbot-citation-modal-container {
+    height: 100vh;
+    width: 100vw;
+    border-radius: 0;
+    max-height: none;
+  }
+
+  .chatbot-citation-error {
+    padding: var(--chatbot-spacing-lg);
+  }
+
+  .chatbot-citation-loading {
+    padding: var(--chatbot-spacing-lg);
+  }
+}
+
+/* =================================================================
+   🌙 DARK MODE SUPPORT
+   ================================================================= */
+
+@media (prefers-color-scheme: dark) {
+  .chatbot-citations {
+    background-color: var(--chatbot-neutral-800);
+    border-color: var(--chatbot-neutral-700);
+    color: var(--chatbot-neutral-200);
+  }
+
+  .chatbot-citations-header {
+    color: var(--chatbot-neutral-300);
+  }
+
+  .chatbot-citation {
+    background-color: var(--chatbot-neutral-900);
+    border-color: var(--chatbot-neutral-700);
+  }
+
+  .chatbot-citation:hover {
+    border-color: var(--chatbot-primary-400);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+  }
+
+  .chatbot-citation-title {
+    color: var(--chatbot-primary-400);
+  }
+
+  .chatbot-citation-title:hover,
+  .chatbot-citation-title:focus {
+    color: var(--chatbot-primary-300);
+  }
+
+  .chatbot-citation-snippet {
+    color: var(--chatbot-neutral-400);
+  }
+
+  .chatbot-citation-modal-container {
+    background-color: var(--chatbot-neutral-900);
+    border: 1px solid var(--chatbot-neutral-700);
+  }
+
+  .chatbot-citation-modal-header,
+  .chatbot-citation-modal-footer {
+    background-color: var(--chatbot-neutral-800);
+    border-color: var(--chatbot-neutral-700);
+  }
+
+  .chatbot-citation-modal-title {
+    color: var(--chatbot-neutral-100);
+  }
+
+  .chatbot-citation-modal-close {
+    color: var(--chatbot-neutral-400);
+  }
+
+  .chatbot-citation-modal-close:hover,
+  .chatbot-citation-modal-close:focus {
+    background-color: var(--chatbot-neutral-700);
+    color: var(--chatbot-neutral-200);
+  }
+
+  .chatbot-citation-modal-body {
+    background-color: var(--chatbot-neutral-800);
+  }
+
+  .chatbot-citation-info {
+    color: var(--chatbot-neutral-400);
+  }
+
+  .chatbot-citation-document-type {
+    background-color: var(--chatbot-neutral-700);
+    color: var(--chatbot-neutral-200);
+  }
+
+  .chatbot-citation-download {
+    color: var(--chatbot-primary-400);
+  }
+
+  .chatbot-citation-download:hover,
+  .chatbot-citation-download:focus {
+    background-color: var(--chatbot-neutral-800);
+    color: var(--chatbot-primary-300);
+  }
+}
+
+/* =================================================================
+   ♿ HIGH CONTRAST MODE
+   ================================================================= */
+
+@media (forced-colors: active) {
+  .chatbot-citations {
+    background-color: Canvas;
+    border-color: ButtonText;
+    color: CanvasText;
+  }
+
+  .chatbot-citation {
+    background-color: Canvas;
+    border-color: ButtonText;
+  }
+
+  .chatbot-citation-title {
+    color: LinkText;
+  }
+
+  .chatbot-citation-modal-container {
+    background-color: Canvas;
+    border: 2px solid ButtonText;
+  }
+
+  .chatbot-citation-modal-header,
+  .chatbot-citation-modal-footer {
+    border-color: ButtonText;
+  }
+
+  .chatbot-citation-retry,
+  .chatbot-citation-download {
+    border: 1px solid ButtonText;
+  }
+}
+
+/* =================================================================
+   ⚡ REDUCED MOTION
+   ================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .chatbot-citation,
+  .chatbot-citation-title,
+  .chatbot-citation-modal-close,
+  .chatbot-citation-retry,
+  .chatbot-citation-download {
+    transition: none;
+  }
+
+  .chatbot-citation:hover {
+    transform: none;
+  }
+
+  .chatbot-citation-loading .chatbot-loading-dots span {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  @keyframes chatbot-citation-bounce {
+    0%, 100% { 
+      transform: none;
+      opacity: 0.7;
+    }
+  }
+}
