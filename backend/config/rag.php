@@ -108,8 +108,8 @@ return [
         'reranker'   => filter_var(env('RAG_FEAT_RERANKER', true), FILTER_VALIDATE_BOOLEAN),
         'multiquery' => filter_var(env('RAG_FEAT_MULTIQUERY', true), FILTER_VALIDATE_BOOLEAN),
         'context'    => filter_var(env('RAG_FEAT_CONTEXT', true), FILTER_VALIDATE_BOOLEAN),
-        // Espansione informazioni di contatto (address/phone/email/schedule) – disattiva di default
-        'contact_expansion' => filter_var(env('RAG_CONTACT_EXPANSION_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        // Espansione informazioni di contatto (address/phone/email/schedule) – FORZATO ATTIVO
+        'contact_expansion' => true, // filter_var(env('RAG_CONTACT_EXPANSION_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'cache' => [

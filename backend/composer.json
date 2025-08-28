@@ -8,7 +8,7 @@
     "require": {
         "php": "^8.2",
         "firebase/php-jwt": "^6.11",
-        "hasanmertermis/milvus-php-client": "^1.0",
+        "fivefilters/readability.php": "^3.3",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "patrickschur/language-detection": "5.3",

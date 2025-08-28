@@ -86,10 +86,15 @@ class WidgetConfig extends Model
     
     public function getThemeConfigAttribute(): array
     {
+        // Get colors based on theme
+        $colors = $this->theme === 'custom' 
+            ? ($this->custom_colors ?? [])
+            : $this->getPredefinedThemeColors($this->theme);
+            
         return [
             'name' => $this->widget_name,
             'theme' => $this->theme,
-            'colors' => $this->custom_colors ?? [],
+            'colors' => $colors,
             'brand' => [
                 'name' => $this->widget_name,
                 'logo' => $this->logo_url,
@@ -218,6 +223,145 @@ class WidgetConfig extends Model
     private function camelToKebab(string $string): string
     {
         return strtolower(preg_replace('/([a-z0-9])([A-Z])/', '$1-$2', $string));
+    }
+    
+    /**
+     * Get predefined theme colors
+     */
+    private function getPredefinedThemeColors(string $theme): array
+    {
+        $themes = [
+            'default' => [
+                'primary' => [
+                    '50' => '#eff6ff',
+                    '100' => '#dbeafe', 
+                    '200' => '#bfdbfe',
+                    '300' => '#93c5fd',
+                    '400' => '#60a5fa',
+                    '500' => '#3b82f6', // Main blue
+                    '600' => '#2563eb',
+                    '700' => '#1d4ed8',
+                    '800' => '#1e40af',
+                    '900' => '#1e3a8a'
+                ]
+            ],
+            'corporate' => [
+                'primary' => [
+                    '50' => '#f8fafc',
+                    '100' => '#f1f5f9',
+                    '200' => '#e2e8f0', 
+                    '300' => '#cbd5e1',
+                    '400' => '#94a3b8',
+                    '500' => '#64748b', // Main gray
+                    '600' => '#475569',
+                    '700' => '#334155',
+                    '800' => '#1e293b',
+                    '900' => '#0f172a'
+                ]
+            ],
+            'friendly' => [
+                'primary' => [
+                    '50' => '#f0fdf4',
+                    '100' => '#dcfce7',
+                    '200' => '#bbf7d0',
+                    '300' => '#86efac',
+                    '400' => '#4ade80',
+                    '500' => '#22c55e', // Main green
+                    '600' => '#16a34a',
+                    '700' => '#15803d',
+                    '800' => '#166534',
+                    '900' => '#14532d'
+                ]
+            ],
+            'high-contrast' => [
+                'primary' => [
+                    '50' => '#ffffff',
+                    '100' => '#f3f4f6',
+                    '200' => '#e5e7eb',
+                    '300' => '#d1d5db', 
+                    '400' => '#9ca3af',
+                    '500' => '#000000', // Black for high contrast
+                    '600' => '#1f2937',
+                    '700' => '#374151',
+                    '800' => '#4b5563',
+                    '900' => '#6b7280'
+                ]
+            ]
+        ];
+        
+        return $themes[$theme] ?? $themes['default'];
+    }
+    
+    /**
+     * Generate CSS with current design system colors for easy customization
+     */
+    public function getCurrentColorsCSS(): string
+    {
+        $css = "/* 🎨 Current Widget Colors - Ready for Customization */\n";
+        $css .= "/* Copy and paste this into the Custom CSS field to start customizing */\n\n";
+        
+        $css .= ":root {\n";
+        
+        // Primary brand colors
+        $css .= "  /* Primary Brand Colors */\n";
+        $css .= "  --chatbot-primary-50: #eff6ff;\n";
+        $css .= "  --chatbot-primary-100: #dbeafe;\n";
+        $css .= "  --chatbot-primary-200: #bfdbfe;\n";
+        $css .= "  --chatbot-primary-300: #93c5fd;\n";
+        $css .= "  --chatbot-primary-400: #60a5fa;\n";
+        $css .= "  --chatbot-primary-500: #3b82f6; /* Main brand color - Change this! */\n";
+        $css .= "  --chatbot-primary-600: #2563eb;\n";
+        $css .= "  --chatbot-primary-700: #1d4ed8;\n";
+        $css .= "  --chatbot-primary-800: #1e40af;\n";
+        $css .= "  --chatbot-primary-900: #1e3a8a;\n\n";
+        
+        // Text colors
+        $css .= "  /* Text Colors */\n";
+        $css .= "  --chatbot-text-primary: #111827; /* Main text */\n";
+        $css .= "  --chatbot-text-secondary: #4b5563; /* Secondary text */\n";
+        $css .= "  --chatbot-text-tertiary: #6b7280; /* Muted text */\n";
+        $css .= "  --chatbot-text-inverse: #ffffff; /* Text on dark backgrounds */\n\n";
+        
+        // Background colors  
+        $css .= "  /* Background Colors */\n";
+        $css .= "  --chatbot-bg-primary: #ffffff; /* Main background */\n";
+        $css .= "  --chatbot-bg-secondary: #f9fafb; /* Secondary background */\n";
+        $css .= "  --chatbot-bg-tertiary: #f3f4f6; /* Tertiary background */\n\n";
+        
+        // Message specific colors
+        $css .= "  /* Message Bubbles */\n";
+        $css .= "  --chatbot-message-user-bg: var(--chatbot-primary-500); /* Your messages */\n";
+        $css .= "  --chatbot-message-user-text: var(--chatbot-text-inverse);\n";
+        $css .= "  --chatbot-message-bot-bg: #f3f4f6; /* Bot messages */\n";
+        $css .= "  --chatbot-message-bot-text: var(--chatbot-text-primary);\n\n";
+        
+        // Button colors
+        $css .= "  /* Buttons */\n";
+        $css .= "  --chatbot-button-primary-bg: var(--chatbot-primary-500);\n";
+        $css .= "  --chatbot-button-primary-text: var(--chatbot-text-inverse);\n";
+        $css .= "  --chatbot-button-primary-hover: var(--chatbot-primary-600);\n\n";
+        
+        // Border colors
+        $css .= "  /* Borders */\n";
+        $css .= "  --chatbot-border-primary: #e5e7eb;\n";
+        $css .= "  --chatbot-border-secondary: #d1d5db;\n";
+        
+        $css .= "}\n\n";
+        
+        $css .= "/* 💡 Quick Customization Examples */\n";
+        $css .= "/*\n";
+        $css .= "  Red Theme:\n";
+        $css .= "  --chatbot-primary-500: #ef4444;\n";
+        $css .= "  --chatbot-primary-600: #dc2626;\n\n";
+        $css .= "  Green Theme:\n";
+        $css .= "  --chatbot-primary-500: #22c55e;\n";
+        $css .= "  --chatbot-primary-600: #16a34a;\n\n";
+        $css .= "  Purple Theme:\n";
+        $css .= "  --chatbot-primary-500: #8b5cf6;\n";
+        $css .= "  --chatbot-primary-600: #7c3aed;\n";
+        $css .= "*/\n";
+        
+        return $css;
     }
     
     // =================================================================

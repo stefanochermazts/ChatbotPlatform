@@ -1,0 +1,103 @@
+<?php
+
+/**
+ * Default RAG Settings Template for Tenants
+ * Questi parametri possono essere personalizzati per ogni tenant
+ * nella colonna tenants.rag_settings (JSON)
+ */
+
+return [
+    // Parametri Hybrid Search
+    'hybrid' => [
+        'vector_top_k' => 40,      // Risultati vettoriali per query
+        'bm25_top_k' => 80,        // Risultati BM25 per query  
+        'rrf_k' => 60,             // Parametro fusion RRF
+        'mmr_lambda' => 0.25,      // Balance rilevanza/diversità (0-1)
+        'mmr_take' => 10,          // Documenti finali selezionati
+        'neighbor_radius' => 2,    // Chunk adiacenti da includere
+    ],
+
+    // Multi-Query Expansion
+    'multiquery' => [
+        'enabled' => true,
+        'num' => 3,                // Numero query parallele generate
+        'temperature' => 0.3,      // Creatività LLM per parafrasi
+    ],
+
+    // Thresholds e Fallbacks
+    'answer' => [
+        'min_citations' => 1,      // Citazioni minime per risposta
+        'min_confidence' => 0.08,  // Soglia confidence (0-1)
+        'force_if_has_citations' => true,
+        'fallback_message' => 'Non lo so con certezza: non trovo riferimenti sufficienti nella base di conoscenza.',
+    ],
+
+    // Reranking Strategy
+    'reranker' => [
+        'driver' => 'embedding',   // embedding | cohere | llm | none
+        'top_n' => 40,            // Candidati per reranking
+    ],
+
+    // Context Building
+    'context' => [
+        'max_chars' => 6000,      // Limite caratteri contesto
+        'compress_if_over_chars' => 7000,
+        'compress_target_chars' => 3500,
+    ],
+
+    // Tecniche RAG Avanzate
+    'advanced' => [
+        'hyde' => [
+            'enabled' => false,   // HyDE per query complesse
+            'weight_original' => 0.6,
+            'weight_hypothetical' => 0.4,
+        ],
+        'llm_reranker' => [
+            'enabled' => false,   // LLM-as-a-Judge reranking
+            'batch_size' => 5,
+        ],
+    ],
+
+    // Intent Detection Personalizzato
+    'intents' => [
+        'enabled' => [
+            'thanks' => true,
+            'phone' => true,
+            'email' => true,
+            'address' => true,
+            'schedule' => true,
+        ],
+        'min_score' => 0.5,       // Soglia minima intent
+        'execution_strategy' => 'priority_based',  // priority_based | first_match
+    ],
+
+    // Knowledge Base Selection Strategy
+    'kb_selection' => [
+        'mode' => 'auto',                 // auto | strict | multi
+        'bm25_boost_factor' => 1.0,       // Moltiplicatore per score BM25 (>1 favorisce più documenti)
+        'vector_boost_factor' => 1.0,     // Moltiplicatore per score vector (futuro)
+    ],
+
+    // Configurazioni Avanzate per Tipologia Cliente
+    'profiles' => [
+        // Profilo PA/Enti Pubblici
+        'public_administration' => [
+            'hybrid.vector_top_k' => 50,
+            'hybrid.bm25_top_k' => 100,
+            'hybrid.mmr_lambda' => 0.3,  // Più diversità
+            'answer.min_confidence' => 0.12,  // Soglia più alta
+        ],
+        // Profilo E-commerce
+        'ecommerce' => [
+            'hybrid.vector_top_k' => 30,
+            'hybrid.mmr_lambda' => 0.2,     // Meno diversità, più focus
+            'multiquery.num' => 2,          // Meno parafrasi
+        ],
+        // Profilo FAQ/Customer Service
+        'customer_service' => [
+            'reranker.driver' => 'cohere',
+            'answer.min_confidence' => 0.15,
+            'advanced.llm_reranker.enabled' => true,
+        ],
+    ],
+];

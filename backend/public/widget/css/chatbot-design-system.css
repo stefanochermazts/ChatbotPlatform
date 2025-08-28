@@ -227,7 +227,7 @@
   --chatbot-high-contrast-border: 1px solid;
   --chatbot-high-contrast-outline: 2px solid;
   
-  /* Minimum Touch Target Size (44px WCAG) */
+  /* Minimum Touch Target Size (44px WCAG - 48px mobile optimal) */
   --chatbot-min-touch-target: 44px;
   
   /* =================================================================
@@ -390,21 +390,26 @@
 
 @media (max-width: 640px) {
   :root {
-    /* Widget più piccolo su mobile */
+    /* Widget ottimizzato per mobile */
     --chatbot-widget-width: 100vw;
     --chatbot-widget-height: 100vh;
     --chatbot-widget-max-width: 100vw;
     --chatbot-widget-max-height: 100vh;
     
-    /* Button più piccolo */
-    --chatbot-button-size: 56px;
+    /* Touch targets ottimizzati per mobile (WCAG 2.1 AA Enhanced) */
+    --chatbot-min-touch-target: 48px; /* Da 44px a 48px per migliore accessibilità */
+    --chatbot-button-size: 60px; /* Da 56px a 60px per target più grandi */
     --chatbot-button-offset: 16px;
     
-    /* Messaggi più stretti */
+    /* Input più accessibile su mobile */
+    --chatbot-input-height: 48px; /* Da 44px a 48px */
+    
+    /* Messaggi più stretti per mobile */
     --chatbot-message-max-width: 250px;
     
-    /* Font leggermente più grande per mobile */
-    --chatbot-text-base: 1.125rem; /* 18px */
+    /* Typography ottimizzata per mobile */
+    --chatbot-text-base: 1.125rem; /* 18px - Più leggibile su schermi piccoli */
+    --chatbot-line-height-normal: 1.6; /* Miglior spaziatura tra righe */
   }
 }
 
@@ -433,3 +438,79 @@ Esempio per Tenant "AziendaRossa":
   --chatbot-primary-700: #1e293b;
 }
 */
+
+/* =================================================================
+ * 🌙 MANUAL THEME TOGGLE SUPPORT
+ * ================================================================= */
+
+/* Manual light theme (data-chatbot-theme="light") - Force light colors */
+[data-chatbot-theme="light"],
+[data-chatbot-theme="light"] #chatbot-container,
+[data-chatbot-theme="light"] #chatbot-fab,
+#chatbot-container[data-chatbot-theme="light"],
+#chatbot-fab[data-chatbot-theme="light"] {
+  /* Text colors - Light Mode */
+  --chatbot-text-primary: var(--chatbot-neutral-900);
+  --chatbot-text-secondary: var(--chatbot-neutral-700);
+  --chatbot-text-tertiary: var(--chatbot-neutral-500);
+  --chatbot-text-inverse: var(--chatbot-neutral-0);
+  
+  /* Background Colors - Light Mode */
+  --chatbot-bg-primary: var(--chatbot-neutral-0);
+  --chatbot-bg-secondary: var(--chatbot-neutral-50);
+  --chatbot-bg-tertiary: var(--chatbot-neutral-100);
+  
+  /* Border Colors - Light Mode */
+  --chatbot-border-primary: var(--chatbot-neutral-200);
+  --chatbot-border-secondary: var(--chatbot-neutral-300);
+  
+  /* Message Bubbles - Light Mode */
+  --chatbot-message-bot-bg: var(--chatbot-neutral-100);
+  --chatbot-message-bot-text: var(--chatbot-neutral-900);
+  
+  /* Buttons - Light Mode */
+  --chatbot-button-secondary-bg: var(--chatbot-neutral-100);
+  --chatbot-button-secondary-text: var(--chatbot-neutral-700);
+  --chatbot-button-secondary-hover: var(--chatbot-neutral-200);
+  
+  /* Citations - Light Mode */
+  --chatbot-citation-bg: var(--chatbot-info-50);
+  --chatbot-citation-border: var(--chatbot-info-300);
+  --chatbot-citation-text: var(--chatbot-info-700);
+}
+
+/* Manual dark theme (data-chatbot-theme="dark") - Force dark colors */
+[data-chatbot-theme="dark"],
+[data-chatbot-theme="dark"] #chatbot-container,
+[data-chatbot-theme="dark"] #chatbot-fab,
+#chatbot-container[data-chatbot-theme="dark"],
+#chatbot-fab[data-chatbot-theme="dark"] {
+  /* Text colors - Dark Mode */
+  --chatbot-text-primary: var(--chatbot-neutral-50);
+  --chatbot-text-secondary: var(--chatbot-neutral-400);
+  --chatbot-text-tertiary: var(--chatbot-neutral-500);
+  --chatbot-text-inverse: var(--chatbot-neutral-900);
+  
+  /* Background Colors - Dark Mode */
+  --chatbot-bg-primary: var(--chatbot-neutral-900);
+  --chatbot-bg-secondary: var(--chatbot-neutral-800);
+  --chatbot-bg-tertiary: var(--chatbot-neutral-700);
+  
+  /* Border Colors - Dark Mode */
+  --chatbot-border-primary: var(--chatbot-neutral-700);
+  --chatbot-border-secondary: var(--chatbot-neutral-600);
+  
+  /* Message Bubbles - Dark Mode */
+  --chatbot-message-bot-bg: var(--chatbot-neutral-800);
+  --chatbot-message-bot-text: var(--chatbot-neutral-100);
+  
+  /* Buttons - Dark Mode */
+  --chatbot-button-secondary-bg: var(--chatbot-neutral-700);
+  --chatbot-button-secondary-text: var(--chatbot-neutral-200);
+  --chatbot-button-secondary-hover: var(--chatbot-neutral-600);
+  
+  /* Citations - Dark Mode */
+  --chatbot-citation-bg: var(--chatbot-info-900);
+  --chatbot-citation-border: var(--chatbot-info-700);
+  --chatbot-citation-text: var(--chatbot-info-300);
+}

@@ -4,7 +4,7 @@ namespace App\Services\RAG;
 
 use Illuminate\Support\Facades\Log;
 
-class MilvusClient
+class MilvusClientPython
 {
     private string $collection;
     private string $pythonScript;
@@ -33,21 +33,12 @@ class MilvusClient
                 'collection' => $this->collection
             ], $params);
             
-            // Su Windows, escapeshellarg rovina il JSON. Usiamo un file temporaneo
-            $tempFile = tempnam(sys_get_temp_dir(), 'milvus_params_');
-            file_put_contents($tempFile, json_encode($pythonParams));
+            $jsonParams = json_encode($pythonParams, JSON_UNESCAPED_UNICODE);
+            $escapedParams = escapeshellarg($jsonParams);
             
-            // Modifica lo script per leggere da file invece che da parametro
-            $command = "python \"{$this->pythonScript}\" \"@{$tempFile}\" 2>&1";
+            // Esegui script Python
+            $command = "python \"{$this->pythonScript}\" {$escapedParams} 2>&1";
             $output = shell_exec($command);
-            
-            // Pulisci file temporaneo
-            if (file_exists($tempFile)) {
-                unlink($tempFile);
-            }
-            
-            // Rimuovere debug quando tutto funziona
-            // Log::debug('milvus.python.debug', ...);
             
             if (empty($output)) {
                 Log::error('milvus.python.no_output', ['command' => $command, 'operation' => $operation]);
@@ -138,16 +129,8 @@ class MilvusClient
         // Converti formato Python in formato atteso da Laravel
         $hits = [];
         foreach ($result['hits'] ?? [] as $hit) {
-            $primaryId = (int) $hit['id'];
-            
-            // Inverti la formula: primary_id = (document_id * 100000) + chunk_index
-            $documentId = intval($primaryId / 100000);
-            $chunkIndex = $primaryId % 100000;
-            
             $hits[] = [
-                'primary_id' => $primaryId,
-                'document_id' => $documentId,
-                'chunk_index' => $chunkIndex,
+                'primary_id' => (int) $hit['id'],
                 'distance' => (float) $hit['distance'],
                 'score' => (float) $hit['score']
             ];
@@ -163,16 +146,12 @@ class MilvusClient
         if (!$result['success']) {
             return [
                 'connected' => false,
-                'ok' => false,  // Per compatibilità con RAG tester view
                 'error' => $result['error'] ?? 'Health check failed'
             ];
         }
         
-        $connected = $result['connected'] ?? false;
-        
         return [
-            'connected' => $connected,
-            'ok' => $connected,  // Per compatibilità con RAG tester view
+            'connected' => $result['connected'] ?? false,
             'collections' => $result['collections'] ?? [],
             'collection_exists' => $result['collection_exists'] ?? false,
             'collection_info' => $result['collection_info'] ?? []

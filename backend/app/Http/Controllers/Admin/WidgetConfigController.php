@@ -230,6 +230,21 @@ class WidgetConfigController extends Controller
     }
     
     /**
+     * Get current design system colors as CSS for easy customization
+     */
+    public function getCurrentColors(Tenant $tenant)
+    {
+        $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
+        
+        $css = $config->getCurrentColorsCSS();
+        
+        return response()->json([
+            'success' => true,
+            'css' => $css
+        ]);
+    }
+    
+    /**
      * Preview widget with current configuration
      */
     public function preview(Request $request, Tenant $tenant)

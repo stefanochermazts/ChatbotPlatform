@@ -254,34 +254,63 @@
       // 2. Inline code (`...`)
       html = html.replace(/`([^`\n]+)`/g, '<code class="chatbot-inline-code">$1</code>');
 
-      // 3a. Auto-link URL (prima dei link markdown per non interferire)
-      html = html.replace(/(?<!["\[>])(https?:\/\/[^\s<]+[^\s<.,;:!?])/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>');
-      html = html.replace(/(?<!["\[>])(www\.[^\s<]+[^\s<.,;:!?])/g, '<a href="http://$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>');
+      // 3. MASK URLs temporaneamente per proteggerli dal processamento markdown
+      const urlPlaceholders = [];
+      let urlCounter = 0;
       
-      // 3b. Auto-link Email  
-      html = html.replace(/(?<!["\[>])([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '<a href="mailto:$1" class="chatbot-link">$1</a>');
+      // Maschera https:// URLs - uso formato immune alle regex bold/italic
+      html = html.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]}])/g, (match) => {
+        const placeholder = `###URLMASK${urlCounter++}###`;
+        urlPlaceholders.push({ placeholder, url: match });
+        return placeholder;
+      });
       
-      // 3c. Auto-link Telefoni italiani
-      html = html.replace(/(?<!["\[>])(\+39\s?\d{3}\s?\d{3}\s?\d{3,4})/g, '<a href="tel:$1" class="chatbot-link">$1</a>');
-      html = html.replace(/(?<!["\[>])(0\d{1,3}[\s\-]?\d{6,8})/g, '<a href="tel:$1" class="chatbot-link">$1</a>');
-      
-      // 3d. Links markdown [text](url)
-      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>');
+      // Maschera www. URLs - uso formato immune alle regex bold/italic
+      html = html.replace(/(?<!["\[>])(www\.[^\s<]+[^\s<.,;:!?)\]}])/g, (match) => {
+        const placeholder = `###URLMASK${urlCounter++}###`;
+        urlPlaceholders.push({ placeholder, url: match });
+        return placeholder;
+      });
 
-      // 4. Bold (**text** o __text__)
+      // 4. Bold (**text** o __text__) - ora sicuro dagli URL con nuovo formato placeholder
       html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong class="chatbot-bold">$1</strong>')
                 .replace(/__([^_\n]+)__/g, '<strong class="chatbot-bold">$1</strong>');
 
-      // 5. Italic (*text* o _text_)
+      // 5. Italic (*text* o _text_) - ora sicuro dagli URL con nuovo formato placeholder  
       html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
-      // 6. Headings (# ## ###)
+      // 6. Links markdown [text](url)
+      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>');
+
+      // 7. RESTORE URLs e linkificali
+      urlPlaceholders.forEach(({ placeholder, url }) => {
+        const linkedUrl = url.startsWith('www.') 
+          ? `<a href="http://${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${url}</a>`
+          : `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${url}</a>`;
+        
+        html = html.replace(placeholder, linkedUrl);
+      });
+      
+      // 8. Auto-link Email  
+      html = html.replace(/(?<!["\[>]|href="|>)(?![^<]*<\/a>)([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '<a href="mailto:$1" class="chatbot-link">$1</a>');
+      
+      // 9. Auto-link Telefoni italiani
+      html = html.replace(/(?<!["\[>]|href="|>)(?![^<]*<\/a>)(\+39\s?\d{3}\s?\d{3}\s?\d{3,4})/g, (match, phone) => {
+        const cleanPhone = phone.replace(/\s/g, ''); // Rimuovi spazi da href
+        return `<a href="tel:${cleanPhone}" class="chatbot-link">${phone}</a>`;
+      });
+      html = html.replace(/(?<!["\[>]|href="|>)(?![^<]*<\/a>)(0\d{1,3}[\s\-]?\d{6,8})/g, (match, phone) => {
+        const cleanPhone = phone.replace(/[\s\-]/g, ''); // Rimuovi spazi e trattini da href
+        return `<a href="tel:${cleanPhone}" class="chatbot-link">${phone}</a>`;
+      });
+
+      // 10. Headings (# ## ###)
       html = html.replace(/^### (.*$)/gm, '<h3 class="chatbot-heading-3">$1</h3>')
                 .replace(/^## (.*$)/gm, '<h2 class="chatbot-heading-2">$1</h2>')
                 .replace(/^# (.*$)/gm, '<h1 class="chatbot-heading-1">$1</h1>');
 
-      // 7. Lists (* item o - item)
+      // 11. Lists (* item o - item)
       html = html.replace(/^\s*[\*\-]\s+(.+)/gm, '<li class="chatbot-list-item">$1</li>');
       
       // Wrap consecutive list items in <ul>
@@ -289,12 +318,12 @@
         return '<ul class="chatbot-list">' + match + '</ul>';
       });
 
-      // 8. Line breaks (doppio spazio + newline o doppio newline)
+      // 12. Line breaks (doppio spazio + newline o doppio newline)
       html = html.replace(/  \n/g, '<br>')
                 .replace(/\n\n/g, '<br><br>')
                 .replace(/\n/g, '<br>');
 
-      // 9. Strikethrough (~~text~~)
+      // 13. Strikethrough (~~text~~)
       html = html.replace(/~~([^~\n]+)~~/g, '<del class="chatbot-strikethrough">$1</del>');
 
       return this.sanitize(html);

@@ -8,10 +8,15 @@ use Illuminate\Console\Command;
 class SetTenantIntentConfig extends Command
 {
     protected $signature = 'tenant:intents:set {--tenant=} {--enable=} {--extra=} {--mode=relaxed} {--score=}';
-    protected $description = 'Imposta configurazioni intent per un tenant (abilitazioni, keywords extra, scoping KB, soglia)';
+    protected $description = '[DEPRECATED] Usa la nuova interfaccia RAG admin - Imposta configurazioni intent per un tenant';
 
     public function handle(): int
     {
+        $this->warn('⚠️  COMANDO DEPRECATO: Questo comando è deprecato.');
+        $this->warn('   Usa invece la nuova interfaccia admin RAG:');
+        $this->warn('   http://localhost:8000/admin/tenants/{tenant_id}/rag-config');
+        $this->warn('');
+        
         $tenantId = (int) $this->option('tenant');
         if ($tenantId <= 0) {
             $this->error('Specifica --tenant=ID');

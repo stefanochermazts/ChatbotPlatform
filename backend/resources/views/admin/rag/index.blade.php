@@ -107,7 +107,18 @@
                 <a class="text-blue-600 underline" href="{{ $c['url'] }}" target="_blank">{{ $c['title'] ?? ('Doc '.$c['id']) }}</a>
               </div>
               @if(!empty($c['snippet']))
-                <blockquote class="p-2 bg-gray-50 border rounded">{{ $c['snippet'] }}</blockquote>
+                <div class="space-y-2">
+                  <div>
+                    <div class="text-xs font-medium text-gray-600 mb-1">📝 Snippet (estratto breve):</div>
+                    <blockquote class="p-2 bg-gray-50 border rounded text-sm">{{ $c['snippet'] }}</blockquote>
+                  </div>
+                  @if(!empty($c['chunk_text']) && $c['chunk_text'] !== $c['snippet'])
+                    <div>
+                      <div class="text-xs font-medium text-blue-600 mb-1">📄 Chunk completo:</div>
+                      <blockquote class="p-3 bg-blue-50 border border-blue-200 rounded text-sm max-h-60 overflow-y-auto">{{ $c['chunk_text'] }}</blockquote>
+                    </div>
+                  @endif
+                </div>
               @endif
               @if(!empty($c['phone']))
                 <div class="mt-1 text-sm"><span class="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">📞 Telefono: {{ $c['phone'] }}</span></div>
@@ -214,14 +225,14 @@ Fonti:
                 <div>
                   <h4 class="font-medium text-sm">Original Search</h4>
                   <div class="mt-1">
-                    <div><strong>Name:</strong> {{ $result['trace']['semantic_fallback']['original_name'] }}</div>
-                    <div><strong>Intent:</strong> {{ $result['trace']['semantic_fallback']['intent_type'] }}</div>
+                    <div><strong>Name:</strong> {{ $result['trace']['semantic_fallback']['original_name'] ?? 'N/A' }}</div>
+                    <div><strong>Intent:</strong> {{ $result['trace']['semantic_fallback']['intent_type'] ?? 'N/A' }}</div>
                   </div>
                 </div>
                 <div>
                   <h4 class="font-medium text-sm">Semantic Query</h4>
                   <div class="bg-white border rounded p-2 mt-1 font-mono text-xs">
-                    {{ $result['trace']['semantic_fallback']['semantic_query'] }}
+                    {{ $result['trace']['semantic_fallback']['semantic_query'] ?? 'N/A' }}
                   </div>
                 </div>
               </div>
@@ -230,13 +241,13 @@ Fonti:
               <div class="mt-3 grid md:grid-cols-3 gap-3 text-xs">
                 <div>
                   <h4 class="font-medium text-sm">Results Found</h4>
-                  <div class="text-lg font-bold {{ $result['trace']['semantic_fallback']['semantic_results_found'] > 0 ? 'text-green-600' : 'text-red-600' }}">
-                    {{ $result['trace']['semantic_fallback']['semantic_results_found'] }}
+                  <div class="text-lg font-bold {{ ($result['trace']['semantic_fallback']['semantic_results_found'] ?? 0) > 0 ? 'text-green-600' : 'text-red-600' }}">
+                    {{ $result['trace']['semantic_fallback']['semantic_results_found'] ?? 0 }}
                   </div>
                 </div>
                 <div>
                   <h4 class="font-medium text-sm">Filtered Results</h4>
-                  <div class="text-lg font-bold {{ $result['trace']['semantic_fallback']['filtered_results_count'] > 0 ? 'text-green-600' : 'text-red-600' }}">
+                  <div class="text-lg font-bold {{ ($result['trace']['semantic_fallback']['filtered_results_count'] ?? 0) > 0 ? 'text-green-600' : 'text-red-600' }}">
                     {{ $result['trace']['semantic_fallback']['filtered_results_count'] ?? 0 }}
                   </div>
                 </div>

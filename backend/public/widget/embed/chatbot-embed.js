@@ -59,9 +59,9 @@
                 '/widget/js/chatbot-quick-actions.js',
                 '/widget/js/chatbot-fallback-manager.js',
                 '/widget/js/chatbot-form-renderer.js',
+                '/widget/js/chatbot-theme-toggle.js',
                 '/widget/js/chatbot-widget.js',
-                '/widget/js/chatbot-theming.js',
-                '/widget/js/chatbot-theme-toggle.js'
+                '/widget/js/chatbot-theming.js'
             ]
         },
     
@@ -237,6 +237,9 @@
         tenantId: this.config.tenantId,
         theme: this.config.theme
       });
+
+      // Initialize theme toggle (inline fallback)
+      this.initThemeToggle();
        
       // Initialize widget
       await this.initializeWidget();
@@ -365,45 +368,43 @@
           aria-modal="true"
           aria-labelledby="chatbot-title"
           data-tenant="${this.config.tenantId || 'default'}"
-          data-theme="light"
+          data-theme="${this.config.theme || 'default'}"
         >
+          <!-- Skip Link per accessibilità WCAG 2.1 AA -->
+          <a href="#chatbot-messages" class="chatbot-skip-link" onclick="document.getElementById('chatbot-messages').focus(); return false;">
+            Salta alla conversazione
+          </a>
+          
           <header class="chatbot-header">
             <div class="chatbot-avatar">🤖</div>
             <div class="chatbot-header-content">
               <h1 id="chatbot-title" class="chatbot-title">Assistente Virtuale</h1>
               <p class="chatbot-subtitle">Online</p>
             </div>
-            
-            <!-- Theme Toggle Button -->
-            <button 
-              id="chatbot-theme-toggle" 
-              class="chatbot-theme-toggle" 
-              type="button" 
-              aria-label="Cambia tema (attuale: chiaro)"
-              title="Cambia tra tema chiaro e scuro"
-            >
-              <svg class="chatbot-theme-icon chatbot-theme-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <circle cx="12" cy="12" r="5"/>
-                <line x1="12" y1="1" x2="12" y2="3"/>
-                <line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/>
-                <line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-              </svg>
-              <svg class="chatbot-theme-icon chatbot-theme-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-              </svg>
-            </button>
-            
-            <button id="chatbot-close-btn" class="chatbot-close-button" type="button" aria-label="Chiudi chat">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+            <div class="chatbot-header-controls">
+              <button id="chatbot-theme-toggle-btn" class="chatbot-theme-toggle" type="button" aria-label="Cambia tema" title="Passa al tema scuro/chiaro">
+                <svg class="chatbot-theme-icon chatbot-theme-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="12" cy="12" r="5"></circle>
+                  <line x1="12" y1="1" x2="12" y2="3"></line>
+                  <line x1="12" y1="21" x2="12" y2="23"></line>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                  <line x1="1" y1="12" x2="3" y2="12"></line>
+                  <line x1="21" y1="12" x2="23" y2="12"></line>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+                <svg class="chatbot-theme-icon chatbot-theme-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+              </button>
+              <button id="chatbot-close-btn" class="chatbot-close-button" type="button" aria-label="Chiudi chat">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
           </header>
           
           <main id="chatbot-messages" class="chatbot-messages" role="log" aria-live="polite">
@@ -694,6 +695,121 @@
       if (!this.config.debug) {
         this.showFallback();
       }
+    }
+
+    // =================================================================
+    // 🌙 THEME TOGGLE
+    // =================================================================
+    
+    initThemeToggle() {
+      console.log('🌙 Initializing theme toggle (inline)');
+      
+      let currentTheme = 'light';
+      const STORAGE_KEY = 'chatbot_user_theme_mode';
+      
+      // Cleanup old conflicting keys
+      try {
+        // Remove old key that conflicts with theming system
+        const oldKey = 'chatbot_theme_preference';
+        if (localStorage.getItem(oldKey)) {
+          const oldValue = localStorage.getItem(oldKey);
+          localStorage.removeItem(oldKey);
+          // Migrate to new key if valid
+          if (oldValue === 'light' || oldValue === 'dark') {
+            localStorage.setItem(STORAGE_KEY, oldValue);
+            currentTheme = oldValue;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not cleanup old theme keys:', e);
+      }
+
+      // Load saved theme
+      try {
+        const savedTheme = localStorage.getItem(STORAGE_KEY);
+        if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
+          currentTheme = savedTheme;
+        }
+      } catch (e) {
+        console.warn('Could not load saved theme:', e);
+      }
+      
+      // Apply theme function
+      const applyTheme = (theme) => {
+        console.log('🌙 Applying theme:', theme);
+        
+        const containers = [
+          document.documentElement,
+          document.body,
+          document.querySelector('#chatbot-container'),
+          document.querySelector('.chatbot-widget')
+        ].filter(el => el !== null);
+
+        containers.forEach(container => {
+          container.setAttribute('data-chatbot-theme', theme);
+        });
+
+        currentTheme = theme;
+        
+        try {
+          localStorage.setItem(STORAGE_KEY, theme);
+        } catch (e) {
+          console.warn('Could not save theme:', e);
+        }
+
+        console.log('🌙 Theme applied to', containers.length, 'containers');
+      };
+      
+      // Toggle function
+      const toggleTheme = () => {
+        console.log('🌙 Toggle clicked, current theme:', currentTheme);
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        applyTheme(newTheme);
+        updateButton();
+      };
+      
+      // Update button function
+      const updateButton = () => {
+        const button = document.querySelector('#chatbot-theme-toggle-btn');
+        if (button) {
+          const label = currentTheme === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro';
+          button.setAttribute('aria-label', label);
+          button.setAttribute('title', label);
+          console.log('🌙 Button updated with label:', label);
+        }
+      };
+      
+      // Find and setup button
+      const setupButton = () => {
+        const button = document.querySelector('#chatbot-theme-toggle-btn');
+        if (button) {
+          console.log('🌙 Found toggle button, attaching listener');
+          button.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleTheme();
+          });
+          updateButton();
+          
+          // Apply initial theme
+          applyTheme(currentTheme);
+          
+          console.log('🌙 Theme toggle initialized successfully');
+          
+          // Expose debug functions
+          window.chatbotThemeDebug = {
+            toggleTheme: toggleTheme,
+            applyTheme: applyTheme,
+            getCurrentTheme: () => currentTheme
+          };
+          
+        } else {
+          console.warn('🌙 Toggle button not found');
+        }
+      };
+      
+      // Setup immediately or retry
+      setupButton();
     }
 
     dispatchEvent(eventName, detail) {

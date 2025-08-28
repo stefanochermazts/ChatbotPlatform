@@ -147,5 +147,54 @@ class ScraperAdminController extends Controller
         }
         return $headers;
     }
+
+    /**
+     * 🎯 NUOVA FUNZIONALITÀ: Scraping di un singolo URL tramite interfaccia admin
+     */
+    public function scrapeSingleUrl(Request $request)
+    {
+        $data = $request->validate([
+            'tenant_id' => ['required', 'integer', 'exists:tenants,id'],
+            'url' => ['required', 'url'],
+            'force' => ['sometimes', 'boolean'],
+            'knowledge_base_id' => ['nullable', 'integer', 'exists:knowledge_bases,id']
+        ]);
+
+        try {
+            $scraperService = new WebScraperService();
+            
+            $result = $scraperService->scrapeSingleUrl(
+                $data['tenant_id'],
+                $data['url'],
+                $data['force'] ?? false,
+                $data['knowledge_base_id'] ?? null
+            );
+
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Scraping completato con successo!',
+                    'data' => [
+                        'url' => $result['url'],
+                        'saved_count' => $result['saved_count'],
+                        'stats' => $result['stats'],
+                        'document' => $result['document'] ?? null
+                    ]
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'],
+                    'existing_document' => $result['existing_document'] ?? null
+                ], 400);
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Errore durante lo scraping: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
 

@@ -218,84 +218,99 @@
   color: var(--chatbot-text-primary);
 }
 
-.chatbot-close-button:focus-visible {
-  outline: var(--chatbot-focus-ring-width) solid var(--chatbot-focus-ring-color);
-  outline-offset: var(--chatbot-focus-ring-offset);
-}
-
-/* =================================================================
- * 🌙 THEME TOGGLE BUTTON
- * ================================================================= */
-
-.chatbot-theme-toggle {
-  /* Dimensions - same as close button */
-  width: 32px;
-  height: 32px;
-  
-  /* Visual */
-  background: transparent;
-  color: var(--chatbot-text-secondary);
-  border: none;
-  border-radius: var(--chatbot-radius-default);
-  cursor: pointer;
-  
-  /* Layout */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  
-  /* Animation */
-  transition: 
-    background-color var(--chatbot-transition-fast),
-    color var(--chatbot-transition-fast);
-  
-  /* Flex */
-  flex-shrink: 0;
-  margin-right: var(--chatbot-space-2);
-}
-
-.chatbot-theme-toggle:hover {
-  background: var(--chatbot-bg-tertiary);
-  color: var(--chatbot-text-primary);
-}
-
-.chatbot-theme-toggle:focus-visible {
-  outline: var(--chatbot-focus-ring-width) solid var(--chatbot-focus-ring-color);
-  outline-offset: var(--chatbot-focus-ring-offset);
-}
-
-/* Theme icons */
-.chatbot-theme-icon {
-  position: absolute;
-  transition: 
-    opacity var(--chatbot-transition-fast),
-    transform var(--chatbot-transition-fast);
-}
-
-/* Show sun icon in light mode */
-.chatbot-theme-light {
-  opacity: 1;
-  transform: rotate(0deg);
-}
-
-.chatbot-theme-dark {
-  opacity: 0;
-  transform: rotate(180deg);
-}
-
-/* Show moon icon in dark mode */
-[data-chatbot-theme="dark"] .chatbot-theme-light,
-.chatbot-widget[data-theme="dark"] .chatbot-theme-light {
-  opacity: 0;
-  transform: rotate(-180deg);
-}
-
-[data-chatbot-theme="dark"] .chatbot-theme-dark,
-.chatbot-widget[data-theme="dark"] .chatbot-theme-dark {
-  opacity: 1;
-  transform: rotate(0deg);
-}
+ .chatbot-close-button:focus-visible {
+   outline: var(--chatbot-focus-ring-width) solid var(--chatbot-focus-ring-color);
+   outline-offset: var(--chatbot-focus-ring-offset);
+ }
+ 
+ /* =================================================================
+  * 🎮 HEADER CONTROLS
+  * ================================================================= */
+ 
+ .chatbot-header-controls {
+   /* Layout */
+   display: flex;
+   align-items: center;
+   gap: var(--chatbot-space-2);
+   
+   /* Flex */
+   flex-shrink: 0;
+ }
+ 
+ /* =================================================================
+  * 🌙 THEME TOGGLE BUTTON
+  * ================================================================= */
+ 
+ .chatbot-theme-toggle {
+   /* Dimensions - same as close button */
+   width: 32px;
+   height: 32px;
+   
+   /* Visual */
+   background: transparent;
+   color: var(--chatbot-text-secondary);
+   border: none;
+   border-radius: var(--chatbot-radius-default);
+   cursor: pointer;
+   
+   /* Layout */
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   position: relative;
+   
+   /* Animation */
+   transition: 
+     background-color var(--chatbot-transition-fast),
+     color var(--chatbot-transition-fast);
+   
+   /* Flex */
+   flex-shrink: 0;
+ }
+ 
+ .chatbot-theme-toggle:hover {
+   background: var(--chatbot-bg-tertiary);
+   color: var(--chatbot-text-primary);
+ }
+ 
+ .chatbot-theme-toggle:focus-visible {
+   outline: var(--chatbot-focus-ring-width) solid var(--chatbot-focus-ring-color);
+   outline-offset: var(--chatbot-focus-ring-offset);
+ }
+ 
+ /* Theme icons */
+ .chatbot-theme-icon {
+   position: absolute;
+   transition: 
+     opacity var(--chatbot-transition-fast),
+     transform var(--chatbot-transition-fast);
+ }
+ 
+ /* Show sun icon in light mode */
+ .chatbot-theme-light {
+   opacity: 1;
+   transform: rotate(0deg);
+ }
+ 
+ .chatbot-theme-dark {
+   opacity: 0;
+   transform: rotate(180deg);
+ }
+ 
+ /* Show moon icon in dark mode */
+ [data-chatbot-theme="dark"] .chatbot-theme-light,
+ .chatbot-widget[data-chatbot-theme="dark"] .chatbot-theme-light,
+ #chatbot-container[data-chatbot-theme="dark"] .chatbot-theme-light {
+   opacity: 0;
+   transform: rotate(-180deg);
+ }
+ 
+ [data-chatbot-theme="dark"] .chatbot-theme-dark,
+ .chatbot-widget[data-chatbot-theme="dark"] .chatbot-theme-dark,
+ #chatbot-container[data-chatbot-theme="dark"] .chatbot-theme-dark {
+   opacity: 1;
+   transform: rotate(0deg);
+ }
 
 /* =================================================================
  * 💬 MESSAGES AREA
@@ -899,6 +914,36 @@
   border: 0;
 }
 
+/* Skip Link per accessibilità WCAG 2.1 AA */
+.chatbot-skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  background: var(--chatbot-primary-500);
+  color: var(--chatbot-text-inverse);
+  padding: 8px 12px;
+  border-radius: var(--chatbot-border-radius-default);
+  text-decoration: none;
+  font-size: var(--chatbot-text-sm);
+  font-weight: var(--chatbot-font-medium);
+  z-index: 1000;
+  transform: translateY(-100%);
+  transition: transform var(--chatbot-transition-normal);
+  box-shadow: var(--chatbot-shadow-lg);
+  border: 2px solid transparent;
+}
+
+.chatbot-skip-link:focus {
+  transform: translateY(0%);
+  outline: var(--chatbot-focus-ring-width) solid var(--chatbot-focus-ring-color);
+  outline-offset: var(--chatbot-focus-ring-offset);
+}
+
+.chatbot-skip-link:hover {
+  background: var(--chatbot-primary-600);
+  text-decoration: none;
+}
+
 /* Focus trap per modal behavior */
 .chatbot-widget[aria-modal="true"] {
   /* Implementato in JavaScript */
@@ -926,5 +971,40 @@
   .chatbot-typing-dot {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* =================================================================
+ * 📱 MOBILE ACCESSIBILITY ENHANCEMENTS
+ * Target size ottimizzati per touch su mobile
+ * ================================================================= */
+
+@media (max-width: 640px) {
+  /* Tutti gli elementi interattivi devono rispettare il target size minimo */
+  .chatbot-citation,
+  .chatbot-link,
+  .chatbot-button,
+  .chatbot-close-button,
+  .chatbot-theme-toggle,
+  .chatbot-send-button {
+    min-height: var(--chatbot-min-touch-target);
+    min-width: var(--chatbot-min-touch-target);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px; /* Padding generoso per touch */
+  }
+  
+  /* Input field più accessibile */
+  .chatbot-input {
+    min-height: var(--chatbot-min-touch-target);
+    padding: 12px 16px;
+    font-size: var(--chatbot-text-base); /* 18px su mobile */
+  }
+  
+  /* Link nelle citazioni più grandi */
+  .chatbot-citation a {
+    padding: 8px 12px;
+    border-radius: var(--chatbot-border-radius-default);
   }
 }

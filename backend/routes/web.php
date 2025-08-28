@@ -102,13 +102,29 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
     Route::get('/tenants/{tenant}/widget-config', [WidgetConfigController::class, 'show'])->name('widget-config.show');
     Route::get('/tenants/{tenant}/widget-config/edit', [WidgetConfigController::class, 'edit'])->name('widget-config.edit');
     Route::put('/tenants/{tenant}/widget-config', [WidgetConfigController::class, 'update'])->name('widget-config.update');
-    Route::get('/tenants/{tenant}/widget-config/preview', [WidgetConfigController::class, 'preview'])->name('widget-config.preview');
     Route::get('/tenants/{tenant}/widget-config/generate-embed', [WidgetConfigController::class, 'generateEmbed'])->name('widget-config.generate-embed');
     Route::get('/tenants/{tenant}/widget-config/generate-css', [WidgetConfigController::class, 'generateCSS'])->name('widget-config.generate-css');
+    Route::get('/tenants/{tenant}/widget-config/current-colors', [WidgetConfigController::class, 'getCurrentColors'])->name('widget-config.current-colors');
     Route::get('/tenants/{tenant}/widget-config/test-api', [WidgetConfigController::class, 'testApi'])->name('widget-config.test-api');
+    Route::get('/tenants/{tenant}/widget-config/preview', [WidgetConfigController::class, 'preview'])->name('widget-config.preview');
+
+    // RAG Configuration
+    Route::get('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'show'])->name('rag-config.show');
+Route::post('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'update'])->name('rag-config.update');
+Route::delete('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'reset'])->name('rag-config.reset');
+Route::get('/rag-config/profile-template', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'getProfileTemplate'])->name('rag-config.profile-template');
+Route::post('/tenants/{tenant}/rag-config/test', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'testConfig'])->name('rag-config.test');
+
+// 🎯 NUOVE ROUTE: Scraping singolo URL e re-scraping documenti
+Route::post('/scraper/single-url', [App\Http\Controllers\Admin\ScraperAdminController::class, 'scrapeSingleUrl'])->name('scraper.single-url');
+Route::post('/documents/{document}/rescrape', [DocumentAdminController::class, 'rescrape'])->name('documents.rescrape');
+Route::post('/tenants/{tenant}/documents/rescrape-all', [DocumentAdminController::class, 'rescrapeAll'])->name('documents.rescrape-all');
 
     // Widget Analytics
     Route::get('/widget-analytics', [WidgetAnalyticsController::class, 'index'])->name('widget-analytics.index');
     Route::get('/tenants/{tenant}/widget-analytics', [WidgetAnalyticsController::class, 'show'])->name('widget-analytics.show');
     Route::get('/tenants/{tenant}/widget-analytics/export', [WidgetAnalyticsController::class, 'export'])->name('widget-analytics.export');
 });
+
+// Public routes - accessible without authentication
+// Widget preview è ora disponibile solo tramite admin authentication

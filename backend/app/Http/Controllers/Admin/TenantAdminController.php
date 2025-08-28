@@ -64,11 +64,9 @@ class TenantAdminController extends Controller
             'default_language' => ['sometimes', 'nullable', 'string', 'max:10'],
             'custom_system_prompt' => ['sometimes', 'nullable', 'string', 'max:4000'],
             'custom_context_template' => ['sometimes', 'nullable', 'string', 'max:2000'],
-            'intents_enabled' => ['sometimes', 'nullable', 'array'],
             'extra_intent_keywords' => ['sometimes', 'nullable', 'string'],
-            'kb_scope_mode' => ['sometimes', 'nullable', 'in:relaxed,strict'],
-            'intent_min_score' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:1'],
             'custom_synonyms' => ['sometimes', 'nullable', 'string'],
+            'multi_kb_search' => ['sometimes', 'boolean'],
             'api_key_plain' => ['sometimes', 'nullable', 'string', 'min:20'],
         ]);
         

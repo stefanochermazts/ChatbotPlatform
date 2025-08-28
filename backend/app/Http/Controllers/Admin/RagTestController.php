@@ -99,6 +99,19 @@ class RagTestController extends Controller
                 }
             }
             
+            // 🔍 LOG: Configurazioni RAG Tester
+            \Log::info('RagTestController RAG Config', [
+                'tenant_id' => $tenantId,
+                'original_query' => $data['query'],
+                'final_query' => $finalQuery,
+                'conversation_enabled' => $conversationEnabled,
+                'conversation_enhanced' => $conversationContext ? $conversationContext['context_used'] : false,
+                'hyde_enabled' => Config::get('rag.advanced.hyde.enabled'),
+                'reranker_driver' => Config::get('rag.reranker.driver'),
+                'with_answer' => $data['with_answer'] ?? false,
+                'caller' => 'RagTestController'
+            ]);
+            
             $retrieval = $kb->retrieve($tenantId, $finalQuery, true);
             
             // Aggiungi debug conversazione al trace
@@ -170,6 +183,13 @@ class RagTestController extends Controller
                 'max_tokens' => (int) ($data['max_output_tokens'] ?? config('openai.max_output_tokens', 700)),
             ];
             $answer = $chat->chatCompletions($payload)['choices'][0]['message']['content'] ?? '';
+            
+            // 🆕 Aggiungi source_url del documento con confidenza più alta se disponibile
+            $bestSourceUrl = $this->getBestSourceUrl($citations);
+            if (!empty(trim($bestSourceUrl)) && count($citations) > 0 && $answer !== '') {
+                $answer .= "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
+            }
+            
             if (is_array($trace)) {
                 $trace['llm_context'] = $contextText;
                 $trace['llm_messages'] = $payload['messages'];
@@ -183,6 +203,31 @@ class RagTestController extends Controller
         }
         $tenants = Tenant::orderBy('name')->get();
         return view('admin.rag.index', ['tenants' => $tenants, 'result' => compact('citations', 'answer', 'confidence', 'health', 'trace'), 'query' => $data['query'], 'tenant_id' => $tenantId]);
+    }
+
+    /**
+     * Trova il source_url del documento con la confidenza più alta
+     */
+    private function getBestSourceUrl(array $citations): ?string
+    {
+        if (empty($citations)) {
+            return null;
+        }
+
+        $bestCitation = null;
+        $bestScore = -1;
+
+        foreach ($citations as $citation) {
+            // Usa il campo score se disponibile, altrimenti usa 1.0 come default
+            $score = (float) ($citation['score'] ?? 1.0);
+            
+            if ($score > $bestScore && !empty($citation['document_source_url'])) {
+                $bestScore = $score;
+                $bestCitation = $citation;
+            }
+        }
+
+        return $bestCitation['document_source_url'] ?? null;
     }
 }
 

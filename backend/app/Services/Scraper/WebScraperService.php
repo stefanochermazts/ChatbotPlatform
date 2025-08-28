@@ -9,6 +9,8 @@ use App\Jobs\IngestUploadedDocumentJob;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use fivefilters\Readability\Readability;
+use fivefilters\Readability\Configuration;
 
 class WebScraperService
 {
@@ -146,6 +148,193 @@ class WebScraperService
 
     private function extractContent(string $html, string $url): ?array
     {
+        // Strategia ibrida intelligente: sceglie il metodo migliore in base al tipo di contenuto
+        
+        // STEP 1: Analizza il tipo di contenuto per scegliere la strategia ottimale
+        $contentType = $this->analyzeContentType($html);
+        
+        \Log::debug("Analisi tipo contenuto", [
+            'url' => $url,
+            'content_type' => $contentType,
+            'has_tables' => $contentType['has_complex_tables'],
+            'text_ratio' => $contentType['text_ratio']
+        ]);
+        
+        // STEP 2: Se ha tabelle complesse o dati strutturati, usa metodo manuale
+        if ($contentType['has_complex_tables'] || $contentType['text_ratio'] < 0.6) {
+            \Log::debug("Usando estrazione manuale per dati strutturati", [
+                'url' => $url,
+                'method' => 'manual_dom_primary'
+            ]);
+            
+            $manualResult = $this->extractWithManualDOM($html, $url, null, null, null);
+            if ($manualResult && strlen($manualResult['content']) >= 100) {
+                return $manualResult;
+            }
+        }
+        
+        // STEP 3: Per contenuto testuale, prova Readability.php
+        $readabilityResult = $this->extractWithReadability($html, $url);
+        
+        if ($readabilityResult && strlen($readabilityResult['content']) >= 150) {
+            \Log::debug("Estrazione Readability.php riuscita", [
+                'url' => $url,
+                'content_length' => strlen($readabilityResult['content']),
+                'method' => 'readability'
+            ]);
+            return $readabilityResult;
+        }
+        
+        // STEP 4: Fallback finale al metodo manuale
+        \Log::debug("Fallback finale a estrazione manuale", [
+            'url' => $url,
+            'readability_length' => $readabilityResult ? strlen($readabilityResult['content']) : 0,
+            'method' => 'manual_dom_fallback'
+        ]);
+        
+        return $this->extractWithManualDOM($html, $url, null, null, null);
+    }
+
+    /**
+     * Analizza il tipo di contenuto per scegliere la strategia di estrazione ottimale
+     */
+    private function analyzeContentType(string $html): array
+    {
+        $analysis = [
+            'has_complex_tables' => false,
+            'text_ratio' => 0.0,
+            'has_forms' => false,
+            'has_structured_data' => false,
+            'content_type' => 'unknown'
+        ];
+        
+        // Verifica presenza di tabelle complesse
+        $tableCount = substr_count($html, '<table');
+        $responsiveTableCount = substr_count($html, 'hidden-xs') + substr_count($html, 'visible-xs');
+        
+        if ($tableCount > 0) {
+            // Ha tabelle responsive o con molte celle
+            $cellCount = substr_count($html, '<td') + substr_count($html, '<th');
+            if ($responsiveTableCount > 5 || $cellCount > 15) {
+                $analysis['has_complex_tables'] = true;
+                $analysis['content_type'] = 'data_table';
+            }
+        }
+        
+        // Calcola rapporto testo/markup
+        $textContent = strip_tags($html);
+        $textLength = strlen(trim($textContent));
+        $htmlLength = strlen($html);
+        
+        $analysis['text_ratio'] = $htmlLength > 0 ? $textLength / $htmlLength : 0;
+        
+        // Verifica altri pattern di dati strutturati
+        $structuredPatterns = [
+            'phone' => '/\b(?:\d{2,4}[\s\-]?){2,4}\d{2,4}\b/', // Numeri telefono
+            'address' => '/\b(?:via|piazza|corso|viale)\s+[^,\n]{5,50}/i', // Indirizzi
+            'hours' => '/\b\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}\b/', // Orari
+        ];
+        
+        $structuredCount = 0;
+        foreach ($structuredPatterns as $pattern) {
+            if (preg_match($pattern, $html)) {
+                $structuredCount++;
+            }
+        }
+        
+        if ($structuredCount >= 2) {
+            $analysis['has_structured_data'] = true;
+            if (!$analysis['has_complex_tables']) {
+                $analysis['content_type'] = 'structured_info';
+            }
+        }
+        
+        // Verifica se è principalmente contenuto testuale
+        if ($analysis['text_ratio'] > 0.7 && !$analysis['has_complex_tables']) {
+            $analysis['content_type'] = 'article_text';
+        }
+        
+        // Verifica presenza di form
+        if (substr_count($html, '<form') > 0) {
+            $analysis['has_forms'] = true;
+            $analysis['content_type'] = 'interactive_page';
+        }
+        
+        return $analysis;
+    }
+
+    /**
+     * Estrazione intelligente con Readability.php
+     */
+    private function extractWithReadability(string $html, string $url): ?array
+    {
+        try {
+            // Pre-processing HTML per migliorare estrazione tabelle
+            $preprocessedHtml = $this->preprocessHtmlForReadability($html);
+            
+            // Configura Readability con impostazioni ottimizzate
+            $readabilityConfig = new Configuration([
+                'FixRelativeURLs' => true,
+                'OriginalURL' => $url,
+                'RemoveEmpty' => false, // Mantieni celle vuote delle tabelle
+                'SummonCthulhu' => true, // Algoritmo più aggressivo
+                'DisableJSONLD' => false, // Mantieni structured data
+            ]);
+            
+            // Crea istanza Readability
+            $readability = new Readability($readabilityConfig);
+            
+            // Parse e estrai contenuto
+            $readability->parse($preprocessedHtml);
+            
+            // Ottieni risultati
+            $title = $readability->getTitle();
+            $content = $readability->getContent();
+            
+            if (!$content) {
+                return null;
+            }
+            
+            // Post-processing del contenuto estratto
+            $content = $this->postProcessReadabilityContent($content, $url);
+            
+            // Converti HTML estratto in Markdown
+            $markdownContent = $this->htmlToMarkdown($content, $url);
+            
+            // Cleanup finale
+            $markdownContent = $this->cleanupContent($markdownContent);
+            
+            // Verifica qualità estrazione
+            $qualityScore = $this->assessExtractionQuality($markdownContent, $html);
+            
+            if (strlen($markdownContent) < 50 || $qualityScore < 0.3) {
+                \Log::debug("Readability.php qualità insufficiente", [
+                    'url' => $url,
+                    'content_length' => strlen($markdownContent),
+                    'quality_score' => $qualityScore
+                ]);
+                return null;
+            }
+            
+            return [
+                'title' => $title ?: parse_url($url, PHP_URL_HOST),
+                'content' => $markdownContent
+            ];
+            
+        } catch (\Exception $e) {
+            \Log::warning("Readability.php fallito", [
+                'url' => $url,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Metodo di estrazione manuale (fallback)
+     */
+    private function extractWithManualDOM(string $html, string $url, $dom, $title, $mainContent): ?array
+    {
         // Parse HTML
         $dom = new \DOMDocument();
         $dom->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
@@ -167,30 +356,28 @@ class WebScraperService
         $mainContent = '';
         
         // Cerca elementi con content principale
-        $contentSelectors = ['main', 'article', '[role="main"]', '.content', '#content', '.post', '.entry'];
+        $contentSelectors = ['main', 'article'];
         foreach ($contentSelectors as $selector) {
-            if ($selector === 'main' || $selector === 'article') {
                 $elements = $dom->getElementsByTagName($selector);
                 if ($elements->length > 0) {
-                    $mainContent = $this->extractTextFromNode($elements->item(0));
+                $mainContent = $this->convertToMarkdown($elements->item(0), $url);
                     break;
-                }
             }
         }
 
-        // Fallback: usa body
+        // Fallback: usa body se non abbiamo main content
         if (!$mainContent) {
             $bodyElements = $dom->getElementsByTagName('body');
             if ($bodyElements->length > 0) {
-                $mainContent = $this->extractTextFromNode($bodyElements->item(0));
+                $mainContent = $this->convertToMarkdown($bodyElements->item(0), $url);
             }
         }
 
         // Cleanup content
         $mainContent = $this->cleanupContent($mainContent);
         
-        if (strlen($mainContent) < 100) {
-            return null; // Contenuto troppo corto
+        if (strlen($mainContent) < 80) { // Soglia più bassa per il fallback
+            return null;
         }
 
         return [
@@ -199,45 +386,562 @@ class WebScraperService
         ];
     }
 
+    /**
+     * Converte HTML pulito di Readability in Markdown
+     */
+    private function htmlToMarkdown(string $html, string $baseUrl): string
+    {
+        // Crea DOM dal contenuto pulito di Readability
+        $dom = new \DOMDocument();
+        $dom->loadHTML('<html><body>' . $html . '</body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
+        
+        $bodyElements = $dom->getElementsByTagName('body');
+        if ($bodyElements->length > 0) {
+            return $this->convertToMarkdown($bodyElements->item(0), $baseUrl);
+        }
+        
+        return '';
+    }
+
+    /**
+     * Pre-processing HTML per ottimizzare l'estrazione di Readability.php
+     */
+    private function preprocessHtmlForReadability(string $html): string
+    {
+        // Converte classi responsive Bootstrap in contenuto più visibile
+        // Rimuovi elementi mobile-only se esistono equivalenti desktop
+        $html = preg_replace('/<[^>]*class="[^"]*visible-xs[^"]*"[^>]*>.*?<\/[^>]+>/is', '', $html);
+        
+        // Migliora le celle hidden-xs per renderle più visibili a Readability
+        $html = preg_replace('/class="[^"]*hidden-xs[^"]*"/', 'class="desktop-content"', $html);
+        
+        // Assicura encoding UTF-8 corretto
+        if (mb_detect_encoding($html, 'UTF-8', true) === false) {
+            $html = mb_convert_encoding($html, 'UTF-8', mb_detect_encoding($html));
+        }
+        
+        return $html;
+    }
+
+    /**
+     * Post-processing del contenuto estratto da Readability.php
+     */
+    private function postProcessReadabilityContent(string $content, string $url): string
+    {
+        // Fix URL duplicati (https://...\/https://...)
+        $baseUrl = rtrim($url, '/');
+        $parsedUrl = parse_url($baseUrl);
+        $scheme = $parsedUrl['scheme'] ?? 'https';
+        $host = $parsedUrl['host'] ?? '';
+        $correctBase = "$scheme://$host";
+        
+        // Correggi URL malformati
+        $content = preg_replace(
+            '/href="https?:\/\/[^"]*\\' . preg_quote($correctBase, '/') . '/',
+            'href="' . $correctBase,
+            $content
+        );
+        
+        // Fix encoding problemi comuni
+        $encodingFixes = [
+            'Ã¬' => 'ì',
+            'Ã ' => 'à',
+            'Ã¹' => 'ù',
+            'Ã¨' => 'è',
+            'Ã©' => 'é',
+            'Ã²' => 'ò',
+        ];
+        
+        foreach ($encodingFixes as $wrong => $correct) {
+            $content = str_replace($wrong, $correct, $content);
+        }
+        
+        return $content;
+    }
+
+    /**
+     * Valuta la qualità dell'estrazione confrontando contenuto estratto con HTML originale
+     */
+    private function assessExtractionQuality(string $markdownContent, string $originalHtml): float
+    {
+        $score = 0.0;
+        
+        // Verifica presenza di tabelle (importante per questo sito)
+        if (strpos($originalHtml, '<table') !== false) {
+            if (strpos($markdownContent, '|') !== false) {
+                $score += 0.3; // Tabelle estratte
+            } else {
+                $score -= 0.2; // Tabelle mancanti - CRITICO
+            }
+        }
+        
+        // Verifica presenza di numeri di telefono (pattern comune)
+        $phonePattern = '/\b(?:\d{2,4}[\s\-]?){2,4}\d{2,4}\b/';
+        preg_match_all($phonePattern, $originalHtml, $originalPhones);
+        preg_match_all($phonePattern, $markdownContent, $extractedPhones);
+        
+        $phoneRatio = count($originalPhones[0]) > 0 ? 
+            count($extractedPhones[0]) / count($originalPhones[0]) : 1.0;
+        $score += $phoneRatio * 0.4;
+        
+        // Verifica presenza di link
+        $originalLinks = substr_count($originalHtml, '<a ');
+        $extractedLinks = substr_count($markdownContent, '](');
+        
+        $linkRatio = $originalLinks > 0 ? $extractedLinks / $originalLinks : 1.0;
+        $score += $linkRatio * 0.2;
+        
+        // Verifica lunghezza relativa del contenuto
+        $htmlTextLength = strlen(strip_tags($originalHtml));
+        $markdownLength = strlen($markdownContent);
+        
+        if ($htmlTextLength > 0) {
+            $lengthRatio = $markdownLength / $htmlTextLength;
+            if ($lengthRatio > 0.3 && $lengthRatio < 0.8) {
+                $score += 0.1; // Buon rapporto contenuto/rumore
+            }
+        }
+        
+        return max(0.0, min(1.0, $score));
+    }
+
     private function extractTextFromNode(\DOMNode $node): string
     {
-        $text = '';
+        return $this->convertToMarkdown($node);
+    }
+
+    /**
+     * Converte un nodo DOM in Markdown preservando i link e la formattazione
+     * Segue le regole di https://www.markdownguide.org/basic-syntax/
+     */
+    private function convertToMarkdown(\DOMNode $node, string $baseUrl = ''): string
+    {
+        $markdown = '';
         
         foreach ($node->childNodes as $child) {
             if ($child->nodeType === XML_TEXT_NODE) {
-                $text .= $child->textContent . ' ';
+                // Testo normale - escape caratteri speciali Markdown
+                $text = $child->textContent;
+                $text = $this->escapeMarkdownChars($text);
+                $markdown .= $text;
             } elseif ($child->nodeType === XML_ELEMENT_NODE) {
-                // Aggiungi newline per elementi block
-                $blockElements = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'];
-                if (in_array($child->nodeName, $blockElements)) {
-                    $text .= $this->extractTextFromNode($child) . "\n";
-                } else {
-                    $text .= $this->extractTextFromNode($child) . ' ';
+                $tagName = strtolower($child->nodeName);
+                
+                switch ($tagName) {
+                    case 'a':
+                        // Link: [text](url) o [text](url "title")
+                        $markdown .= $this->convertLinkToMarkdown($child, $baseUrl);
+                        break;
+                        
+                    case 'strong':
+                    case 'b':
+                        // Bold: **text**
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "**{$innerText}**";
+                        break;
+                        
+                    case 'em':
+                    case 'i':
+                        // Italic: *text*
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "*{$innerText}*";
+                        break;
+                        
+                    case 'h1':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n# {$innerText}\n\n";
+                        break;
+                        
+                    case 'h2':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n## {$innerText}\n\n";
+                        break;
+                        
+                    case 'h3':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n### {$innerText}\n\n";
+                        break;
+                        
+                    case 'h4':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n#### {$innerText}\n\n";
+                        break;
+                        
+                    case 'h5':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n##### {$innerText}\n\n";
+                        break;
+                        
+                    case 'h6':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n###### {$innerText}\n\n";
+                        break;
+                        
+                    case 'p':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n\n{$innerText}\n\n";
+                        break;
+                        
+                    case 'br':
+                        $markdown .= "  \n"; // Two spaces + newline for line break
+                        break;
+                        
+                    case 'li':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n- {$innerText}";
+                        break;
+                        
+                    case 'ul':
+                    case 'ol':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= "\n{$innerText}\n";
+                        break;
+                        
+                    case 'blockquote':
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $lines = explode("\n", trim($innerText));
+                        $quotedLines = array_map(fn($line) => "> " . $line, $lines);
+                        $markdown .= "\n\n" . implode("\n", $quotedLines) . "\n\n";
+                        break;
+                        
+                    case 'code':
+                        $innerText = $child->textContent;
+                        $markdown .= "`{$innerText}`";
+                        break;
+                        
+                    case 'pre':
+                        $innerText = $child->textContent;
+                        $markdown .= "\n\n```\n{$innerText}\n```\n\n";
+                        break;
+                        
+
+                        
+                    case 'tr':
+                        // Riga tabella - separa con | e aggiungi newline
+                        $cells = $this->extractTableCells($child, $baseUrl);
+                        if (!empty($cells)) {
+                            $markdown .= "\n| " . implode(" | ", $cells) . " |";
+                        }
+                        break;
+                        
+                    case 'td':
+                    case 'th':
+                        // Celle - gestite dal TR parent, ma aggiungi contenuto se processate singolarmente
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= $innerText;
+                        break;
+                        
+                    case 'div':
+                    case 'span':
+                    case 'section':
+                    case 'article':
+                        // Salta elementi con classi responsive duplicate
+                        if ($child instanceof \DOMElement && $this->shouldSkipResponsiveElement($child)) {
+                            break;
+                        }
+                        // Contenitori generici - processa contenuto
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= $innerText;
+                        break;
+                        
+                    default:
+                        // Salta elementi con classi responsive duplicate
+                        if ($child instanceof \DOMElement && $this->shouldSkipResponsiveElement($child)) {
+                            break;
+                        }
+                        // Altri elementi - estrai solo il contenuto
+                        $innerText = $this->convertToMarkdown($child, $baseUrl);
+                        $markdown .= $innerText;
+                        break;
                 }
             }
+        }
+        
+        return $markdown;
+    }
+
+    /**
+     * Converte un link HTML in formato Markdown
+     */
+    private function convertLinkToMarkdown(\DOMElement $linkElement, string $baseUrl): string
+    {
+        $href = $linkElement->getAttribute('href');
+        $title = $linkElement->getAttribute('title');
+        $text = trim($linkElement->textContent);
+        
+        // Se non c'è href, restituisci solo il testo
+        if (!$href) {
+            return $this->escapeMarkdownCharsForLinkText($text);
+        }
+        
+        // Converti URL relativi in assoluti
+        $absoluteUrl = $this->resolveUrl($href, $baseUrl);
+        
+        // Se il testo è vuoto, usa l'URL come testo
+        if (!$text) {
+            $text = $absoluteUrl;
+        } else {
+            $text = $this->escapeMarkdownCharsForLinkText($text);
+        }
+        
+        // Formato: [text](url) o [text](url "title")
+        if ($title) {
+            $title = $this->escapeMarkdownCharsForLinkText($title);
+            return "[{$text}]({$absoluteUrl} \"{$title}\")";
+        } else {
+            return "[{$text}]({$absoluteUrl})";
+        }
+    }
+
+    /**
+     * Escape caratteri speciali Markdown
+     */
+    private function escapeMarkdownChars(string $text): string
+    {
+        // Caratteri che hanno significato speciale in Markdown
+        // Nota: i punti nei numeri di telefono NON dovrebbero essere escapati
+        $specialChars = ['\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '!', '|'];
+        
+        foreach ($specialChars as $char) {
+            $text = str_replace($char, '\\' . $char, $text);
+        }
+        
+        // Escapa i punti solo se NON sono parte di numeri di telefono
+        $text = preg_replace('/\.(?!\d)/', '\\.', $text);
+        
+        return $text;
+    }
+
+    /**
+     * Escape caratteri speciali Markdown per il testo dei link
+     * Più permissivo dell'escaping normale - non escapa punti e altri caratteri sicuri nei link
+     */
+    private function escapeMarkdownCharsForLinkText(string $text): string
+    {
+        // Nel testo dei link Markdown solo questi caratteri sono veramente problematici:
+        // - [ e ] perché possono chiudere prematuramente il link
+        // - \ perché è il carattere di escape
+        // I punti, parentesi, ecc. sono sicuri nel testo dei link
+        $linkSpecialChars = ['\\', '[', ']'];
+        
+        foreach ($linkSpecialChars as $char) {
+            $text = str_replace($char, '\\' . $char, $text);
         }
         
         return $text;
     }
 
+
+
+    /**
+     * Estrae il contenuto delle celle da una riga di tabella
+     */
+    private function extractTableCells(\DOMElement $row, string $baseUrl): array
+    {
+        $cells = [];
+        
+        // 🔧 CORREZIONE CRITICA: Estrazione semplificata e più inclusiva
+        // Prima tenta approccio responsive, poi fallback inclusivo
+        
+        $cellElements = [];
+        $hasResponsiveClasses = false;
+        
+        // STEP 1: Analizza se ci sono classi responsive nella riga
+        foreach ($row->childNodes as $child) {
+            if ($child->nodeType === XML_ELEMENT_NODE && 
+                in_array(strtolower($child->nodeName), ['td', 'th'])) {
+                
+                $class = $child->getAttribute('class');
+                if (strpos($class, 'hidden-xs') !== false || strpos($class, 'visible-xs') !== false) {
+                    $hasResponsiveClasses = true;
+                    break;
+                }
+            }
+        }
+        
+        // STEP 2: Se ci sono classi responsive, usa logica responsive
+        if ($hasResponsiveClasses) {
+            \Log::debug("🔄 [TABLE] Logica responsive attivata");
+            
+            // Preferisci celle desktop-visible (hidden-xs)
+            foreach ($row->childNodes as $child) {
+                if ($child->nodeType === XML_ELEMENT_NODE && 
+                    in_array(strtolower($child->nodeName), ['td', 'th'])) {
+                    
+                    $class = $child->getAttribute('class');
+                    if (strpos($class, 'hidden-xs') !== false) {
+                        $cellElements[] = $child;
+                    }
+                }
+            }
+            
+            // Fallback a celle senza classi responsive
+            if (empty($cellElements)) {
+                foreach ($row->childNodes as $child) {
+                    if ($child->nodeType === XML_ELEMENT_NODE && 
+                        in_array(strtolower($child->nodeName), ['td', 'th'])) {
+                        
+                        $class = $child->getAttribute('class');
+                        if (strpos($class, 'visible-xs') === false) {
+                            $cellElements[] = $child;
+                        }
+                    }
+                }
+            }
+        } else {
+            // STEP 3: 🚀 MODALITÀ INCLUSIVA - Estrai TUTTE le celle (questo risolve il bug!)
+            \Log::debug("✅ [TABLE] Modalità inclusiva attivata - estrarre tutte le celle");
+            
+            foreach ($row->childNodes as $child) {
+                if ($child->nodeType === XML_ELEMENT_NODE && 
+                    in_array(strtolower($child->nodeName), ['td', 'th'])) {
+                    $cellElements[] = $child;
+                }
+            }
+        }
+        
+        // STEP 4: Estrai contenuto con logging migliorato
+        foreach ($cellElements as $i => $cell) {
+            $cellContent = trim($this->convertToMarkdown($cell, $baseUrl));
+            // Pulisci contenuto vuoto o con solo whitespace
+            $cellContent = preg_replace('/\s+/', ' ', $cellContent);
+            $finalContent = $cellContent ?: '-';
+            $cells[] = $finalContent;
+            
+            \Log::debug("📊 [TABLE] Cella {$i}", [
+                'raw_content' => substr($cellContent, 0, 50),
+                'final_content' => substr($finalContent, 0, 50),
+                'is_empty' => empty($cellContent)
+            ]);
+        }
+        
+        \Log::info("📋 [TABLE] Riga estratta", [
+            'cells_count' => count($cells),
+            'cells_preview' => array_map(fn($c) => substr($c, 0, 30), $cells),
+            'responsive_mode' => $hasResponsiveClasses
+        ]);
+        
+        return $cells;
+    }
+
+    /**
+     * Determina se un elemento dovrebbe essere saltato per evitare duplicazioni responsive
+     */
+    private function shouldSkipResponsiveElement(\DOMElement $element): bool
+    {
+        $class = $element->getAttribute('class');
+        
+        // Salta elementi visible-xs se abbiamo già processato la versione desktop
+        if (strpos($class, 'visible-xs') !== false) {
+            return $this->hasDesktopEquivalent($element);
+        }
+        
+        return false;
+    }
+
+    /**
+     * Verifica se una riga ha contenuto duplicato desktop/mobile
+     */
+    private function hasResponsiveDuplicate(\DOMElement $row): bool
+    {
+        $hasDesktop = false;
+        $hasMobile = false;
+        
+        foreach ($row->childNodes as $child) {
+            if ($child->nodeType === XML_ELEMENT_NODE) {
+                $class = $child->getAttribute('class');
+                if (strpos($class, 'hidden-xs') !== false) {
+                    $hasDesktop = true;
+                }
+                if (strpos($class, 'visible-xs') !== false) {
+                    $hasMobile = true;
+                }
+            }
+        }
+        
+        // Se abbiamo entrambe le versioni, salta la mobile
+        return $hasDesktop && $hasMobile;
+    }
+
+    /**
+     * Verifica se esiste un equivalente desktop per un elemento mobile
+     */
+    private function hasDesktopEquivalent(\DOMElement $element): bool
+    {
+        $parent = $element->parentNode;
+        if (!$parent) return false;
+        
+        // Cerca elementi siblings con hidden-xs
+        foreach ($parent->childNodes as $sibling) {
+            if ($sibling->nodeType === XML_ELEMENT_NODE && $sibling !== $element) {
+                $class = $sibling->getAttribute('class');
+                if (strpos($class, 'hidden-xs') !== false) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+
     private function cleanupContent(string $content): string
     {
-        // Normalizza whitespace
-        $content = preg_replace('/\s+/', ' ', $content);
-        $content = preg_replace('/\n\s*\n/', "\n\n", $content);
+        // Normalizza whitespace ma preserva la formattazione Markdown
+        // Non toccare gli spazi doppi che indicano line break in Markdown
+        $content = preg_replace('/[ \t]+/', ' ', $content); // Solo spazi e tab multipli
+        $content = preg_replace('/\n\s*\n\s*\n+/', "\n\n", $content); // Max 2 newline consecutive
         
         // Rimuovi linee troppo corte o che sembrano menu/footer
         $lines = explode("\n", $content);
         $filteredLines = [];
         
         foreach ($lines as $line) {
-            $line = trim($line);
-            if (strlen($line) < 10) continue; // Salta linee troppo corte
-            if (preg_match('/^(home|contact|about|privacy|terms|menu|search|login|register|©|\d{4})$/i', $line)) continue;
+            $trimmedLine = trim($line);
+            
+            // Preserva linee Markdown importanti anche se corte
+            if ($this->isImportantMarkdownLine($line)) {
+                $filteredLines[] = $line;
+                continue;
+            }
+            
+            // Salta linee troppo corte
+            if (strlen($trimmedLine) < 10) continue;
+            
+            // Salta linee che sembrano menu/footer
+            if (preg_match('/^(home|contact|about|privacy|terms|menu|search|login|register|©|\d{4})$/i', $trimmedLine)) continue;
+            
             $filteredLines[] = $line;
         }
         
         return trim(implode("\n", $filteredLines));
+    }
+
+    /**
+     * Verifica se una linea è importante per la formattazione Markdown
+     */
+    private function isImportantMarkdownLine(string $line): bool
+    {
+        $trimmed = trim($line);
+        
+        // Headers Markdown
+        if (preg_match('/^#{1,6}\s/', $trimmed)) return true;
+        
+        // Liste
+        if (preg_match('/^[-*+]\s/', $trimmed)) return true;
+        
+        // Blockquotes
+        if (preg_match('/^>\s/', $trimmed)) return true;
+        
+        // Code blocks
+        if (preg_match('/^```/', $trimmed)) return true;
+        
+        // Linee vuote (importanti per separare paragrafi)
+        if ($trimmed === '') return true;
+        
+        // Line breaks (due spazi alla fine)
+        if (preg_match('/  $/', $line)) return true;
+        
+        return false;
     }
 
     private function extractLinks(string $html, string $baseUrl): array
@@ -394,9 +1098,30 @@ class WebScraperService
                 $contentHash = hash('sha256', $result['content']);
                 
                 // Cerca documento esistente per lo stesso URL
+                // Strategia robusta: cerca per source_url, ma se non trova nulla,
+                // cerca anche per titolo/path per compatibilità con documenti vecchi
                 $existingDocument = Document::where('tenant_id', $tenant->id)
                     ->where('source_url', $result['url'])
                     ->first();
+                
+                // Se non trovato per URL, cerca per titolo (documenti vecchi senza source_url)
+                if (!$existingDocument) {
+                    $scrapedTitle = $result['title'] . ' (Scraped)';
+                    $existingDocument = Document::where('tenant_id', $tenant->id)
+                        ->where('title', $scrapedTitle)
+                        ->where('source', 'web_scraper')
+                        ->whereNull('source_url') // Solo documenti vecchi senza URL
+                        ->first();
+                    
+                    // Se trovato un documento vecchio, aggiorna il source_url
+                    if ($existingDocument) {
+                        $existingDocument->update(['source_url' => $result['url']]);
+                        \Log::info("Aggiornato source_url per documento vecchio", [
+                            'document_id' => $existingDocument->id,
+                            'url' => $result['url']
+                        ]);
+                    }
+                }
 
                 if ($existingDocument) {
                     // Controlla se il contenuto è cambiato
@@ -546,5 +1271,236 @@ class WebScraperService
             'new_hash' => substr($contentHash, 0, 8),
             'version' => $newVersion
         ]);
+    }
+
+    /**
+     * 🎯 FUNZIONALITÀ NUOVA: Scraping di un singolo URL
+     * 
+     * @param int $tenantId
+     * @param string $url
+     * @param bool $force Se true, sovrascrive documenti esistenti
+     * @param int|null $knowledgeBaseId KB di destinazione (opzionale)
+     * @return array
+     */
+    public function scrapeSingleUrl(int $tenantId, string $url, bool $force = false, ?int $knowledgeBaseId = null): array
+    {
+        $tenant = Tenant::findOrFail($tenantId);
+        
+        \Log::info("🎯 [SINGLE-URL] Inizio scraping singolo URL", [
+            'tenant_id' => $tenantId,
+            'url' => $url,
+            'force' => $force,
+            'knowledge_base_id' => $knowledgeBaseId
+        ]);
+
+        $this->visitedUrls = [];
+        $this->results = [];
+        $this->stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
+
+        try {
+            // Verifica se il documento esiste già
+            $existingDoc = Document::where('tenant_id', $tenantId)
+                ->where('source_url', $url)
+                ->first();
+
+            if ($existingDoc && !$force) {
+                \Log::info("📄 [SINGLE-URL] Documento già esistente (usare --force per sovrascrivere)", [
+                    'existing_doc_id' => $existingDoc->id,
+                    'existing_title' => $existingDoc->title
+                ]);
+                
+                return [
+                    'success' => false,
+                    'message' => 'Documento già esistente. Usa --force per sovrascrivere.',
+                    'existing_document' => [
+                        'id' => $existingDoc->id,
+                        'title' => $existingDoc->title,
+                        'path' => $existingDoc->path,
+                        'created_at' => $existingDoc->created_at
+                    ]
+                ];
+            }
+
+            // Scraping del singolo URL
+            $result = $this->scrapeSingleUrlInternal($url, $tenant, $knowledgeBaseId, $force);
+            
+            if ($result) {
+                $this->results[] = $result;
+                
+                // Salva il risultato
+                $savedCount = $this->saveResults($tenant);
+                
+                \Log::info("✅ [SINGLE-URL] Scraping completato", [
+                    'url' => $url,
+                    'saved_count' => $savedCount,
+                    'force_mode' => $force
+                ]);
+
+                return [
+                    'success' => true,
+                    'url' => $url,
+                    'saved_count' => $savedCount,
+                    'stats' => $this->stats,
+                    'document' => $result
+                ];
+            } else {
+                \Log::warning("❌ [SINGLE-URL] Scraping fallito", ['url' => $url]);
+                
+                return [
+                    'success' => false,
+                    'message' => 'Impossibile estrarre contenuto dall\'URL',
+                    'url' => $url
+                ];
+            }
+
+        } catch (\Exception $e) {
+            \Log::error("💥 [SINGLE-URL] Errore durante scraping", [
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Errore durante lo scraping: ' . $e->getMessage(),
+                'url' => $url
+            ];
+        }
+    }
+
+    /**
+     * 🔄 FUNZIONALITÀ NUOVA: Force re-scraping di documento esistente
+     * 
+     * @param int $documentId
+     * @return array
+     */
+    public function forceRescrapDocument(int $documentId): array
+    {
+        $document = Document::findOrFail($documentId);
+        
+        \Log::info("🔄 [FORCE-RESCRAPE] Inizio re-scraping documento", [
+            'document_id' => $documentId,
+            'title' => $document->title,
+            'source_url' => $document->source_url
+        ]);
+
+        if (!$document->source_url) {
+            return [
+                'success' => false,
+                'message' => 'Documento non ha source_url. Non può essere ri-scrapato.',
+                'document_id' => $documentId
+            ];
+        }
+
+        try {
+            // Re-scraping dell'URL originale
+            $result = $this->scrapeSingleUrl(
+                $document->tenant_id, 
+                $document->source_url, 
+                true, // force = true
+                $document->knowledge_base_id
+            );
+
+            if ($result['success']) {
+                \Log::info("✅ [FORCE-RESCRAPE] Re-scraping completato", [
+                    'document_id' => $documentId,
+                    'original_title' => $document->title,
+                    'new_stats' => $result['stats']
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => 'Documento ri-scrapato con successo',
+                    'document_id' => $documentId,
+                    'original_document' => [
+                        'id' => $document->id,
+                        'title' => $document->title,
+                        'created_at' => $document->created_at
+                    ],
+                    'result' => $result
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => 'Re-scraping fallito: ' . ($result['message'] ?? 'Errore sconosciuto'),
+                    'document_id' => $documentId
+                ];
+            }
+
+        } catch (\Exception $e) {
+            \Log::error("💥 [FORCE-RESCRAPE] Errore durante re-scraping", [
+                'document_id' => $documentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Errore durante re-scraping: ' . $e->getMessage(),
+                'document_id' => $documentId
+            ];
+        }
+    }
+
+    /**
+     * Metodo interno per scraping di un singolo URL (usato sia da scrapeSingleUrl che da forceRescrapDocument)
+     */
+    private function scrapeSingleUrlInternal(string $url, Tenant $tenant, ?int $knowledgeBaseId, bool $force): ?array
+    {
+        \Log::debug("🔍 [SINGLE-URL-INTERNAL] Processando URL", ['url' => $url]);
+
+        try {
+            // Usa configurazione di default per il tenant (se esiste)
+            $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
+            
+            if (!$config) {
+                // Crea una configurazione temporanea per questo scraping
+                $config = new ScraperConfig([
+                    'user_agent' => 'Mozilla/5.0 (compatible; WebScraper/1.0)',
+                    'timeout' => 30,
+                    'max_redirects' => 5,
+                    'respect_robots' => false,
+                    'rate_limit_rps' => 1,
+                    'target_knowledge_base_id' => $knowledgeBaseId
+                ]);
+            } else {
+                // Override della KB se specificata
+                if ($knowledgeBaseId) {
+                    $config->target_knowledge_base_id = $knowledgeBaseId;
+                }
+            }
+
+            // Fetch e estrazione contenuto
+            $content = $this->fetchUrl($url, $config);
+            if (!$content) {
+                \Log::warning("❌ [SINGLE-URL-INTERNAL] Fetch fallito", ['url' => $url]);
+                return null;
+            }
+
+            $extracted = $this->extractContent($content, $url);
+            if (!$extracted) {
+                \Log::warning("❌ [SINGLE-URL-INTERNAL] Estrazione contenuto fallita", ['url' => $url]);
+                return null;
+            }
+
+            \Log::info("✅ [SINGLE-URL-INTERNAL] Contenuto estratto", [
+                'url' => $url,
+                'title' => $extracted['title'],
+                'content_length' => strlen($extracted['content'])
+            ]);
+
+            return [
+                'url' => $url,
+                'title' => $extracted['title'],
+                'content' => $extracted['content'],
+                'extracted_at' => now()->toISOString()
+            ];
+
+        } catch (\Exception $e) {
+            \Log::error("💥 [SINGLE-URL-INTERNAL] Errore durante estrazione", [
+                'url' => $url,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 }

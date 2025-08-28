@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Jobs\IngestUploadedDocumentJob;
 use App\Jobs\DeleteVectorsJob;
+use App\Jobs\DeleteVectorsJobFixed;
 use App\Models\Document;
 use App\Models\Tenant;
 use App\Services\RAG\MilvusClient;
@@ -16,12 +17,20 @@ class DocumentAdminController extends Controller
     public function index(Request $request, Tenant $tenant)
     {
         $kbId = (int) $request->query('kb_id', 0);
+        $sourceUrlSearch = $request->query('source_url', '');
+        
         $query = Document::where('tenant_id', $tenant->id);
+        
         if ($kbId > 0) {
             $query->where('knowledge_base_id', $kbId);
         }
+        
+        if (!empty($sourceUrlSearch)) {
+            $query->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%');
+        }
+        
         $docs = $query->orderByDesc('id')->paginate(20)->withQueryString();
-        return view('admin.documents.index', compact('tenant', 'docs', 'kbId'));
+        return view('admin.documents.index', compact('tenant', 'docs', 'kbId', 'sourceUrlSearch'));
     }
 
     public function upload(Request $request, Tenant $tenant)
@@ -119,8 +128,10 @@ class DocumentAdminController extends Controller
         if ($document->tenant_id !== $tenant->id) {
             abort(404);
         }
-        // Cancella vettori su Milvus in background
-        DeleteVectorsJob::dispatch([$document->id])->onQueue('indexing');
+        
+        // 🚀 FIXED: Calcola primaryIds PRIMA di cancellare chunks da PostgreSQL
+        DeleteVectorsJobFixed::fromDocumentIds([$document->id])->dispatch();
+        
         // Elimina file se esiste
         if ($document->path && Storage::disk('public')->exists($document->path)) {
             Storage::disk('public')->delete($document->path);
@@ -138,8 +149,8 @@ class DocumentAdminController extends Controller
             return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Nessun documento da eliminare');
         }
 
-        // 1) Pulisci Milvus (rispetta QUEUE_CONNECTION=sync)
-        DeleteVectorsJob::dispatch($docs->pluck('id')->all())->onQueue('indexing');
+        // 🚀 FIXED: Calcola primaryIds PRIMA di cancellare chunks da PostgreSQL
+        DeleteVectorsJobFixed::fromDocumentIds($docs->pluck('id')->all())->dispatch();
 
         // 2) Cancella dati strutturati e file
         \DB::table('document_chunks')->whereIn('document_id', $docs->pluck('id'))->delete();
@@ -167,8 +178,8 @@ class DocumentAdminController extends Controller
             return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Nessun documento da eliminare per la KB selezionata');
         }
 
-        // 1) Pulisci Milvus
-        DeleteVectorsJob::dispatch($docs->pluck('id')->all())->onQueue('indexing');
+        // 🚀 FIXED: Calcola primaryIds PRIMA di cancellare chunks da PostgreSQL
+        DeleteVectorsJobFixed::fromDocumentIds($docs->pluck('id')->all())->dispatch();
 
         // 2) Cancella dati strutturati e file
         \DB::table('document_chunks')->whereIn('document_id', $docs->pluck('id'))->delete();
@@ -180,5 +191,113 @@ class DocumentAdminController extends Controller
         Document::whereIn('id', $docs->pluck('id'))->delete();
 
         return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Documenti della KB selezionata eliminati');
+    }
+
+    /**
+     * 🔄 NUOVA FUNZIONALITÀ: Re-scraping di un singolo documento
+     */
+    public function rescrape(Document $document)
+    {
+        if (!$document->source_url) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Documento non ha source_url. Non può essere ri-scrapato.'
+            ], 400);
+        }
+
+        try {
+            $scraperService = new \App\Services\Scraper\WebScraperService();
+            $result = $scraperService->forceRescrapDocument($document->id);
+
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $result['message'],
+                    'data' => [
+                        'document_id' => $result['document_id'],
+                        'original_document' => $result['original_document'],
+                        'result' => $result['result']
+                    ]
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message']
+                ], 400);
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Errore durante il re-scraping: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 🔄 NUOVA FUNZIONALITÀ: Re-scraping di tutti i documenti con source_url per un tenant
+     */
+    public function rescrapeAll(Request $request, Tenant $tenant)
+    {
+        $data = $request->validate([
+            'confirm' => ['required', 'boolean', 'accepted']
+        ]);
+
+        try {
+            // Trova tutti i documenti con source_url per questo tenant
+            $documents = Document::where('tenant_id', $tenant->id)
+                ->whereNotNull('source_url')
+                ->where('source_url', '!=', '')
+                ->get();
+
+            if ($documents->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nessun documento con source_url trovato per questo tenant.'
+                ], 400);
+            }
+
+            $scraperService = new \App\Services\Scraper\WebScraperService();
+            $successCount = 0;
+            $failureCount = 0;
+            $errors = [];
+
+            foreach ($documents as $document) {
+                try {
+                    $result = $scraperService->forceRescrapDocument($document->id);
+                    
+                    if ($result['success']) {
+                        $successCount++;
+                    } else {
+                        $failureCount++;
+                        $errors[] = "Doc #{$document->id}: " . $result['message'];
+                    }
+                    
+                } catch (\Exception $e) {
+                    $failureCount++;
+                    $errors[] = "Doc #{$document->id}: " . $e->getMessage();
+                }
+                
+                // Rate limiting per evitare sovraccarico
+                usleep(500000); // 0.5 secondi
+            }
+
+            return response()->json([
+                'success' => $failureCount === 0,
+                'message' => "Re-scraping completato. Successi: {$successCount}, Fallimenti: {$failureCount}",
+                'data' => [
+                    'total_documents' => $documents->count(),
+                    'success_count' => $successCount,
+                    'failure_count' => $failureCount,
+                    'errors' => array_slice($errors, 0, 10) // Max 10 errori nel response
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Errore durante il re-scraping batch: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

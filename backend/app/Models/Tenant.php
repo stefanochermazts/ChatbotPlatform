@@ -22,19 +22,20 @@ class Tenant extends Model
         'default_language',
         'custom_system_prompt',
         'custom_context_template',
-        'intents_enabled',
         'extra_intent_keywords',
-        'kb_scope_mode',
-        'intent_min_score',
         'custom_synonyms',
+        'multi_kb_search',
+        'rag_settings',
+        'rag_profile',
     ];
 
     protected $casts = [
         'metadata' => 'array',
         'languages' => 'array',
-        'intents_enabled' => 'array',
         'extra_intent_keywords' => 'array',
         'custom_synonyms' => 'array',
+        'multi_kb_search' => 'boolean',
+        'rag_settings' => 'array',
     ];
 
     public function apiKeys(): HasMany
@@ -81,6 +82,11 @@ class Tenant extends Model
     public function formSubmissions(): HasMany
     {
         return $this->hasMany(FormSubmission::class);
+    }
+
+    public function knowledgeBases(): HasMany
+    {
+        return $this->hasMany(KnowledgeBase::class);
     }
 }
 

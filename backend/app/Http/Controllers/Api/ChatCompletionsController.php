@@ -55,6 +55,20 @@ class ChatCompletionsController extends Controller
         // Stesse config avanzate del tester
         $kb = $this->forceAdvancedRagConfiguration();
 
+        // 🔍 LOG: Configurazioni RAG applicate
+        \Log::info('ChatCompletionsController RAG Config', [
+            'tenant_id' => $tenantId,
+            'original_query' => $queryText,
+            'final_query' => $finalQuery,
+            'conversation_enhanced' => $conversationContext ? $conversationContext['context_used'] : false,
+            'hyde_enabled' => config('rag.advanced.hyde.enabled'),
+            'reranker_driver' => config('rag.reranker.driver'),
+            'min_citations' => config('rag.answer.min_citations'),
+            'min_confidence' => config('rag.answer.min_confidence'),
+            'force_if_has_citations' => config('rag.answer.force_if_has_citations'),
+            'caller' => 'ChatCompletionsController'
+        ]);
+
         // Retrieval come nel RAG tester (usa la query originale per intent detection)
         $retrieval = $kb->retrieve($tenantId, $queryText, true);
         $citations = $retrieval['citations'] ?? [];
@@ -142,6 +156,16 @@ class ChatCompletionsController extends Controller
             $result['choices'][0]['message']['content'] = $fallback;
         }
 
+        // 🆕 Aggiungi source_url del documento con confidenza più alta se disponibile
+        $bestSourceUrl = $this->getBestSourceUrl($citations);
+        if (!empty(trim($bestSourceUrl)) && count($citations) > 0) {
+            $currentContent = (string) ($result['choices'][0]['message']['content'] ?? '');
+            // Aggiungi il link solo se la risposta non è un fallback
+            if ($currentContent !== (string) config('rag.answer.fallback_message')) {
+                $result['choices'][0]['message']['content'] = $currentContent . "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
+            }
+        }
+
         $result['citations'] = $citations;
         $result['retrieval'] = [ 'confidence' => $confidence ];
         if ($conversationContext && $conversationContext['context_used']) {
@@ -221,6 +245,31 @@ class ChatCompletionsController extends Controller
             }
         }
         return $contextText;
+    }
+
+    /**
+     * Trova il source_url del documento con la confidenza più alta
+     */
+    private function getBestSourceUrl(array $citations): ?string
+    {
+        if (empty($citations)) {
+            return null;
+        }
+
+        $bestCitation = null;
+        $bestScore = -1;
+
+        foreach ($citations as $citation) {
+            // Usa il campo score se disponibile, altrimenti usa 1.0 come default
+            $score = (float) ($citation['score'] ?? 1.0);
+            
+            if ($score > $bestScore && !empty($citation['document_source_url'])) {
+                $bestScore = $score;
+                $bestCitation = $citation;
+            }
+        }
+
+        return $bestCitation['document_source_url'] ?? null;
     }
 }
 

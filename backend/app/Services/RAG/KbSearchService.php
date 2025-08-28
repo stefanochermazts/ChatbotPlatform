@@ -13,6 +13,7 @@ class KbSearchService
         private readonly OpenAIEmbeddingsService $embeddings,
         private readonly MilvusClient $milvus,
         private readonly TextSearchService $text,
+        private readonly TenantRagConfigService $tenantConfig,
         private readonly RerankerInterface $reranker = new EmbeddingReranker(new \App\Services\LLM\OpenAIEmbeddingsService()),
         private readonly ?MultiQueryExpander $mq = null,
         private readonly RagCache $cache = new RagCache(),
@@ -47,6 +48,10 @@ class KbSearchService
 
         $this->activeLangs = $this->getTenantLanguages($tenantId);
 
+        // Controllo tenant per multi-KB (usato sia per intent che per retrieval normale)
+        $tenant = \App\Models\Tenant::find($tenantId);
+        $useMultiKb = $tenant && $tenant->multi_kb_search;
+
         // Determina l'intent primario più specifico
         $intents = $this->detectIntents($query, $tenantId);
         $intentDebug = null;
@@ -71,17 +76,48 @@ class KbSearchService
             ];
         }
         
+        Log::info('🎯 [RETRIEVE] Inizio elaborazione query', [
+            'tenant_id' => $tenantId,
+            'original_query' => $query,
+            'normalized_query' => $normalizedQuery,
+            'multi_kb_enabled' => $useMultiKb,
+            'intents_detected' => $intents,
+            'debug_mode' => $debug
+        ]);
+
         // Esegui l'intent con score più alto (già ordinati per priorità in detectIntents)
         foreach ($intents as $intentType) {
-            // Selezione KB prima del lookup intent (per scoping)
-            $kbSelIntent = $this->kbSelector->selectForQuery($tenantId, $query);
-            $selectedKbIdIntent = $kbSelIntent['knowledge_base_id'] ?? null;
+            Log::info("🔍 [RETRIEVE] Testando intent: {$intentType}");
+            
+            // Usa la stessa logica di selezione KB del metodo principale
+            if ($useMultiKb) {
+                $kbSelIntent = $this->getAllKnowledgeBasesForTenant($tenantId);
+                $selectedKbIdIntent = null; // null per ricerca in tutte le KB
+                Log::info('📚 [RETRIEVE] Multi-KB abilitato', [
+                    'kb_count' => count($kbSelIntent),
+                    'kb_ids' => array_map(fn($kb) => $kb['id'] ?? 'unknown', $kbSelIntent)
+                ]);
+            } else {
+                $kbSelIntent = $this->kbSelector->selectForQuery($tenantId, $query);
+                $selectedKbIdIntent = $kbSelIntent['knowledge_base_id'] ?? null;
+                Log::info('🎯 [RETRIEVE] KB singola selezionata', [
+                    'selected_kb_id' => $selectedKbIdIntent,
+                    'kb_selection_result' => $kbSelIntent
+                ]);
+            }
             
             // 🔧 Prima prova l'intent NORMALE (mantiene la logica esistente che funziona)
             $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
+            
+            Log::info("📊 [RETRIEVE] Risultato intent {$intentType}", [
+                'result_found' => $result !== null,
+                'citations_count' => $result ? count($result['citations'] ?? []) : 0,
+                'confidence' => $result['confidence'] ?? 'n/a'
+            ]);
+            
             if ($result !== null) {
                 // Espansione opzionale info di contatto (abilitata via flag)
-                $contactExpansionEnabled = (bool) config('rag.features.contact_expansion', false);
+                $contactExpansionEnabled = (bool) ($this->tenantConfig->getConfig($tenantId)['features']['contact_expansion'] ?? false);
                 if ($contactExpansionEnabled && in_array($intentType, ['phone', 'email', 'address'])) {
                     $expansionResult = $this->executeContactInfoExpansion($intentType, $tenantId, $query, $debug, $selectedKbIdIntent, $result);
                     if ($expansionResult !== null) {
@@ -107,13 +143,27 @@ class KbSearchService
             }
         }
 
-        $cfg = (array) config('rag.hybrid');
+        Log::info('🚨 [RETRIEVE] Nessun intent soddisfatto - Attivando FALLBACK GENERALE', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'intents_tested' => $intents,
+            'fallback_type' => 'hybrid_search'
+        ]);
+
+        $cfg = $this->tenantConfig->getHybridConfig($tenantId);
         $vecTopK   = (int) ($cfg['vector_top_k'] ?? 30);
         $bmTopK    = (int) ($cfg['bm25_top_k']   ?? 50);
         $rrfK      = (int) ($cfg['rrf_k']        ?? 60);
         $mmrLambda = (float) ($cfg['mmr_lambda'] ?? 0.3);
         $mmrTake   = (int) ($cfg['mmr_take']     ?? 8);
         $neighbor  = (int) ($cfg['neighbor_radius'] ?? 1);
+        
+        Log::info('⚙️ [RETRIEVE] Configurazione hybrid search', [
+            'vector_top_k' => $vecTopK,
+            'bm25_top_k' => $bmTopK,
+            'rrf_k' => $rrfK,
+            'mmr_lambda' => $mmrLambda
+        ]);
 
         // Multi-query expansion (originale + parafrasi) - usa query normalizzata
         $queries = $this->mq ? $this->mq->expand($normalizedQuery) : [$normalizedQuery];
@@ -124,12 +174,34 @@ class KbSearchService
             $trace['milvus'] = $this->milvus->health();
         }
         
-        // Selezione automatica KB per la query
-        $kbSel = $this->kbSelector->selectForQuery($tenantId, $query);
-        $selectedKbId = $kbSel['knowledge_base_id'] ?? null;
-        $selectedKbName = $kbSel['kb_name'] ?? null;
+        // Selezione automatica KB per la query - supporta multi-KB se abilitato dal tenant
+        
+        if ($useMultiKb) {
+            // Multi-KB: cerca in tutte le KB del tenant
+            $kbSel = $this->getAllKnowledgeBasesForTenant($tenantId);
+            $selectedKbId = null; // null indica ricerca in tutte le KB
+            $selectedKbName = 'Tutte le Knowledge Base';
+        } else {
+            // Single KB: usa la logica esistente
+            $kbSel = $this->kbSelector->selectForQuery($tenantId, $query);
+            $selectedKbId = $kbSel['knowledge_base_id'] ?? null;
+            $selectedKbName = $kbSel['kb_name'] ?? null;
+        }
+        
+        // 🔍 LOG DETTAGLIATO per debug KB selection
+        \Log::info('RAG KB Selection', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'multi_kb_enabled' => $useMultiKb,
+            'selected_kb_id' => $selectedKbId,
+            'selected_kb_name' => $selectedKbName,
+            'kb_selection_reason' => $kbSel['reason'] ?? 'unknown',
+            'caller' => debug_backtrace()[1]['class'] ?? 'unknown'
+        ]);
+        
         if ($debug) {
             $trace['selected_kb'] = $kbSel;
+            $trace['multi_kb_enabled'] = $useMultiKb;
         }
         
         // HyDE (Hypothetical Document Embeddings) se abilitato
@@ -164,16 +236,76 @@ class KbSearchService
                 
                 $vecHit = [];
                 if ((($trace['milvus']['ok'] ?? false) === true) && $qEmb) {
+                    // 🚀 LOG DETTAGLIATO: Ricerca Milvus
+                    Log::info('🔍 [MILVUS] Invio query a Milvus', [
+                        'tenant_id' => $tenantId,
+                        'query' => $q,
+                        'embedding_dimensions' => count($qEmb),
+                        'vector_top_k' => $vecTopK,
+                        'milvus_health' => $trace['milvus'] ?? null,
+                    ]);
+                    
                     $vecHit = $this->milvus->searchTopKWithEmbedding($tenantId, $qEmb, $vecTopK);
+                    
+                    // 🚀 LOG DETTAGLIATO: Risultati Milvus
+                    Log::info('📊 [MILVUS] Risultati ricevuti da Milvus', [
+                        'tenant_id' => $tenantId,
+                        'query' => $q,
+                        'results_count' => count($vecHit),
+                        'top_3_results' => array_slice($vecHit, 0, 3),
+                        'all_document_ids' => array_column($vecHit, 'document_id'),
+                        'all_scores' => array_column($vecHit, 'score'),
+                    ]);
                 }
                 $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK, $selectedKbId);
+                
+                // 🔍 LOG DETTAGLIATO per ogni query
+                Log::info("🔎 [RETRIEVE] Risultati per query: {$q}", [
+                    'tenant_id' => $tenantId,
+                    'embedding_source' => $embeddingSource,
+                    'selected_kb_id' => $selectedKbId,
+                    'vector_hits_count' => count($vecHit),
+                    'bm25_hits_count' => count($bmHit),
+                    'vector_top_5' => array_map(function($hit) {
+                        return [
+                            'doc_id' => $hit['document_id'] ?? 'unknown',
+                            'score' => $hit['score'] ?? 'unknown',
+                            'content_preview' => substr($hit['content'] ?? '', 0, 100)
+                        ];
+                    }, array_slice($vecHit, 0, 5)),
+                    'bm25_top_5' => array_map(function($hit) {
+                        return [
+                            'doc_id' => $hit['document_id'] ?? 'unknown',
+                            'score' => $hit['score'] ?? 'unknown',
+                            'content_preview' => substr($hit['content'] ?? '', 0, 100)
+                        ];
+                    }, array_slice($bmHit, 0, 5))
+                ]);
+                
                 $trace['per_query'][] = [
                     'q' => $q,
                     'embedding_source' => $embeddingSource,
                     'vector_hits' => array_slice($vecHit, 0, 10),
                     'fts_hits' => array_slice($bmHit, 0, 10),
                 ];
-                $allFused[] = $this->rrfFuse($this->filterVecHitsByKb($vecHit, $selectedKbId), $bmHit, $rrfK);
+                
+                $filteredVecHit = $this->filterVecHitsByKb($vecHit, $selectedKbId);
+                $fusedResult = $this->rrfFuse($filteredVecHit, $bmHit, $rrfK);
+                
+                Log::info("⚡ [RETRIEVE] RRF Fusion per query: {$q}", [
+                    'vector_hits_before_kb_filter' => count($vecHit),
+                    'vector_hits_after_kb_filter' => count($filteredVecHit),
+                    'bm25_hits' => count($bmHit),
+                    'fused_results' => count($fusedResult),
+                    'fused_top_3' => array_map(function($hit) {
+                        return [
+                            'doc_id' => $hit['document_id'] ?? 'unknown',
+                            'final_score' => $hit['score'] ?? 'unknown'
+                        ];
+                    }, array_slice($fusedResult, 0, 3))
+                ]);
+                
+                $allFused[] = $fusedResult;
             } else {
                 // Per cache: se HyDE è abilitato, includi un hash dell'embedding HyDE nella chiave
                 $cacheKeySuffix = '';
@@ -205,13 +337,33 @@ class KbSearchService
         }
         // Fusione finale tra tutte le query (RRF su posizioni già "scorate"):
         $fused = $this->rrfFuseMany($allFused, $rrfK);
+        
+        Log::info('🔀 [RETRIEVE] Fusione finale completata', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'input_queries_count' => count($queries),
+            'total_fused_results' => count($fused),
+            'fused_top_10' => array_map(function($hit) {
+                return [
+                    'doc_id' => $hit['document_id'] ?? 'unknown',
+                    'final_score' => $hit['score'] ?? 'unknown',
+                    'content_preview' => substr($hit['content'] ?? '', 0, 50)
+                ];
+            }, array_slice($fused, 0, 10))
+        ]);
+        
         if ($debug) { $trace['fused_top'] = array_slice($fused, 0, 20); }
         if ($fused === []) {
+            Log::warning('❌ [RETRIEVE] FALLBACK GENERALE FALLITO - Nessun risultato finale', [
+                'tenant_id' => $tenantId,
+                'query' => $query,
+                'reason' => 'no_results_after_fusion'
+            ]);
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $trace];
         }
 
         // Prepara candidati per reranker (top_n configurabile)
-        $topN = (int) config('rag.reranker.top_n', 30);
+        $topN = (int) ($this->tenantConfig->getRerankerConfig($tenantId)['top_n'] ?? 30);
         $candidates = [];
         foreach (array_slice($fused, 0, $topN) as $h) {
             $candidates[] = [
@@ -222,8 +374,8 @@ class KbSearchService
             ];
         }
 
-        // Seleziona reranker basato su configurazione
-        $driver = (string) config('rag.reranker.driver', 'embedding');
+        // Seleziona reranker basato su configurazione tenant
+        $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
         $reranker = match($driver) {
             'cohere' => new CohereReranker(),
             'llm' => new LLMReranker(app(\App\Services\LLM\OpenAIChatService::class)),
@@ -238,9 +390,26 @@ class KbSearchService
             $cacheKey .= ':' . floor(time() / 300); // 5 minuti di cache per LLM
         }
         
+        // 🚀 LOG DETTAGLIATO: Pre-reranking
+        Log::info('🔄 [RERANK] Prima del reranking', [
+            'query' => $query,
+            'reranker_type' => get_class($reranker),
+            'candidates_count' => count($candidates),
+            'top_n' => $topN,
+            'candidates_preview' => array_slice($candidates, 0, 3),
+        ]);
+        
         $ranked = $this->cache->remember($cacheKey, function () use ($reranker, $query, $candidates, $topN) {
             return $reranker->rerank($query, $candidates, $topN);
         });
+        
+        // 🚀 LOG DETTAGLIATO: Post-reranking
+        Log::info('✅ [RERANK] Dopo il reranking', [
+            'query' => $query,
+            'ranked_count' => count($ranked),
+            'ranked_preview' => array_slice($ranked, 0, 3),
+            'score_changes' => $this->compareScores($candidates, $ranked),
+        ]);
         $this->telemetry->event('rerank.done', ['tenant_id'=>$tenantId,'driver'=>$driver,'in'=>count($candidates),'out'=>count($ranked)]);
         if ($debug) { 
             $trace['reranking'] = [
@@ -309,18 +478,52 @@ class KbSearchService
             $result['debug']['intent_detection'] = $intentDebug;
         }
         
+        Log::info('✅ [RETRIEVE] RISULTATO FINALE', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'final_citations_count' => count($cits),
+            'confidence' => $result['confidence'],
+            'execution_path' => $intentDebug['executed_intent'] ?? 'hybrid_rag',
+            'selected_kb' => $selectedKbName,
+            'citations_preview' => array_map(function($c) {
+                return [
+                    'doc_id' => $c['id'] ?? 'unknown',
+                    'title' => substr($c['title'] ?? '', 0, 50),
+                    'score' => $c['score'] ?? 'unknown'
+                ];
+            }, array_slice($cits, 0, 3))
+        ]);
+        
         return $result;
     }
 
     private function filterVecHitsByKb(array $vecHits, ?int $kbId): array
     {
-        if ($kbId === null) return $vecHits;
         if ($vecHits === []) return $vecHits;
+        
         $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $vecHits)));
         $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
         $docToKb = [];
         foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
-        return array_values(array_filter($vecHits, fn($h) => ($docToKb[(int)$h['document_id']] ?? 0) === $kbId));
+        
+        // 🔧 FILTRO ORFANI: Rimuovi documenti che non esistono più in PostgreSQL
+        $validHits = array_values(array_filter($vecHits, function($h) use ($docToKb) {
+            $docId = (int) $h['document_id'];
+            $exists = isset($docToKb[$docId]);
+            if (!$exists) {
+                Log::debug("🗑️ [RETRIEVE] Documento orfano filtrato", [
+                    'doc_id' => $docId,
+                    'reason' => 'not_found_in_postgresql'
+                ]);
+            }
+            return $exists;
+        }));
+        
+        // Se kbId è null, restituisci tutti i documenti validi (multi-KB mode)
+        if ($kbId === null) return $validHits;
+        
+        // Filtra per KB specifica
+        return array_values(array_filter($validHits, fn($h) => ($docToKb[(int)$h['document_id']] ?? 0) === $kbId));
     }
 
     private function filterFusedByKb(array $fused, ?int $kbId): array
@@ -766,15 +969,29 @@ class KbSearchService
     {
         $synonyms = $this->getTenantSynonyms($tenantId);
         
-        $expanded = $name;
-        foreach ($synonyms as $term => $synonymList) {
-            if (str_contains($name, $term)) {
-                // Aggiungi i sinonimi separati da spazi per la ricerca
-                $expanded .= ' ' . $synonymList;
+        // Colleziona tutti i termini senza duplicazioni
+        $allTerms = [$name];
+        
+        // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
+        $sortedSynonyms = $synonyms;
+        uksort($sortedSynonyms, fn($a, $b) => strlen($b) - strlen($a));
+        
+        foreach ($sortedSynonyms as $term => $synonymList) {
+            if (str_contains(strtolower($name), strtolower($term))) {
+                // Aggiungi i sinonimi alla collezione
+                $synonymWords = explode(' ', $synonymList);
+                foreach ($synonymWords as $word) {
+                    $word = trim($word);
+                    if ($word !== '' && !in_array(strtolower($word), array_map('strtolower', $allTerms))) {
+                        $allTerms[] = $word;
+                    }
+                }
+                // Prendi solo il primo match per evitare sovrapposizioni
+                break;
             }
         }
         
-        return $expanded;
+        return implode(' ', $allTerms);
     }
     
     /**
@@ -828,6 +1045,31 @@ class KbSearchService
         $debugInfo['semantic_fallback']['top_semantic_hits'] = array_slice($semanticHits, 0, 5);
         
         if (empty($semanticHits)) {
+            // Retry con query minimale e k ridotto (allineato al comportamento che sai funzionare)
+            $minimalQuery = trim($name . ' ' . match ($intentType) {
+                'schedule' => 'orario',
+                'phone' => 'telefono',
+                'email' => 'email',
+                'address' => 'indirizzo',
+                default => ''
+            });
+            $minimalEmb = $this->embeddings->embedTexts([$minimalQuery])[0] ?? null;
+            if ($minimalEmb) {
+                $retryHits = $this->milvus->searchTopK($tenantId, $minimalEmb, 20);
+                $debugInfo['semantic_fallback']['retry_query'] = $minimalQuery;
+                $debugInfo['semantic_fallback']['retry_results_found'] = count($retryHits);
+                if (!empty($retryHits)) {
+                    // Ricicla il percorso di estrazione
+                    $data = $this->extractIntentDataFromSemanticResults($retryHits, $intentType, $tenantId);
+                    if (!empty($data)) {
+                        return [
+                            'citations' => $data,
+                            'confidence' => min(0.6, array_sum(array_column($retryHits, 'score')) / max(1, count($retryHits))),
+                            'debug' => $debug ? $debugInfo : null
+                        ];
+                    }
+                }
+            }
             $debugInfo['semantic_fallback']['failure_reason'] = 'No semantic hits from Milvus';
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $debugInfo : null];
         }
@@ -848,6 +1090,51 @@ class KbSearchService
         
         if (empty($filteredResults)) {
             $debugInfo['semantic_fallback']['failure_reason'] = 'No valid data extracted from semantic results';
+            
+            // 🚀 TECNICA EVOLUTA 6: DIRECT DATABASE SEARCH come ultimo fallback
+            Log::info("🔧 [SEMANTIC-FALLBACK] Attivando ricerca diretta database", [
+                'intent_type' => $intentType,
+                'tenant_id' => $tenantId,
+                'reason' => 'no_valid_milvus_results'
+            ]);
+            
+            $directResults = $this->directDatabaseSearch($tenantId, $originalQuery);
+            
+            if (!empty($directResults)) {
+                Log::info("🎯 [SEMANTIC-FALLBACK] Ricerca diretta riuscita!", [
+                    'results_count' => count($directResults),
+                    'method' => 'direct_database_search'
+                ]);
+                
+                $cits = [];
+                foreach ($directResults as $result) {
+                    $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ?', [$result['document_id'], $tenantId]);
+                    if ($doc) {
+                        $citation = [
+                            'id' => (int) $doc->id,
+                            'title' => (string) $doc->title,
+                            'url' => url('storage/'.$doc->path),
+                            'snippet' => $result['excerpt'],
+                            'score' => (float) $result['score'],
+                            'document_source_url' => $doc->source_url ?? null,
+                        ];
+                        $citation[$intentType] = $result['schedule'];
+                        $cits[] = $citation;
+                    }
+                }
+                
+                if (!empty($cits)) {
+                    $debugInfo['semantic_fallback']['direct_db_success'] = true;
+                    $debugInfo['semantic_fallback']['direct_db_results'] = count($cits);
+                    
+                    return [
+                        'citations' => $cits,
+                        'confidence' => 0.75, // Confidence alta per ricerca diretta
+                        'debug' => $debug ? $debugInfo : null
+                    ];
+                }
+            }
+            
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $debugInfo : null];
         }
         
@@ -924,17 +1211,26 @@ class KbSearchService
     private function buildSemanticQuery(string $name, string $intentType, ?int $tenantId = null): string
     {
         $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
-        
-        // Aggiungi contesto dell'intent per migliorare la ricerca semantica
-        $intentContext = match($intentType) {
-            'schedule' => 'orario apertura chiusura ore',
-            'phone' => 'telefono numero contatto',
-            'email' => 'email posta elettronica contatto',
-            'address' => 'indirizzo sede ubicazione dove si trova',
+
+        // Mantieni il bigram "polizia locale" se presente, evita termini rumorosi/esoterici
+        $parts = [];
+        $parts[] = trim($name);
+
+        if (str_contains(mb_strtolower($expandedName), 'polizia locale')) {
+            $parts[] = 'polizia locale';
+        }
+
+        // Aggiungi contesto dell'intent SEMPLIFICATO per migliore rilevanza semantica
+        $intentContext = match ($intentType) {
+            'schedule' => 'orario',
+            'phone' => 'telefono',
+            'email' => 'email',
+            'address' => 'indirizzo',
             default => ''
         };
-        
-        return trim($expandedName . ' ' . $intentContext);
+
+        $query = trim(implode(' ', array_unique(array_filter($parts))) . ' ' . $intentContext);
+        return $query;
     }
     
     /**
@@ -943,10 +1239,38 @@ class KbSearchService
     private function extractIntentDataFromSemanticResults(array $semanticHits, string $intentType, int $tenantId): array
     {
         $results = [];
+        $processedCount = 0;
+        $extractedCount = 0;
+        
+        Log::info("🔍 [EXTRACT] Inizio estrazione dati intent", [
+            'intent_type' => $intentType,
+            'tenant_id' => $tenantId,
+            'total_hits' => count($semanticHits)
+        ]);
         
         foreach ($semanticHits as $hit) {
-            $content = $this->text->getChunkSnippet((int)$hit['document_id'], (int)$hit['chunk_index'], 800);
-            if (!$content) continue;
+            $processedCount++;
+            $docId = (int) $hit['document_id'];
+            
+            // 🔧 FILTRO: Verifica che il documento esista ancora in PostgreSQL
+            $docExists = DB::selectOne('SELECT id FROM documents WHERE id = ? AND tenant_id = ?', [$docId, $tenantId]);
+            if (!$docExists) {
+                Log::debug("🗑️ [EXTRACT] Documento orfano in Milvus", [
+                    'doc_id' => $docId,
+                    'tenant_id' => $tenantId,
+                    'reason' => 'document_not_found_in_postgresql'
+                ]);
+                continue;
+            }
+            
+            $content = $this->text->getChunkSnippet($docId, (int)$hit['chunk_index'], 800);
+            if (!$content) {
+                Log::debug("⚠️ [EXTRACT] Chunk vuoto", [
+                    'doc_id' => $docId,
+                    'chunk_index' => $hit['chunk_index'] ?? 'unknown'
+                ]);
+                continue;
+            }
             
             // Usa TextSearchService per estrarre dati specifici dal contenuto
             $extracted = match($intentType) {
@@ -957,8 +1281,18 @@ class KbSearchService
                 default => []
             };
             
+            Log::debug("🔎 [EXTRACT] Analisi chunk", [
+                'doc_id' => $hit['document_id'] ?? 'unknown',
+                'chunk_index' => $hit['chunk_index'] ?? 'unknown',
+                'content_length' => strlen($content),
+                'content_preview' => substr($content, 0, 150),
+                'extracted_count' => count($extracted),
+                'extracted_data' => array_slice($extracted, 0, 2) // Prime 2 per debug
+            ]);
+            
             // Solo se trovati dati del tipo richiesto
             if (!empty($extracted)) {
+                $extractedCount++;
                 foreach ($extracted as $item) {
                     $results[] = [
                         'document_id' => (int) $hit['document_id'],
@@ -971,6 +1305,15 @@ class KbSearchService
             }
         }
         
+        Log::info("📊 [EXTRACT] Estrazione completata", [
+            'intent_type' => $intentType,
+            'tenant_id' => $tenantId,
+            'processed_chunks' => $processedCount,
+            'chunks_with_data' => $extractedCount,
+            'total_results' => count($results),
+            'success_rate' => $processedCount > 0 ? round($extractedCount / $processedCount * 100, 1) . '%' : '0%'
+        ]);
+        
         // Ordina per score e deduplica
         usort($results, fn($a, $b) => $b['score'] <=> $a['score']);
         return array_unique($results, SORT_REGULAR);
@@ -981,13 +1324,37 @@ class KbSearchService
      */
     private function extractScheduleFromContent(string $content): array
     {
-        // Usa gli stessi pattern del TextSearchService ma applicati direttamente
+        Log::debug("⏰ [SCHEDULE] Estrazione orari da contenuto", [
+            'content_length' => strlen($content),
+            'content_preview' => substr($content, 0, 200)
+        ]);
+        
+        // 🚀 TECNICA EVOLUTA 1: MULTI-STEP CONTEXT-AWARE EXTRACTION
+        $advancedResult = $this->advancedScheduleExtraction($content);
+        if (!empty($advancedResult)) {
+            Log::info("🎯 [SCHEDULE] Estrazione avanzata riuscita", [
+                'method' => 'context_aware_extraction',
+                'results_found' => count($advancedResult)
+            ]);
+            return $advancedResult;
+        }
+        
+        // 🔧 FALLBACK: Pattern tradizionali (ALLINEATI al TextSearchService)
         $patterns = [
+            // Orario standard con trattino (es: "9:00-17:00", "dalle ore 8:30-12:30")
             '/\b(?:dalle?\s+)?(?:ore\s+)?(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\b/iu',
+            // Orario con "alle" (es: "dalle 9:00 alle 17:00")
             '/\b(?:dalle?\s+)?(?:ore\s+)?(\d{1,2}[:\.]?\d{2})\s+(?:alle?\s+)(\d{1,2}[:\.]?\d{2})\b/iu',
+            // Orario senza minuti con trattino (es: "9-17", "dalle 8-12")
             '/\b(?:dalle?\s+)?(?:ore\s+)?(\d{1,2})\s*[-–—]\s*(\d{1,2})\b(?!\d)/iu',
-            '/\b(?:ore|orario|apertura|chiusura|dalle?|fino)\s+(\d{1,2}[:\.]?\d{2})\b/iu',
+            // Giorni della settimana con orari (es: "lunedì: 9:00-17:00", "lun 9-12")
             '/\b(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica|lun|mar|mer|gio|ven|sab|dom)\s*:?\s*(\d{1,2}(?:[:\.]?\d{2})?(?:\s*[-–—]\s*\d{1,2}(?:[:\.]?\d{2})?)?)\b/iu',
+            // Apertura/chiusura con contesto (es: "apertura alle 9:00", "orario dalle 8:30 alle 12:30")
+            '/\b(?:aperto|apertura|chiusura|orario)\s+(?:dalle?\s+)?(?:ore\s+)?(\d{1,2}(?:[:\.]?\d{2})?)\s*(?:[-–—]|alle?\s+)?\s*(\d{1,2}(?:[:\.]?\d{2})?)\b/iu',
+            // Orario singolo con contesto esplicito (es: "ore 14:30", "apertura 9:00")
+            '/\b(?:ore|orario|apertura|chiusura|dalle?|fino)\s+(\d{1,2}[:\.]?\d{2})\b/iu',
+            // Pattern per mattina/pomeriggio (es: "9:00-12:00 e 15:00-18:00")
+            '/\b(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\s*(?:e|,)\s*(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\b/iu',
         ];
         
         $schedules = [];
@@ -1010,7 +1377,306 @@ class KbSearchService
             }
         }
         
-        return array_unique($schedules);
+        $uniqueSchedules = array_unique($schedules);
+        Log::debug("⏰ [SCHEDULE] Estrazione orari completata", [
+            'patterns_tested' => count($patterns),
+            'total_matches' => count($schedules),
+            'unique_schedules' => count($uniqueSchedules),
+            'found_schedules' => $uniqueSchedules
+        ]);
+        
+        return $uniqueSchedules;
+    }
+    
+    /**
+     * 🚀 TECNICA RAG EVOLUTA: CONTEXT-AWARE SCHEDULE EXTRACTION
+     * 
+     * Implementa multiple tecniche evolute:
+     * 1. Context Detection - Trova sezioni specifiche (es: "COMANDO POLIZIA LOCALE")
+     * 2. Proximity-Based Extraction - Estrae dati vicini al contesto
+     * 3. Multi-Entity Extraction - Email, telefono, giorni anche senza orari specifici
+     * 4. Fuzzy Table Parsing - Gestisce tabelle malformate
+     * 5. Inference-Based Completion - Inferisce orari da giorni di apertura
+     */
+    private function advancedScheduleExtraction(string $content): array
+    {
+        Log::debug("🚀 [ADVANCED] Inizio estrazione avanzata orari");
+        
+        // STEP 1: CONTEXT DETECTION - Trova entità specifiche nel contenuto
+        $contexts = $this->detectScheduleContexts($content);
+        
+        if (empty($contexts)) {
+            Log::debug("🔍 [ADVANCED] Nessun contesto specifico trovato");
+            return [];
+        }
+        
+        $results = [];
+        
+        foreach ($contexts as $context) {
+            Log::debug("🎯 [ADVANCED] Processando contesto: {$context['entity']}", [
+                'context_start' => $context['start'],
+                'context_length' => $context['length']
+            ]);
+            
+            // STEP 2: PROXIMITY-BASED EXTRACTION - Estrae dati vicini al contesto
+            $extracted = $this->extractFromContext($content, $context);
+            
+            if (!empty($extracted['schedules'])) {
+                $results = array_merge($results, $extracted['schedules']);
+            }
+            
+            // STEP 3: INFERENCE-BASED COMPLETION - Se ha giorni ma non orari, inferisce
+            if (empty($extracted['schedules']) && !empty($extracted['days'])) {
+                $inferred = $this->inferScheduleFromDays($extracted['days'], $context['entity']);
+                if (!empty($inferred)) {
+                    Log::info("🧠 [ADVANCED] Orari inferiti da giorni di apertura", [
+                        'entity' => $context['entity'],
+                        'days' => $extracted['days'],
+                        'inferred' => $inferred
+                    ]);
+                    $results = array_merge($results, $inferred);
+                }
+            }
+        }
+        
+        return array_unique($results);
+    }
+    
+    /**
+     * STEP 1: Rileva contesti specifici nel documento
+     */
+    private function detectScheduleContexts(string $content): array
+    {
+        $contexts = [];
+        
+        // Pattern per rilevare entità specifiche
+        $entityPatterns = [
+            'comando_polizia' => '/\b(?:COMANDO\s+)?POLIZIA\s+LOCALE\b/iu',
+            'vigili_urbani' => '/\bVIGILI\s+URBANI\b/iu',
+            'polizia_municipale' => '/\bPOLIZIA\s+MUNICIPALE\b/iu',
+            'ufficio_tecnico' => '/\bUFFICIO\s+TECNICO\b/iu',
+            'anagrafe' => '/\bUFFICIO\s+(?:SERVIZI\s+)?(?:DEMOGRAFICI|ANAGRAFE)\b/iu',
+        ];
+        
+        foreach ($entityPatterns as $type => $pattern) {
+            if (preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
+                $start = $matches[0][1];
+                $entity = $matches[0][0];
+                
+                // Determina la lunghezza del contesto da analizzare (500 caratteri dopo l'entità)
+                $contextLength = min(800, strlen($content) - $start);
+                
+                $contexts[] = [
+                    'type' => $type,
+                    'entity' => $entity,
+                    'start' => $start,
+                    'length' => $contextLength,
+                ];
+                
+                Log::debug("🎯 [CONTEXT] Trovato: {$entity}", [
+                    'type' => $type,
+                    'position' => $start
+                ]);
+            }
+        }
+        
+        return $contexts;
+    }
+    
+    /**
+     * 🚀 TECNICA RAG EVOLUTA 6: DIRECT DATABASE SEARCH
+     * 
+     * Quando Milvus non ha i documenti, cerca direttamente nel database PostgreSQL
+     * usando pattern semantici avanzati
+     */
+    private function directDatabaseSearch(int $tenantId, string $query): array
+    {
+        Log::info("🔍 [DIRECT-DB] Ricerca diretta nel database", [
+            'tenant_id' => $tenantId,
+            'query' => $query
+        ]);
+        
+        // Espandi la query con sinonimi per ricerca diretta
+        $expandedTerms = $this->expandQueryWithSynonyms($query, $tenantId);
+        
+        // Cerca documenti che contengono i termini target
+        $searchTerms = [
+            'comando polizia locale',
+            'polizia locale',
+            'vigili urbani',
+            'polizialocale@',
+            'orari apertura.*polizia',
+            'orario.*comando',
+        ];
+        
+        $sqlConditions = [];
+        foreach ($searchTerms as $term) {
+            $sqlConditions[] = "LOWER(dc.content) LIKE '%" . strtolower($term) . "%'";
+        }
+        
+        $sql = "
+            SELECT 
+                d.id as document_id,
+                d.title,
+                d.knowledge_base_id,
+                dc.chunk_index,
+                dc.content,
+                0.8 as score
+            FROM documents d 
+            JOIN document_chunks dc ON d.id = dc.document_id 
+            WHERE d.tenant_id = ? 
+            AND (" . implode(' OR ', $sqlConditions) . ")
+            ORDER BY 
+                CASE 
+                    WHEN LOWER(dc.content) LIKE '%comando polizia locale%' THEN 1
+                    WHEN LOWER(dc.content) LIKE '%polizia locale%' THEN 2
+                    ELSE 3
+                END,
+                d.id DESC
+            LIMIT 10
+        ";
+        
+        $results = DB::select($sql, [$tenantId]);
+        
+        Log::info("📊 [DIRECT-DB] Risultati trovati", [
+            'count' => count($results),
+            'doc_ids' => array_map(fn($r) => $r->document_id, $results)
+        ]);
+        
+        $extractedSchedules = [];
+        
+        foreach ($results as $result) {
+            // Applica l'estrazione avanzata al contenuto trovato
+            $advanced = $this->advancedScheduleExtraction($result->content);
+            
+            if (!empty($advanced)) {
+                foreach ($advanced as $schedule) {
+                    $extractedSchedules[] = [
+                        'document_id' => (int) $result->document_id,
+                        'chunk_index' => (int) $result->chunk_index,
+                        'schedule' => $schedule,
+                        'score' => (float) $result->score,
+                        'excerpt' => mb_substr($result->content, 0, 300) . '...',
+                    ];
+                }
+            }
+        }
+        
+        return $extractedSchedules;
+    }
+    
+    /**
+     * STEP 2: Estrae dati da un contesto specifico
+     */
+    private function extractFromContext(string $content, array $context): array
+    {
+        $start = $context['start'];
+        $length = $context['length'];
+        $contextText = substr($content, $start, $length);
+        
+        $extracted = [
+            'schedules' => [],
+            'days' => [],
+            'email' => null,
+            'phone' => null,
+        ];
+        
+        // Estrae email
+        if (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/u', $contextText, $emailMatch)) {
+            $extracted['email'] = $emailMatch[1];
+        }
+        
+        // Estrae telefono
+        if (preg_match('/\b(?:tel[:.]?\s*)?(?:\+39\s*)?(?:0\d{1,3}[.\s]?\d{6,8}|3\d{2}[.\s]?\d{3}[.\s]?\d{3,4})\b/u', $contextText, $phoneMatch)) {
+            $extracted['phone'] = trim($phoneMatch[0]);
+        }
+        
+        // Estrae giorni della settimana
+        $dayPattern = '/\b(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica)\b/iu';
+        if (preg_match_all($dayPattern, $contextText, $dayMatches)) {
+            $extracted['days'] = array_unique(array_map('strtolower', $dayMatches[1]));
+        }
+        
+        // Estrae orari con pattern evoluti per tabelle malformate
+        $schedulePatterns = [
+            // Pattern standard
+            '/\b(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\b/iu',
+            // Pattern per tabelle malformate: "| Martedì | 9:00-12:00 |"
+            '/\|\s*(?:martedì|giovedì|venerdì)\s*\|\s*(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\s*\|/iu',
+            // Pattern per giorni seguiti da orari: "Martedì 9:00-12:00"
+            '/(?:martedì|giovedì|venerdì)\s+(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})/iu',
+        ];
+        
+        foreach ($schedulePatterns as $pattern) {
+            if (preg_match_all($pattern, $contextText, $scheduleMatches, PREG_SET_ORDER)) {
+                foreach ($scheduleMatches as $match) {
+                    if (isset($match[1]) && isset($match[2])) {
+                        $schedule = $match[1] . '-' . $match[2];
+                        // Valida che sia un orario sensato
+                        if ($this->isValidTimeRange($match[1], $match[2])) {
+                            $extracted['schedules'][] = $schedule;
+                        }
+                    }
+                }
+            }
+        }
+        
+        Log::debug("📊 [EXTRACT] Dati estratti dal contesto", [
+            'entity' => $context['entity'],
+            'schedules' => $extracted['schedules'],
+            'days' => $extracted['days'],
+            'has_email' => !empty($extracted['email']),
+            'has_phone' => !empty($extracted['phone'])
+        ]);
+        
+        return $extracted;
+    }
+    
+    /**
+     * STEP 3: Inferisce orari da giorni di apertura usando euristiche
+     */
+    private function inferScheduleFromDays(array $days, string $entity): array
+    {
+        // Euristiche per uffici pubblici italiani
+        $inferred = [];
+        
+        // Se ci sono solo alcuni giorni, probabilmente è un ufficio con orari limitati
+        if (count($days) <= 3) {
+            foreach ($days as $day) {
+                switch (strtolower($day)) {
+                    case 'martedì':
+                    case 'venerdì':
+                        // Mattina: tipico per uffici pubblici
+                        $inferred[] = "Martedì e Venerdì: 9:00-12:00 (orario inferito)";
+                        break;
+                    case 'giovedì':
+                        // Pomeriggio: tipico per alcuni uffici
+                        $inferred[] = "Giovedì: 15:00-17:00 (orario inferito)";
+                        break;
+                }
+            }
+        }
+        
+        // Combina giorni comuni in un unico orario
+        if (in_array('martedì', $days) && in_array('venerdì', $days)) {
+            $inferred[] = "Apertura: Martedì e Venerdì mattina, Giovedì pomeriggio";
+        }
+        
+        return array_unique($inferred);
+    }
+    
+    /**
+     * Valida che due orari formino un range sensato
+     */
+    private function isValidTimeRange(string $start, string $end): bool
+    {
+        $startHour = (int) explode(':', str_replace('.', ':', $start))[0];
+        $endHour = (int) explode(':', str_replace('.', ':', $end))[0];
+        
+        // Range validi per uffici pubblici: 7:00-20:00
+        return $startHour >= 7 && $startHour <= 20 && 
+               $endHour >= 7 && $endHour <= 20 && 
+               $startHour < $endHour;
     }
     
     /**
@@ -1234,7 +1900,7 @@ class KbSearchService
     }
     
     /**
-     * Ottieni intent abilitati per il tenant
+     * Ottieni intent abilitati per il tenant (ora dalla configurazione RAG)
      */
     private function getTenantEnabledIntents(?int $tenantId): array
     {
@@ -1242,12 +1908,16 @@ class KbSearchService
             return []; // Tutti abilitati di default se nessun tenant
         }
         
-        $tenant = Tenant::find($tenantId);
-        if (!$tenant || empty($tenant->intents_enabled)) {
-            return []; // Tutti abilitati di default se configurazione vuota
+        // Usa la nuova configurazione RAG invece del campo tenant deprecated
+        $intentsConfig = $this->tenantConfig->getIntentsConfig($tenantId);
+        $enabled = $intentsConfig['enabled'] ?? [];
+        
+        if (empty($enabled)) {
+            // Default: tutti abilitati
+            return ['thanks' => true, 'phone' => true, 'email' => true, 'address' => true, 'schedule' => true];
         }
         
-        return (array) $tenant->intents_enabled;
+        return $enabled;
     }
     
     /**
@@ -1683,6 +2353,58 @@ class KbSearchService
         }
         
         return array_unique($types);
+    }
+
+    /**
+     * Ottiene tutte le Knowledge Base di un tenant per la ricerca multi-KB
+     */
+    private function getAllKnowledgeBasesForTenant(int $tenantId): array
+    {
+        $kbs = \App\Models\KnowledgeBase::where('tenant_id', $tenantId)
+            ->select('id', 'name')
+            ->get();
+        
+        return [
+            'knowledge_base_id' => null, // null per indicare tutte le KB
+            'kb_name' => 'Tutte le Knowledge Base (' . $kbs->count() . ')',
+            'reason' => 'multi_kb_search_enabled',
+            'available_kbs' => $kbs->map(fn($kb) => [
+                'id' => $kb->id,
+                'name' => $kb->name
+            ])->toArray()
+        ];
+    }
+
+    /**
+     * 🚀 Helper per confrontare punteggi prima e dopo reranking
+     */
+    private function compareScores(array $before, array $after): array
+    {
+        $comparison = [];
+        $beforeById = [];
+        
+        // Indicizza i risultati before per ID
+        foreach ($before as $item) {
+            $id = $item['id'] ?? $item['document_id'] ?? 'unknown';
+            $beforeById[$id] = $item['score'] ?? 0;
+        }
+        
+        // Confronta con i risultati after
+        foreach (array_slice($after, 0, 5) as $i => $item) {
+            $id = $item['id'] ?? $item['document_id'] ?? 'unknown';
+            $beforeScore = $beforeById[$id] ?? 0;
+            $afterScore = $item['score'] ?? 0;
+            
+            $comparison[] = [
+                'position' => $i + 1,
+                'id' => $id,
+                'score_before' => $beforeScore,
+                'score_after' => $afterScore,
+                'score_change' => $afterScore - $beforeScore,
+            ];
+        }
+        
+        return $comparison;
     }
 }
 

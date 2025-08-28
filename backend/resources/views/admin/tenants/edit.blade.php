@@ -67,24 +67,22 @@
     </form>
   </div>
 
-  <!-- Impostazioni Intent -->
+  <!-- Configurazione Intent Avanzata -->
   <div class="bg-white border rounded p-6">
-    <h2 class="text-lg font-semibold mb-4">Configurazione Intent</h2>
+    <h2 class="text-lg font-semibold mb-4">Configurazione Intent Avanzata</h2>
+    <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+      <h3 class="font-medium text-blue-800 mb-2">ℹ️ Nuova Interfaccia Disponibile</h3>
+      <p class="text-sm text-blue-700 mb-3">
+        Le configurazioni degli intent (abilitazione, soglie, modalità KB) sono ora gestite nella nuova interfaccia RAG unificata.
+      </p>
+      <a href="{{ route('admin.rag-config.show', $tenant) }}" 
+         class="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+        🎛️ Vai alla Configurazione RAG
+      </a>
+    </div>
+    
     <form method="post" action="{{ route('admin.tenants.update', $tenant) }}" class="grid gap-4">
       @csrf @method('put')
-      
-      <div>
-        <span class="text-sm font-medium mb-2 block">Intent Abilitati</span>
-        <div class="grid md:grid-cols-5 gap-3">
-          @php($intents = ['thanks' => 'Ringraziamenti', 'phone' => 'Telefono', 'email' => 'Email', 'address' => 'Indirizzo', 'schedule' => 'Orari'])
-          @foreach($intents as $key => $label)
-          <label class="inline-flex items-center gap-2">
-            <input type="checkbox" name="intents_enabled[{{ $key }}]" value="1" {{ old('intents_enabled.'.$key, data_get($tenant->intents_enabled, $key, true)) ? 'checked' : '' }} />
-            <span class="text-sm">{{ $label }}</span>
-          </label>
-          @endforeach
-        </div>
-      </div>
       
       <label class="block">
         <span class="text-sm font-medium">Parole chiave aggiuntive (JSON)</span>
@@ -92,24 +90,8 @@
         <small class="text-gray-600">Dizionario JSON con array di parole chiave aggiuntive per ogni intent.</small>
       </label>
       
-      <div class="grid md:grid-cols-2 gap-4">
-        <label class="block">
-          <span class="text-sm font-medium">Modalità scoping KB</span>
-          <select name="kb_scope_mode" class="w-full border rounded px-3 py-2 mt-1">
-            @php($mode = old('kb_scope_mode', $tenant->kb_scope_mode ?? 'relaxed'))
-            <option value="relaxed" {{ $mode==='relaxed' ? 'selected' : '' }}>Relaxed (fallback su tenant se KB vuota)</option>
-            <option value="strict" {{ $mode==='strict' ? 'selected' : '' }}>Strict (solo KB selezionata)</option>
-          </select>
-        </label>
-        <label class="block">
-          <span class="text-sm font-medium">Soglia intent (0–1)</span>
-          <input type="number" name="intent_min_score" step="0.05" min="0" max="1" value="{{ old('intent_min_score', $tenant->intent_min_score ?? '') }}" class="w-full border rounded px-3 py-2 mt-1" placeholder="0.5" />
-          <small class="text-gray-600">Lascia vuoto per soglia automatica</small>
-        </label>
-      </div>
-      
       <div class="flex justify-end pt-2">
-        <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Impostazioni Intent</button>
+        <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Parole Chiave</button>
       </div>
     </form>
   </div>
@@ -156,6 +138,42 @@
       
       <div class="flex justify-end pt-2">
         <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Sinonimi</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Configurazione Knowledge Base -->
+  <div class="bg-white border rounded p-6">
+    <h2 class="text-lg font-semibold mb-4">Configurazione Knowledge Base</h2>
+    <form method="post" action="{{ route('admin.tenants.update', $tenant) }}" class="grid gap-4">
+      @csrf @method('put')
+      
+      <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+        <h3 class="font-medium text-yellow-800 mb-2">🔍 Ricerca Multi-KB</h3>
+        <p class="text-sm text-yellow-700 mb-2">
+          Per default, il sistema sceglie automaticamente la Knowledge Base migliore per ogni query.
+        </p>
+        <p class="text-sm text-yellow-700">
+          <strong>Ricerca Multi-KB:</strong> Se abilitata, il sistema cercherà simultaneamente in TUTTE le Knowledge Base del tenant, 
+          permettendo di trovare informazioni anche se sono distribuite in KB diverse (es. "Documenti" + "Sito").
+        </p>
+      </div>
+      
+      <label class="flex items-center gap-3">
+        <input type="hidden" name="multi_kb_search" value="0">
+        <input type="checkbox" name="multi_kb_search" value="1" 
+               {{ old('multi_kb_search', $tenant->multi_kb_search) ? 'checked' : '' }} 
+               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+        <div>
+          <span class="text-sm font-medium">Abilita ricerca in tutte le Knowledge Base</span>
+          <div class="text-xs text-gray-600">
+            Permette di estrarre informazioni da multiple KB invece che solo dalla migliore
+          </div>
+        </div>
+      </label>
+      
+      <div class="flex justify-end pt-2">
+        <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Configurazione KB</button>
       </div>
     </form>
   </div>

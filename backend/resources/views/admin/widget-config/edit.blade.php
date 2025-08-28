@@ -439,13 +439,23 @@
           
           <div class="space-y-4">
             <div>
-              <label for="custom_css" class="block text-sm font-medium text-gray-700">
-                CSS Personalizzato
-              </label>
+              <div class="flex justify-between items-center">
+                <label for="custom_css" class="block text-sm font-medium text-gray-700">
+                  CSS Personalizzato
+                </label>
+                <button type="button" onclick="loadCurrentColors()" 
+                        class="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                  🎨 Carica Colori Attuali
+                </button>
+              </div>
               <textarea name="custom_css" id="custom_css" rows="6"
                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
                         placeholder="/* CSS personalizzato per il widget */">{{ old('custom_css', $config->custom_css) }}</textarea>
               @error('custom_css')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+              
+              <div class="mt-2 text-xs text-gray-600">
+                💡 <strong>Tip:</strong> Clicca "Carica Colori Attuali" per ottenere un template CSS con tutti i colori predefiniti del widget pronti per la personalizzazione.
+              </div>
             </div>
             
             <div>
@@ -575,6 +585,53 @@ function resetForm() {
 
 function openFullPreview() {
   window.open('{{ route('admin.widget-config.preview', $tenant) }}', '_blank');
+}
+
+async function loadCurrentColors() {
+  const textarea = document.getElementById('custom_css');
+  const button = event.target;
+  
+  // Confirm if textarea already has content
+  if (textarea.value.trim() && !confirm('Questo sovrascriverà il CSS esistente. Continuare?')) {
+    return;
+  }
+  
+  try {
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '⏳ Caricando...';
+    
+    const response = await fetch('{{ route('admin.widget-config.current-colors', $tenant) }}');
+    const data = await response.json();
+    
+    if (data.success) {
+      textarea.value = data.css;
+      
+      // Show success message
+      button.innerHTML = '✅ Caricato!';
+      setTimeout(() => {
+        button.innerHTML = '🎨 Carica Colori Attuali';
+        button.disabled = false;
+      }, 2000);
+      
+      // Scroll to textarea to show the result
+      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+    } else {
+      throw new Error(data.error || 'Errore durante il caricamento');
+    }
+    
+  } catch (error) {
+    console.error('Error loading colors:', error);
+    
+    button.innerHTML = '❌ Errore';
+    setTimeout(() => {
+      button.innerHTML = '🎨 Carica Colori Attuali';
+      button.disabled = false;
+    }, 2000);
+    
+    alert('Errore durante il caricamento dei colori: ' + error.message);
+  }
 }
 
 // Initialize
