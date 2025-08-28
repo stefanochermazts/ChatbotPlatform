@@ -15,7 +15,7 @@
       <a href="{{ route('admin.widget-config.show', $tenant) }}" class="btn btn-secondary">
         ← Indietro
       </a>
-      <a href="{{ route('admin.widget-config.preview', $tenant) }}" 
+      <a href="{{ route('widget.preview', $tenant) }}" 
          class="btn btn-secondary" target="_blank">
         🔍 Preview
       </a>
@@ -571,7 +571,7 @@ function previewChanges() {
   }
   
   // Open preview with current config
-  const previewUrl = '{{ route('admin.widget-config.preview', $tenant) }}?' + 
+  const previewUrl = '{{ route('widget.preview', $tenant) }}?' + 
                      new URLSearchParams({preview_config: JSON.stringify(config)});
   window.open(previewUrl, '_blank');
 }
@@ -584,7 +584,7 @@ function resetForm() {
 }
 
 function openFullPreview() {
-  window.open('{{ route('admin.widget-config.preview', $tenant) }}', '_blank');
+  window.open('{{ route('widget.preview', $tenant) }}', '_blank');
 }
 
 async function loadCurrentColors() {

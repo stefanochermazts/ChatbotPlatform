@@ -79,13 +79,40 @@
 
                 <!-- Tab: Hybrid Search -->
                 <div id="content-hybrid" class="tab-content">
+                    <!-- Help Section for Hybrid Search -->
+                    <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleHelp('hybrid-help')">
+                            <h3 class="text-lg font-medium text-blue-900">📚 Guida: Ricerca Ibrida</h3>
+                            <svg id="hybrid-help-icon" class="w-5 h-5 text-blue-600 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
+                        <div id="hybrid-help" class="hidden mt-4 text-sm text-blue-800 space-y-3">
+                            <p><strong>La ricerca ibrida</strong> combina ricerca vettoriale (semantica) e BM25 (parole chiave) per trovare i documenti più rilevanti.</p>
+                            <div class="bg-blue-100 p-3 rounded">
+                                <p><strong>📊 Esempio pratico:</strong></p>
+                                <ul class="mt-2 space-y-1 text-xs">
+                                    <li><strong>Query:</strong> "orari ufficio" → Vector: documenti su "orario", "apertura" | BM25: documenti con "orari", "ufficio"</li>
+                                    <li><strong>Vector Top K = 20:</strong> 20 risultati semantici | <strong>BM25 Top K = 40:</strong> 40 risultati testuali</li>
+                                    <li><strong>RRF K = 60:</strong> Combina i risultati con formula RRF per ranking finale</li>
+                                    <li><strong>MMR:</strong> Filtra duplicati e garantisce diversità nei risultati finali</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label for="vector_top_k" class="block text-sm font-medium text-gray-700">Vector Top K</label>
                             <input type="number" name="vector_top_k" id="vector_top_k" min="1" max="200"
                                    value="{{ $currentConfig['hybrid']['vector_top_k'] ?? 40 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Risultati vettoriali per query (1-200)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Più risultati = maggiore completezza, ma maggiore rumore</p>
+                                <p><strong>Basso (10-20):</strong> Risposte precise ma potrebbe perdere informazioni rilevanti</p>
+                                <p><strong>Alto (60-100):</strong> Risposte più complete ma potrebbe includere informazioni marginalmente rilevanti</p>
+                                <p><strong>🎯 Suggerito:</strong> 30-50 per bilanciare precisione e completezza</p>
+                            </div>
                         </div>
 
                         <div>
@@ -93,7 +120,12 @@
                             <input type="number" name="bm25_top_k" id="bm25_top_k" min="1" max="300"
                                    value="{{ $currentConfig['hybrid']['bm25_top_k'] ?? 80 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Risultati BM25 per query (1-300)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Cattura termini esatti, acronimi, codici</p>
+                                <p><strong>Basso (20-40):</strong> Solo matching molto precisi, perde sinonimi</p>
+                                <p><strong>Alto (100-200):</strong> Cattura variazioni linguistiche ma aggiunge rumore</p>
+                                <p><strong>🎯 Suggerito:</strong> 60-100 per testi tecnici, 40-80 per conversazioni</p>
+                            </div>
                         </div>
 
                         <div>
@@ -101,7 +133,12 @@
                             <input type="number" name="rrf_k" id="rrf_k" min="10" max="100"
                                    value="{{ $currentConfig['hybrid']['rrf_k'] ?? 60 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Parametro fusion RRF (10-100)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Controlla la fusione dei ranking Vector + BM25</p>
+                                <p><strong>Basso (20-40):</strong> Privilegia i primi risultati, meno democratico</p>
+                                <p><strong>Alto (70-90):</strong> Risultati più equamente distribuiti tra le due modalità</p>
+                                <p><strong>🎯 Suggerito:</strong> 60 per bilanciamento ottimale</p>
+                            </div>
                         </div>
 
                         <div>
@@ -109,7 +146,12 @@
                             <input type="number" name="mmr_lambda" id="mmr_lambda" min="0" max="1" step="0.05"
                                    value="{{ $currentConfig['hybrid']['mmr_lambda'] ?? 0.25 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Balance rilevanza/diversità (0=diversità, 1=rilevanza)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Bilancia rilevanza vs diversità dei risultati</p>
+                                <p><strong>0.0-0.3:</strong> Massimizza diversità, evita ripetizioni</p>
+                                <p><strong>0.7-1.0:</strong> Massimizza rilevanza, consente duplicati simili</p>
+                                <p><strong>🎯 Suggerito:</strong> 0.25 per evitare ridondanza mantenendo rilevanza</p>
+                            </div>
                         </div>
 
                         <div>
@@ -117,7 +159,12 @@
                             <input type="number" name="mmr_take" id="mmr_take" min="1" max="50"
                                    value="{{ $currentConfig['hybrid']['mmr_take'] ?? 10 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Documenti finali selezionati (1-50)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Numero finale di documenti nel contesto LLM</p>
+                                <p><strong>Basso (3-8):</strong> Risposte concise, meno copertura tematica</p>
+                                <p><strong>Alto (15-30):</strong> Più informazioni ma possibile confusione LLM</p>
+                                <p><strong>🎯 Suggerito:</strong> 8-12 per bilanciare completezza e chiarezza</p>
+                            </div>
                         </div>
 
                         <div>
@@ -125,13 +172,22 @@
                             <input type="number" name="neighbor_radius" id="neighbor_radius" min="0" max="10"
                                    value="{{ $currentConfig['hybrid']['neighbor_radius'] ?? 2 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Chunk adiacenti da includere (0-10)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Include chunk precedenti/successivi per contesto</p>
+                                <p><strong>0:</strong> Solo chunk esatto trovato</p>
+                                <p><strong>2-3:</strong> Include paragrafi adiacenti per contesto completo</p>
+                                <p><strong>🎯 Suggerito:</strong> 2 per mantenere il flusso narrativo</p>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Multi-Query Section -->
                     <div class="mt-6 p-4 bg-gray-50 rounded-lg">
                         <h3 class="text-lg font-medium text-gray-900 mb-4">Multi-Query Expansion</h3>
+                        <div class="mb-3 text-xs text-gray-700 bg-gray-100 p-2 rounded">
+                            <strong>💡 Funzionalità:</strong> Genera variazioni della query originale per catturare più sfumature semantiche e migliorare il recall.
+                            <br><strong>Esempio:</strong> "orari ufficio" → "quando apre l'ufficio", "apertura sportelli", "orario di ricevimento"
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="flex items-center">
@@ -146,12 +202,20 @@
                                 <input type="number" name="multiquery_num" id="multiquery_num" min="1" max="10"
                                        value="{{ $currentConfig['multiquery']['num'] ?? 3 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>2-3:</strong> Leggero miglioramento recall</p>
+                                    <p><strong>4-6:</strong> Maggiore copertura ma più costi</p>
+                                </div>
                             </div>
                             <div>
                                 <label for="multiquery_temperature" class="block text-sm font-medium text-gray-700">Temperature</label>
                                 <input type="number" name="multiquery_temperature" id="multiquery_temperature" min="0" max="1" step="0.1"
                                        value="{{ $currentConfig['multiquery']['temperature'] ?? 0.3 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>0.1-0.3:</strong> Variazioni conservative</p>
+                                    <p><strong>0.5-0.7:</strong> Variazioni creative ma rischiose</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -159,13 +223,40 @@
 
                 <!-- Tab: Answer Thresholds -->
                 <div id="content-answer" class="tab-content hidden">
+                    <!-- Help Section for Answer Thresholds -->
+                    <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleHelp('answer-help')">
+                            <h3 class="text-lg font-medium text-yellow-900">🎯 Guida: Soglie di Risposta</h3>
+                            <svg id="answer-help-icon" class="w-5 h-5 text-yellow-600 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
+                        <div id="answer-help" class="hidden mt-4 text-sm text-yellow-800 space-y-3">
+                            <p><strong>Controllo qualità</strong> delle risposte per evitare allucinazioni e risposte poco attendibili.</p>
+                            <div class="bg-yellow-100 p-3 rounded">
+                                <p><strong>📊 Esempio pratico:</strong></p>
+                                <ul class="mt-2 space-y-1 text-xs">
+                                    <li><strong>Min Citations = 2:</strong> Serve almeno 2 documenti rilevanti per rispondere</li>
+                                    <li><strong>Min Confidence = 0.15:</strong> Lo score più alto deve essere ≥ 0.15</li>
+                                    <li><strong>Force if Citations = ✓:</strong> Se trova citazioni, risponde sempre (anche con confidence bassa)</li>
+                                    <li><strong>Fallback:</strong> Messaggio mostrato quando le soglie non sono soddisfatte</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label for="min_citations" class="block text-sm font-medium text-gray-700">Citazioni Minime</label>
                             <input type="number" name="min_citations" id="min_citations" min="0" max="10"
                                    value="{{ $currentConfig['answer']['min_citations'] ?? 1 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Numero minimo di citazioni per risposta</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Richiede prove multiple per aumentare affidabilità</p>
+                                <p><strong>1:</strong> Basta un documento rilevante</p>
+                                <p><strong>2-3:</strong> Richiede conferma da fonti multiple (raccomandato)</p>
+                                <p><strong>🎯 Suggerito:</strong> 2 per bilanciare copertura e affidabilità</p>
+                            </div>
                         </div>
 
                         <div>
@@ -173,7 +264,12 @@
                             <input type="number" name="min_confidence" id="min_confidence" min="0" max="1" step="0.01"
                                    value="{{ $currentConfig['answer']['min_confidence'] ?? 0.08 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Soglia confidence per risposta (0-1)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Soglia di rilevanza semantica minima</p>
+                                <p><strong>0.05-0.10:</strong> Permissivo, più risposte ma meno precise</p>
+                                <p><strong>0.15-0.25:</strong> Rigoroso, meno risposte ma più accurate</p>
+                                <p><strong>🎯 Suggerito:</strong> 0.12 per buon compromesso qualità/copertura</p>
+                            </div>
                         </div>
 
                         <div class="md:col-span-2">
@@ -183,6 +279,11 @@
                                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 <span class="ml-2 text-sm text-gray-700">Forza risposta se ci sono citazioni</span>
                             </label>
+                            <div class="text-xs text-gray-600 mt-2 ml-6">
+                                <p><strong>✅ Abilitato:</strong> Se trova documenti rilevanti, risponde sempre (anche con confidence bassa)</p>
+                                <p><strong>❌ Disabilitato:</strong> Rispetta sempre le soglie di confidence</p>
+                                <p><strong>🎯 Raccomandato:</strong> Abilitato per massimizzare l'utilità del chatbot</p>
+                            </div>
                         </div>
 
                         <div class="md:col-span-2">
@@ -190,12 +291,38 @@
                             <textarea name="fallback_message" id="fallback_message" rows="3"
                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                       placeholder="Messaggio quando non si trova risposta adeguata">{{ $currentConfig['answer']['fallback_message'] ?? 'Non lo so con certezza: non trovo riferimenti sufficienti nella base di conoscenza.' }}</textarea>
+                            <div class="text-xs text-gray-600 mt-1">
+                                <p><strong>Quando viene mostrato:</strong> Quando confidence < soglia OR citazioni < minimo</p>
+                                <p><strong>💡 Suggerimento:</strong> Personalizza per il tuo dominio (es. "Contatta l'ufficio per informazioni specifiche")</p>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Tab: Reranker -->
                 <div id="content-reranker" class="tab-content hidden">
+                    <!-- Help Section for Reranker -->
+                    <div class="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleHelp('reranker-help')">
+                            <h3 class="text-lg font-medium text-purple-900">🎯 Guida: Reranking</h3>
+                            <svg id="reranker-help-icon" class="w-5 h-5 text-purple-600 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
+                        <div id="reranker-help" class="hidden mt-4 text-sm text-purple-800 space-y-3">
+                            <p><strong>Il reranking</strong> riordina i documenti trovati dalla ricerca ibrida per migliorare la precisione finale.</p>
+                            <div class="bg-purple-100 p-3 rounded">
+                                <p><strong>📊 Confronto driver:</strong></p>
+                                <ul class="mt-2 space-y-1 text-xs">
+                                    <li><strong>🧮 Embedding:</strong> Veloce, usa similarità vettoriale per riordinare</li>
+                                    <li><strong>🎯 Cohere:</strong> Servizio specializzato, molto accurato ma costa di più</li>
+                                    <li><strong>🤖 LLM:</strong> GPT giudica relevanza, massima accuratezza ma lento e costoso</li>
+                                    <li><strong>❌ Disabilitato:</strong> Mantiene ordine dalla ricerca ibrida, più veloce</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label for="reranker_driver" class="block text-sm font-medium text-gray-700">Driver Reranker</label>
@@ -214,7 +341,12 @@
                                     ❌ Disabilitato
                                 </option>
                             </select>
-                            <p class="text-xs text-gray-600 mt-1">Strategia di riordino risultati</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto qualità/performance:</strong></p>
+                                <p><strong>Embedding:</strong> +10% accuratezza, +50ms latenza</p>
+                                <p><strong>Cohere:</strong> +25% accuratezza, +200ms latenza, +$$$</p>
+                                <p><strong>LLM:</strong> +40% accuratezza, +2s latenza, +$$$$</p>
+                            </div>
                         </div>
 
                         <div>
@@ -222,31 +354,55 @@
                             <input type="number" name="reranker_top_n" id="reranker_top_n" min="1" max="100"
                                    value="{{ $currentConfig['reranker']['top_n'] ?? 40 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <p class="text-xs text-gray-600 mt-1">Candidati per reranking (1-100)</p>
+                            <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                <p><strong>Impatto:</strong> Quanti documenti sottoporre al reranking</p>
+                                <p><strong>Basso (10-20):</strong> Veloce ma potrebbe perdere documenti rilevanti</p>
+                                <p><strong>Alto (50-80):</strong> Più accurato ma più lento e costoso</p>
+                                <p><strong>🎯 Suggerito:</strong> 30-50 per buon bilanciamento</p>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Context Settings -->
                     <div class="mt-6 p-4 bg-gray-50 rounded-lg">
                         <h3 class="text-lg font-medium text-gray-900 mb-4">Context Building</h3>
+                        <div class="mb-3 text-xs text-gray-700 bg-gray-100 p-2 rounded">
+                            <strong>💡 Funzionalità:</strong> Gestisce la quantità di testo inviato al LLM per bilanciare completezza e performance.
+                            <br><strong>Compressione:</strong> Se il contesto supera la soglia, viene compresso automaticamente rimuovendo dettagli meno rilevanti.
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label for="context_max_chars" class="block text-sm font-medium text-gray-700">Max Caratteri</label>
                                 <input type="number" name="context_max_chars" id="context_max_chars" min="1000" max="20000"
                                        value="{{ $currentConfig['context']['max_chars'] ?? 6000 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>Limite assoluto</strong> del contesto inviato al LLM</p>
+                                    <p><strong>4000-6000:</strong> Standard per risposte bilanciate</p>
+                                    <p><strong>8000+:</strong> Per domande complesse che richiedono molto contesto</p>
+                                </div>
                             </div>
                             <div>
                                 <label for="compress_if_over_chars" class="block text-sm font-medium text-gray-700">Comprimi se > Chars</label>
                                 <input type="number" name="compress_if_over_chars" id="compress_if_over_chars" min="1000" max="25000"
                                        value="{{ $currentConfig['context']['compress_if_over_chars'] ?? 7000 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>Soglia compressione:</strong> Quando iniziare a comprimere</p>
+                                    <p><strong>Deve essere > Max Caratteri</strong> per avere margine</p>
+                                    <p><strong>🎯 Suggerito:</strong> 1.2x del Max Caratteri</p>
+                                </div>
                             </div>
                             <div>
                                 <label for="compress_target_chars" class="block text-sm font-medium text-gray-700">Target Compressione</label>
                                 <input type="number" name="compress_target_chars" id="compress_target_chars" min="500" max="15000"
                                        value="{{ $currentConfig['context']['compress_target_chars'] ?? 3500 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>Dimensione obiettivo</strong> dopo compressione</p>
+                                    <p><strong>Dovrebbe essere < Max Caratteri</strong></p>
+                                    <p><strong>🎯 Suggerito:</strong> 60% del Max Caratteri</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -257,6 +413,11 @@
                     <!-- HyDE Settings -->
                     <div class="p-4 bg-purple-50 rounded-lg mb-6">
                         <h3 class="text-lg font-medium text-gray-900 mb-4">🔮 HyDE (Hypothetical Document Embeddings)</h3>
+                        <div class="mb-3 text-xs text-purple-700 bg-purple-100 p-2 rounded">
+                            <strong>💡 Tecnica avanzata:</strong> Il LLM genera una risposta ipotetica alla query, poi cerca documenti simili a quella risposta.
+                            <br><strong>Esempio:</strong> Query "orari ufficio" → LLM genera "L'ufficio è aperto dalle 9:00 alle 17:00" → Cerca documenti simili
+                            <br><strong>⚠️ Sperimentale:</strong> Può migliorare recall ma aumenta costi e latenza
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="flex items-center">
@@ -271,12 +432,20 @@
                                 <input type="number" name="hyde_weight_original" id="hyde_weight_original" min="0" max="1" step="0.1"
                                        value="{{ $currentConfig['advanced']['hyde']['weight_original'] ?? 0.6 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                <div class="text-xs text-purple-600 mt-1">
+                                    <p><strong>Peso query originale</strong> vs ipotetica</p>
+                                    <p><strong>🎯 Suggerito:</strong> 0.6 per privilegiare la query reale</p>
+                                </div>
                             </div>
                             <div>
                                 <label for="hyde_weight_hypothetical" class="block text-sm font-medium text-gray-700">Peso Ipotetico</label>
                                 <input type="number" name="hyde_weight_hypothetical" id="hyde_weight_hypothetical" min="0" max="1" step="0.1"
                                        value="{{ $currentConfig['advanced']['hyde']['weight_hypothetical'] ?? 0.4 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                <div class="text-xs text-purple-600 mt-1">
+                                    <p><strong>Peso risposta ipotetica</strong> generata dal LLM</p>
+                                    <p><strong>⚠️ Nota:</strong> Originale + Ipotetico dovrebbero sommare a 1.0</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -284,6 +453,11 @@
                     <!-- LLM Reranker Settings -->
                     <div class="p-4 bg-orange-50 rounded-lg">
                         <h3 class="text-lg font-medium text-gray-900 mb-4">🤖 LLM Reranker</h3>
+                        <div class="mb-3 text-xs text-orange-700 bg-orange-100 p-2 rounded">
+                            <strong>💡 Reranking intelligente:</strong> Il LLM legge la query e tutti i documenti candidati per giudicare la rilevanza.
+                            <br><strong>⚠️ Costoso:</strong> Usa molti token ma fornisce la massima precisione nel ranking
+                            <br><strong>🎯 Quando usare:</strong> Per domini critici dove la precisione è fondamentale
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="flex items-center">
@@ -298,6 +472,11 @@
                                 <input type="number" name="llm_reranker_batch_size" id="llm_reranker_batch_size" min="1" max="20"
                                        value="{{ $currentConfig['advanced']['llm_reranker']['batch_size'] ?? 5 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                                <div class="text-xs text-orange-600 mt-1">
+                                    <p><strong>Documenti per chiamata LLM</strong></p>
+                                    <p><strong>3-5:</strong> Bilancia accuratezza e costi</p>
+                                    <p><strong>8-10:</strong> Più context per LLM ma più costoso</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -305,6 +484,29 @@
 
                 <!-- Tab: Intents -->
                 <div id="content-intents" class="tab-content hidden">
+                    <!-- Help Section for Intents -->
+                    <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleHelp('intents-help')">
+                            <h3 class="text-lg font-medium text-green-900">🎭 Guida: Intent Detection</h3>
+                            <svg id="intents-help-icon" class="w-5 h-5 text-green-600 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
+                        <div id="intents-help" class="hidden mt-4 text-sm text-green-800 space-y-3">
+                            <p><strong>Intent specializzati</strong> per estrarre informazioni specifiche con pattern ottimizzati.</p>
+                            <div class="bg-green-100 p-3 rounded">
+                                <p><strong>📊 Esempi pratici:</strong></p>
+                                <ul class="mt-2 space-y-1 text-xs">
+                                    <li><strong>📞 Phone:</strong> "numero telefono" → Estrae telefoni da documenti</li>
+                                    <li><strong>📧 Email:</strong> "contatti email" → Trova indirizzi email</li>
+                                    <li><strong>📍 Address:</strong> "dove siete" → Estrae indirizzi fisici</li>
+                                    <li><strong>🕒 Schedule:</strong> "orari apertura" → Trova orari con pattern avanzati</li>
+                                    <li><strong>🙏 Thanks:</strong> "grazie" → Risposta cortese predefinita</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <!-- Intent Enablement -->
                         <div class="p-4 bg-blue-50 rounded-lg">
@@ -350,7 +552,12 @@
                                 <input type="number" name="intent_min_score" id="intent_min_score" min="0" max="1" step="0.05"
                                        value="{{ $currentConfig['intents']['min_score'] ?? 0.5 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                <p class="text-xs text-gray-600 mt-1">Soglia minima per rilevare intent</p>
+                                <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                    <p><strong>Soglia per attivare intent</strong> specifici</p>
+                                    <p><strong>0.3-0.5:</strong> Permissivo, rileva intent anche con matching parziale</p>
+                                    <p><strong>0.6-0.8:</strong> Rigoroso, solo matching molto chiari</p>
+                                    <p><strong>🎯 Suggerito:</strong> 0.5 per bilanciare precisione e recall</p>
+                                </div>
                             </div>
 
                             <div>
@@ -364,6 +571,10 @@
                                         ⚡ Primo Match
                                     </option>
                                 </select>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>🎯 Score:</strong> Esegue l'intent con score più alto</p>
+                                    <p><strong>⚡ First Match:</strong> Esegue il primo intent che supera la soglia</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -371,6 +582,10 @@
                     <!-- KB Selection -->
                     <div class="mt-6 p-4 bg-green-50 rounded-lg">
                         <h3 class="text-lg font-medium text-gray-900 mb-4">Selezione Knowledge Base</h3>
+                        <div class="mb-3 text-xs text-green-700 bg-green-100 p-2 rounded">
+                            <strong>💡 Strategia multi-KB:</strong> Come il sistema decide quale Knowledge Base usare per la ricerca.
+                            <br><strong>🤖 Auto:</strong> BM25 su nomi KB per selezionare automaticamente | <strong>🔒 Strict:</strong> Solo KB selezionata dall'utente | <strong>🌐 Multi:</strong> Cerca in tutte le KB
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label for="kb_selection_mode" class="block text-sm font-medium text-gray-700">Modalità Selezione</label>
@@ -386,12 +601,20 @@
                                 <input type="number" name="bm25_boost_factor" id="bm25_boost_factor" min="0.1" max="5" step="0.1"
                                        value="{{ $currentConfig['kb_selection']['bm25_boost_factor'] ?? 1.0 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>Amplifica punteggio BM25</strong> nella selezione KB</p>
+                                    <p><strong>1.5-2.0:</strong> Privilegia matching esatti di parole chiave</p>
+                                </div>
                             </div>
                             <div>
                                 <label for="vector_boost_factor" class="block text-sm font-medium text-gray-700">Boost Vector</label>
                                 <input type="number" name="vector_boost_factor" id="vector_boost_factor" min="0.1" max="5" step="0.1"
                                        value="{{ $currentConfig['kb_selection']['vector_boost_factor'] ?? 1.0 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <p><strong>Amplifica punteggio semantico</strong> nella selezione KB</p>
+                                    <p><strong>1.2-1.8:</strong> Privilegia matching semantici e sinonimi</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -635,6 +858,20 @@ async function resetToDefaults() {
         }
     } catch (error) {
         alert('Errore durante il ripristino: ' + error.message);
+    }
+}
+
+// Toggle Help Sections
+function toggleHelp(helpId) {
+    const helpSection = document.getElementById(helpId);
+    const icon = document.getElementById(helpId + '-icon');
+    
+    if (helpSection.classList.contains('hidden')) {
+        helpSection.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+    } else {
+        helpSection.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
     }
 }
 

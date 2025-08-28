@@ -11,12 +11,16 @@ use App\Http\Controllers\Admin\FormSubmissionController;
 use App\Http\Controllers\Admin\KnowledgeBaseAdminController;
 use App\Http\Controllers\Admin\WidgetConfigController;
 use App\Http\Controllers\Admin\WidgetAnalyticsController;
+use App\Http\Controllers\WidgetPreviewController;
 use App\Http\Middleware\EnsureAdminToken;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+// 🚀 Public widget preview route (NO authentication required)
+Route::get('/widget/preview/{tenant}', [App\Http\Controllers\WidgetPreviewController::class, 'preview'])->name('widget.preview');
 
 // Rotte admin specifiche altrove nel file già mappate su DocumentAdminController
 
@@ -106,7 +110,7 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
     Route::get('/tenants/{tenant}/widget-config/generate-css', [WidgetConfigController::class, 'generateCSS'])->name('widget-config.generate-css');
     Route::get('/tenants/{tenant}/widget-config/current-colors', [WidgetConfigController::class, 'getCurrentColors'])->name('widget-config.current-colors');
     Route::get('/tenants/{tenant}/widget-config/test-api', [WidgetConfigController::class, 'testApi'])->name('widget-config.test-api');
-    Route::get('/tenants/{tenant}/widget-config/preview', [WidgetConfigController::class, 'preview'])->name('widget-config.preview');
+    // Route::get('/tenants/{tenant}/widget-config/preview', [WidgetConfigController::class, 'preview'])->name('widget-config.preview'); // ⚠️ MOVED TO PUBLIC ROUTE
 
     // RAG Configuration
     Route::get('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'show'])->name('rag-config.show');

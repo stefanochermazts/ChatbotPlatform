@@ -207,7 +207,7 @@
               ⚙️ Configurazione Widget
             </a>
             
-            <a href="{{ route('admin.widget-config.preview', $tenant) }}" 
+            <a href="{{ route('widget.preview', $tenant) }}" 
                class="block text-center bg-purple-50 text-purple-700 py-2 px-4 rounded-lg hover:bg-purple-100 transition" target="_blank">
               🔍 Anteprima Widget
             </a>

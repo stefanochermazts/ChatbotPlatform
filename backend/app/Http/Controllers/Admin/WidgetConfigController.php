@@ -244,24 +244,25 @@ class WidgetConfigController extends Controller
         ]);
     }
     
-    /**
+        /**
      * Preview widget with current configuration
+     * ⚠️ DEPRECATED: Use public route widget.preview instead
      */
-    public function preview(Request $request, Tenant $tenant)
-    {
-        $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
-        
-        // Apply temporary configuration for preview
-        if ($request->has('preview_config')) {
-            $previewConfig = $request->input('preview_config');
-            $config->fill($previewConfig);
-        }
-        
-        // Get the API key for this tenant
-        $apiKey = $tenant->getWidgetApiKey();
-        
-        return view('admin.widget-config.preview', compact('tenant', 'config', 'apiKey'));
-    }
+    // public function preview(Request $request, Tenant $tenant)
+    // {
+    //     $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
+    //     
+    //     // Apply temporary configuration for preview
+    //     if ($request->has('preview_config')) {
+    //         $previewConfig = $request->input('preview_config');
+    //         $config->fill($previewConfig);
+    //     }
+    //     
+    //     // Get the API key for this tenant
+    //     $apiKey = $tenant->getWidgetApiKey();
+    //     
+    //     return view('admin.widget-config.preview', compact('tenant', 'config', 'apiKey'));
+    // }
     
     /**
      * Test widget API integration

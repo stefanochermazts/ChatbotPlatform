@@ -1,59 +1,14 @@
-# 🕷️ Web Scraper - Guida Configurazione e Utilizzo
+# 🕷️ Web Scraper - Configurazione Avanzata e Best Practices
+
+> **📖 Documentazione Principale**: Per una panoramica completa della gestione documenti e scraping, vedi [`doc-documenti.md`](./doc-documenti.md)
 
 ## 📋 Panoramica
 
-Il Web Scraper di ChatbotPlatform permette di estrarre automaticamente contenuti da siti web e aggiungerli alla knowledge base di un tenant sotto forma di documenti Markdown.
+Questa guida fornisce configurazioni avanzate, best practices e troubleshooting dettagliato per il Web Scraper di ChatbotPlatform.
 
-## ⚙️ Configurazione
+## ⚙️ Configurazioni Avanzate
 
-### 1. Accesso alla Configurazione
-
-1. Vai su **Admin Dashboard** → **Gestisci Clienti**
-2. Clicca su **"Scraper"** per il tenant desiderato
-3. Compila i parametri di configurazione
-
-### 2. Parametri di Configurazione
-
-#### **🌐 Seed URLs** (Obbligatorio)
-Liste degli URL di partenza (uno per riga):
-```
-https://www.example.com/
-
-https://www.example.com/servizi/
-https://www.example.com/contatti/
-```
-
-#### **🌐 Allowed Domains** (Raccomandato)
-Domini permessi per limitare il crawling:
-```
-example.com
-www.example.com
-subdomain.example.com
-```
-
-#### **🗺️ Sitemap URLs** (Opzionale)
-URL delle sitemap XML:
-```
-https://www.example.com/sitemap.xml
-https://www.example.com/sitemap_pages.xml
-```
-
-#### **📝 Include Patterns** (Opzionale)
-Pattern regex per includere solo URL specifici:
-```
-/categoria/.*
-/prodotti/.*
-/news/\d{4}/.*
-```
-
-#### **🚫 Exclude Patterns** (Opzionale)
-Pattern regex per escludere URL:
-```
-/admin/.*
-/private/.*
-\.pdf$
-\.jpg$
-```
+> **ℹ️ Parametri Base**: Per configurazione base (Seed URLs, Include/Exclude patterns, etc.) vedi [`doc-documenti.md`](./doc-documenti.md)
 
 #### **🔗 Link-only Patterns** (Opzionale)
 Pattern regex delle pagine "indice" per cui vuoi solo seguire i link interni senza salvare la pagina stessa come documento. **Ottimizzazione importante** per liste news, archivi, categorie, pagine di paginazione.
@@ -115,44 +70,15 @@ X-API-Key: your-api-key
 Cookie: session=abc123
 ```
 
-## 🚀 Esecuzione
+## 🔄 Gestione Multi-Scraper Avanzata
 
-### **Background Mode** (Raccomandato)
-- Clicca **"🚀 Avvia Scraping (Background)"**
-- Lo scraping viene eseguito in coda
-- Controlla i log per il progresso: `storage/logs/laravel.log`
+> **ℹ️ Esecuzione Base**: Per modalità esecuzione base e output documenti vedi [`doc-documenti.md`](./doc-documenti.md)
 
-### **Sync Mode** (Test/Debug)
-- Clicca **"⚡ Esegui Ora (Sincrono)"**
-- Attendi il completamento (può richiedere tempo)
-- Ricevi feedback immediato
-
-### **Gestione Multi-Scraper**
+### **Configurazione Multi-Scraper per Tenant**
 - **Creare nuovo scraper**: Lascia il form vuoto e imposta un nome, poi clicca "Salva Configurazione"
 - **Modificare scraper esistente**: Clicca su uno scraper nella lista "Scraper esistenti" per caricarlo nel form
 - **Eliminare scraper**: Usa il pulsante 🗑️ "Elimina" accanto al nome dello scraper
 - **Eseguire scraper specifico**: I pulsanti eseguono lo scraper attualmente caricato/selezionato nel form
-
-## 📁 Output
-
-### **Documenti Generati**
-I contenuti vengono salvati come:
-
-**Path**: `storage/app/public/scraped/{tenant_id}/page-title-v{version}.md`
-
-**Format**:
-```markdown
-# Page Title
-
-**URL:** https://www.example.com/page
-**Scraped on:** 2024-01-15 14:30:00
-
----
-
-[Contenuto estratto dalla pagina]
-```
-
-Associazione KB: i documenti sono associati alla **KB target** configurata nello scraper, se presente; altrimenti alla **KB di default** del tenant.
 
 ### **Sistema di Versioning Intelligente**
 
@@ -190,28 +116,28 @@ Il sistema traccia:
 - I contenuti diventano disponibili nel RAG
 - **Solo i documenti nuovi/modificati** vengono re-processati
 
-## 🛠️ Troubleshooting
+## 🛠️ Troubleshooting Avanzato
 
-### **Nessun Documento Creato**
-1. Verifica **Seed URLs** siano accessibili
-2. Controlla **Allowed Domains** includa il dominio target
-3. Verifica **Include/Exclude Patterns** non blocchino tutto
-4. Controlla log per errori: `tail -f storage/logs/laravel.log`
+> **ℹ️ Troubleshooting Base**: Per problemi comuni vedi [`doc-documenti.md`](./doc-documenti.md) sezione scraping
 
-### **Rate Limiting**
-Se ricevi errori 429 (Too Many Requests):
-1. Riduci **Rate Limit (RPS)** a 0.5 o meno
-2. Aggiungi **Auth Headers** se necessario
-
-### **Contenuto JavaScript**
+### **Contenuto JavaScript e SPA**
 Per SPA o contenuto dinamico:
 1. Abilita **Render JS**
 2. Aumenta timeout (attualmente 30s)
+3. Verifica che il contenuto sia presente dopo il rendering
 
-### **Accesso Negato**
+### **Rate Limiting Avanzato**
+Se ricevi errori 429 (Too Many Requests):
+1. Riduci **Rate Limit (RPS)** a 0.5 o meno
+2. Aggiungi **Auth Headers** se necessario
+3. Implementa backoff esponenziale
+4. Monitora response headers per limiti specifici
+
+### **Accesso Negato e Autenticazione**
 Per contenuti protetti:
 1. Aggiungi **Auth Headers** appropriati
 2. Usa cookies di sessione se necessario
+3. Implementa rotazione token se applicabile
 
 ## 🎯 Best Practices
 
@@ -309,21 +235,14 @@ php artisan tinker
 
 ## 🔍 Verificare il Funzionamento
 
-### **1. Dopo Configurazione**
-1. Salva configurazione
-2. Clicca **"⚡ Esegui Ora (Sincrono)"** per test
-3. Verifica messaggio di successo
+> **ℹ️ Verifica Base**: Per steps di verifica base vedi [`doc-documenti.md`](./doc-documenti.md) sezione testing
 
-### **2. Controllare Documenti**
-1. Vai su **Admin** → **Gestisci Clienti** → **Documenti**
-2. Cerca documenti con **"(Scraped)"** nel titolo
-3. Verifica **Ingestion Status** = "completed"
-
-### **3. Testare nel RAG**
-1. Vai su **RAG Tester**
+### **3. Testare nel RAG Avanzato**
+1. Vai su **RAG Tester** ([`doc-rag-tester.md`](./doc-rag-tester.md))
 2. Seleziona il tenant
 3. Fai domande sui contenuti scrapati
 4. Verifica che le citazioni includano i nuovi documenti
+5. Testa con query complesse e intent specifici
 
 ## 📊 Monitoraggio Prestazioni
 
@@ -393,6 +312,17 @@ Gli intent ora rispettano la KB selezionata automaticamente dal RAG, permettendo
 - Rate limiting previene abusi accidentali
 - Whitelist domini previene scraping non autorizzato
 - Multi-tenant isolation garantito per tutte le operazioni
+
+---
+
+## 🔗 **Documentazione Correlata**
+
+- **[`doc-documenti.md`](./doc-documenti.md)** - Documentazione completa gestione documenti
+- **[`doc-rag-tester.md`](./doc-rag-tester.md)** - Testing e debug del sistema RAG
+- **[`doc-widget.md`](./doc-widget.md)** - Configurazione e personalizzazione widget
+- **[`doc-clienti.md`](./doc-clienti.md)** - Gestione tenant e configurazioni RAG
+
+---
 
 ## 📝 Esempio Configurazione Completa
 

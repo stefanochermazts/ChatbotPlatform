@@ -6,6 +6,6 @@
   <div class="flex gap-3">
     <a href="{{ route('admin.widget-config.index') }}" class="btn btn-secondary">← Indietro</a>
     <a href="{{ route('admin.widget-config.edit', $tenant) }}" class="btn btn-primary">✏️ Modifica</a>
-    <a href="{{ route('admin.widget-config.preview', $tenant) }}" class="btn btn-secondary" target="_blank">🔍 Preview</a>
+    <a href="{{ route('widget.preview', $tenant) }}" class="btn btn-secondary" target="_blank">🔍 Preview</a>
   </div>
 </div>

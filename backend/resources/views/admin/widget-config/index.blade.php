@@ -140,7 +140,7 @@
                      class="text-indigo-600 hover:text-indigo-900" title="Modifica">
                     ✏️
                   </a>
-                  <a href="{{ route('admin.widget-config.preview', $config->tenant) }}" 
+                  <a href="{{ route('widget.preview', $config->tenant) }}" 
                      class="text-green-600 hover:text-green-900" target="_blank" title="Preview">
                     🔍
                   </a>

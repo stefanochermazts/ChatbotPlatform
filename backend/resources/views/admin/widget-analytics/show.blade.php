@@ -25,7 +25,7 @@
       <a href="{{ route('admin.widget-config.show', $tenant) }}" class="btn btn-secondary">
         ⚙️ Configurazione
       </a>
-      <a href="{{ route('admin.widget-config.preview', $tenant) }}" class="btn btn-primary" target="_blank">
+      <a href="{{ route('widget.preview', $tenant) }}" class="btn btn-primary" target="_blank">
         🔍 Anteprima Widget
       </a>
     </div>
@@ -342,7 +342,7 @@
             🔬 Test RAG
           </a>
           
-          <a href="{{ route('admin.widget-config.preview', $tenant) }}" 
+          <a href="{{ route('widget.preview', $tenant) }}" 
              class="block w-full text-center bg-orange-50 text-orange-700 py-2 px-4 rounded-lg hover:bg-orange-100 transition" target="_blank">
              🔍 Anteprima Live
           </a>
@@ -476,7 +476,7 @@
           <a href="{{ route('admin.widget-config.edit', $tenant) }}" class="btn btn-primary">
             ⚙️ Configura Widget
           </a>
-          <a href="{{ route('admin.widget-config.preview', $tenant) }}" class="btn btn-secondary" target="_blank">
+          <a href="{{ route('widget.preview', $tenant) }}" class="btn btn-secondary" target="_blank">
             🔍 Test Widget
           </a>
         </div>
