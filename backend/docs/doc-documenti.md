@@ -117,7 +117,9 @@ RAG_CHUNK_OVERLAP_CHARS=250   // Overlap tra chunks
 
 ## 🕷️ Web Scraping
 
-### **🌐 1. Configurazione Scraper**
+> **📖 Documentazione Completa**: Per architettura dettagliata, configurazioni avanzate e troubleshooting scraper vedi [`doc-scraper.md`](./doc-scraper.md)
+
+### **🌐 1. Configurazione Scraper Base**
 
 **Setup Scraper Config:**
 ```php

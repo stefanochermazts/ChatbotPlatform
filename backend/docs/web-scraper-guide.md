@@ -317,6 +317,7 @@ Gli intent ora rispettano la KB selezionata automaticamente dal RAG, permettendo
 
 ## 🔗 **Documentazione Correlata**
 
+- **[`doc-scraper.md`](./doc-scraper.md)** - **📖 DOCUMENTAZIONE PRINCIPALE**: Architettura completa web scraper
 - **[`doc-documenti.md`](./doc-documenti.md)** - Documentazione completa gestione documenti
 - **[`doc-rag-tester.md`](./doc-rag-tester.md)** - Testing e debug del sistema RAG
 - **[`doc-widget.md`](./doc-widget.md)** - Configurazione e personalizzazione widget
