@@ -184,3 +184,8 @@ Il modulo integra algoritmi di machine learning per identificazione automatica d
 
 ### **Business Intelligence**
 Il RAG Tester fornisce funzionalità di business intelligence con dashboard personalizzabili, KPI tracking e alerting automatico per metriche critiche. Supporta decision making data-driven per ottimizzazione continua del sistema.
+
+
+
+
+

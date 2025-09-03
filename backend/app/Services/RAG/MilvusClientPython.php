@@ -36,8 +36,9 @@ class MilvusClientPython
             $jsonParams = json_encode($pythonParams, JSON_UNESCAPED_UNICODE);
             $escapedParams = escapeshellarg($jsonParams);
             
-            // Esegui script Python
-            $command = "python \"{$this->pythonScript}\" {$escapedParams} 2>&1";
+            // Usa percorso completo a Python per evitare problemi di PATH su Windows
+            $pythonPath = config('rag.vector.milvus.python_path', 'python');
+            $command = "\"{$pythonPath}\" \"{$this->pythonScript}\" {$escapedParams} 2>&1";
             $output = shell_exec($command);
             
             if (empty($output)) {

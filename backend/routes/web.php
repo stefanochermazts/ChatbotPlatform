@@ -49,13 +49,7 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
     Route::post('/tenants/{tenant}/api-keys', [TenantAdminController::class, 'createApiKey'])->name('tenants.api-keys.create');
     Route::delete('/tenants/{tenant}/api-keys/{keyId}', [TenantAdminController::class, 'revokeApiKey'])->name('tenants.api-keys.revoke');
 
-    // Tenant Forms
-    Route::resource('forms', TenantFormController::class);
-    Route::post('/forms/{form}/toggle-active', [TenantFormController::class, 'toggleActive'])->name('forms.toggle-active');
-    Route::get('/forms/{form}/preview', [TenantFormController::class, 'preview'])->name('forms.preview');
-    Route::post('/forms/{form}/test-submit', [TenantFormController::class, 'testSubmit'])->name('forms.test-submit');
-
-    // Form Submissions Management
+    // Form Submissions Management (PRIMA delle route resource per evitare conflitti)
     Route::prefix('forms')->name('forms.')->group(function () {
         Route::get('/submissions', [FormSubmissionController::class, 'index'])->name('submissions.index');
         Route::get('/submissions/{submission}', [FormSubmissionController::class, 'show'])->name('submissions.show');
@@ -66,6 +60,12 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
         Route::get('/submissions/export/csv', [FormSubmissionController::class, 'export'])->name('submissions.export');
         Route::get('/submissions/stats/ajax', [FormSubmissionController::class, 'stats'])->name('submissions.stats');
     });
+
+    // Tenant Forms (DOPO le submissions per evitare che intercetti /submissions come ID)
+    Route::resource('forms', TenantFormController::class);
+    Route::post('/forms/{form}/toggle-active', [TenantFormController::class, 'toggleActive'])->name('forms.toggle-active');
+    Route::get('/forms/{form}/preview', [TenantFormController::class, 'preview'])->name('forms.preview');
+    Route::post('/forms/{form}/test-submit', [TenantFormController::class, 'testSubmit'])->name('forms.test-submit');
 
     // Documents
     Route::get('/tenants/{tenant}/documents', [DocumentAdminController::class, 'index'])
@@ -89,6 +89,8 @@ Route::middleware([EnsureAdminToken::class])->prefix('admin')->name('admin.')->g
     Route::delete('/tenants/{tenant}/documents', [DocumentAdminController::class, 'destroyAll'])
         ->name('documents.destroyAll')
         ->whereNumber('tenant');
+
+
 
     // Scraper config
     Route::get('/tenants/{tenant}/scraper', [ScraperAdminController::class, 'edit'])->name('scraper.edit');

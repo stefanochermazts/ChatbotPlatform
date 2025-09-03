@@ -51,8 +51,8 @@ class FormSubmission extends Model
         'last_response_at' => 'datetime',
         'has_active_conversation' => 'boolean',
         'responses_count' => 'integer',
-        'first_response_time_minutes' => 'integer',
-        'avg_response_time_minutes' => 'integer',
+        'first_response_time_minutes' => 'float',
+        'avg_response_time_minutes' => 'float',
     ];
 
     /**

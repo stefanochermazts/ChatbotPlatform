@@ -257,13 +257,33 @@ Il sistema restituisce statistiche dettagliate:
 - Scraping periodici/automatici
 - Quando non vuoi attendere
 
+⚠️ **PREREQUISITO CRITICO**: Devi avviare il worker per la coda `scraping`!
+
+**Windows (Laragon):**
+```bash
+# Usa lo script automatico
+backend\start-scraping-worker.bat
+
+# Oppure manualmente
+php artisan queue:work --queue=scraping --tries=3 --timeout=1800
+```
+
+**Linux/Mac:**
+```bash
+# Usa lo script automatico  
+./backend/start-scraping-worker.sh
+
+# Oppure manualmente
+nohup php artisan queue:work --queue=scraping --tries=3 --timeout=1800 &
+```
+
 **Come monitorare:**
 ```bash
 # Log in tempo reale
 tail -f storage/logs/laravel.log | grep -i scraping
 
-# Queue worker
-php artisan queue:work --queue=scraping
+# Test worker (deve rispondere immediatamente)
+php artisan queue:work --queue=scraping --once
 ```
 
 ### ⚡ **Sync Mode** (Test/Debug)
@@ -660,5 +680,16 @@ php artisan queue:work --queue=scraping --memory=256
 **🚀 Il Web Scraper è ora completamente configurato e pronto per l'uso!**
 
 Per supporto tecnico o domande specifiche, consulta i log di sistema o contatta l'amministratore della piattaforma.
+
+
+
+
+
+
+
+
+
+
+
 
 

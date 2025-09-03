@@ -72,6 +72,15 @@ return [
             'after_commit' => false,
         ],
 
+        'scraping' => [
+            'driver' => env('QUEUE_CONNECTION', 'database'),
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'scraping',
+            'retry_after' => (int) env('SCRAPER_QUEUE_RETRY_AFTER', 300),
+            'after_commit' => false,
+        ],
+
     ],
 
     /*

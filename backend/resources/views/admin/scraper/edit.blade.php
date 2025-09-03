@@ -37,7 +37,7 @@
 
 <form method="post" action="{{ route('admin.scraper.update', $tenant) }}" class="bg-white border rounded p-4 grid gap-6">
   @csrf
-  <input type="hidden" name="id" id="scraper-id" value="{{ old('id') }}" />
+  <input type="hidden" name="id" id="scraper-id" value="{{ old('id', $config->id ?? '') }}" />
   <div class="grid md:grid-cols-2 gap-6">
     <label class="block">
       <span class="text-sm font-medium text-gray-700">Nome scraper</span>
@@ -247,6 +247,8 @@
       </div>
     </div>
   </div>
+
+
 
   <!-- Auth Headers -->
   <div class="border-t pt-6">

@@ -1,0 +1,217 @@
+---
+globs: backend/resources/views/admin/**/*.blade.php,backend/app/Http/Controllers/Admin/**/*.php
+description: Admin UI common patterns and fixes
+---
+
+# Admin UI - Pattern Comuni e Fix
+
+## Documents Table Management
+
+### Filter Form Pattern
+Template: [documents/index.blade.php](mdc:backend/resources/views/admin/documents/index.blade.php)
+
+**⚠️ Problem Pattern**:
+```html
+<!-- BUGGY - missing onchange -->
+<select name="knowledge_base_id">
+    <option>All KB</option>
+</select>
+
+<!-- BUGGY - missing value preservation -->
+<input type="hidden" name="id" value="{{ old('id') }}">
+```
+
+**✅ Correct Pattern**:
+```html
+<!-- AUTO-SUBMIT filter -->
+<select name="knowledge_base_id" onchange="this.form.submit()">
+    <option value="">Tutte le Knowledge Base</option>
+    @foreach($knowledgeBases as $kb)
+        <option value="{{ $kb->id }}" 
+                {{ request('knowledge_base_id') == $kb->id ? 'selected' : '' }}>
+            {{ $kb->name }}
+        </option>
+    @endforeach
+</select>
+
+<!-- PRESERVE existing ID for updates -->
+<input type="hidden" name="id" value="{{ old('id', $config->id ?? '') }}">
+```
+
+### Search Fields
+```html
+<!-- Source URL filter with auto-submit -->
+<input type="text" 
+       name="source_url" 
+       value="{{ request('source_url') }}" 
+       placeholder="Filtra per URL origine..."
+       onchange="this.form.submit()">
+
+<!-- Active filter badges -->
+@if(request('knowledge_base_id'))
+    <span class="badge badge-info">
+        KB: {{ $knowledgeBases->find(request('knowledge_base_id'))->name ?? 'N/A' }}
+    </span>
+@endif
+```
+
+### Clickable Links Pattern
+```html
+<!-- Path column - clickable link to storage -->
+<td>
+    @if($document->path)
+        <a href="{{ \Storage::url($document->path) }}" 
+           target="_blank" 
+           class="text-blue-600 hover:underline">
+            {{ basename($document->path) }}
+        </a>
+    @else
+        <span class="text-gray-400">N/A</span>
+    @endif
+</td>
+
+<!-- Source URL column - external link -->  
+<td>
+    @if($document->source_url)
+        <a href="{{ $document->source_url }}" 
+           target="_blank" 
+           rel="noopener noreferrer"
+           class="text-blue-600 hover:underline"
+           title="{{ $document->source_url }}">
+            {{ \Str::limit($document->source_url, 50) }}
+        </a>
+    @else
+        <span class="text-gray-400">N/A</span>
+    @endif
+</td>
+```
+
+## Controller Filter Logic
+
+### Document Controller Pattern
+In [DocumentAdminController.php](mdc:backend/app/Http/Controllers/Admin/DocumentAdminController.php):
+
+```php
+public function index(Request $request)
+{
+    $query = Document::where('tenant_id', $tenant->id);
+    
+    // KB filter
+    if ($request->filled('knowledge_base_id')) {
+        $query->where('knowledge_base_id', $request->knowledge_base_id);
+    }
+    
+    // Source URL filter  
+    if ($request->filled('source_url')) {
+        $sourceUrlSearch = $request->source_url;
+        $query->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%');
+    }
+    
+    $documents = $query->orderBy('created_at', 'desc')->paginate(50);
+    
+    return view('admin.documents.index', [
+        'documents' => $documents,
+        'tenant' => $tenant,
+        'knowledgeBases' => $tenant->knowledgeBases
+    ]);
+}
+```
+
+## Route Organization
+
+### Admin Route Pattern
+In [routes/web.php](mdc:backend/routes/web.php):
+
+```php
+// Admin routes (authenticated)
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/tenants/{tenant}/widget-config/preview', [WidgetConfigController::class, 'preview'])
+         ->name('widget-config.preview');
+    Route::resource('tenants.documents', DocumentAdminController::class);
+});
+
+// Public routes (NO auth - for widget preview)
+// ⚠️ Avoid conflicts - use different names/paths
+```
+
+## Form Update/Create Pattern
+
+### Controller Logic  
+```php
+public function store(Request $request, Tenant $tenant)
+{
+    $validated = $request->validate([
+        'seed_urls' => 'required|array',
+        'knowledge_base_id' => 'required|exists:knowledge_bases,id',
+        // ...
+    ]);
+    
+    if ($request->filled('id')) {
+        // UPDATE existing
+        $config = ScraperConfig::findOrFail($request->id);
+        $config->update($validated);
+        \Log::info("Configurazione scraper aggiornata", ['id' => $config->id]);
+    } else {
+        // CREATE new
+        $config = ScraperConfig::create($validated + ['tenant_id' => $tenant->id]);
+        \Log::info("Nuova configurazione scraper creata", ['id' => $config->id]);
+    }
+    
+    return redirect()->back()->with('success', 'Configurazione salvata!');
+}
+```
+
+## JavaScript UX Enhancements
+
+### Auto-focus and Feedback
+```html
+<script>
+// Auto-focus search field
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.querySelector('input[name="source_url"]');
+    if (searchInput && !searchInput.value) {
+        searchInput.focus();
+    }
+});
+
+// Double-click to clear
+function clearAndSubmit(input) {
+    input.addEventListener('dblclick', function() {
+        this.value = '';
+        this.form.submit();
+    });
+}
+
+// Submit feedback
+function showSubmitFeedback() {
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function() {
+        const button = form.querySelector('button[type="submit"]');
+        if (button) {
+            button.textContent = 'Caricamento...';
+            button.disabled = true;
+        }
+    });
+}
+</script>
+```
+
+## Common Blade Helpers
+
+### Filter Badges
+```php
+<!-- resources/views/admin/partials/filter-badges.blade.php -->
+<div class="mb-4 flex flex-wrap gap-2">
+    @if(request('knowledge_base_id'))
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            KB: {{ $knowledgeBases->find(request('knowledge_base_id'))->name ?? 'N/A' }}
+        </span>
+    @endif
+    
+    @if(request('source_url'))
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            URL: {{ \Str::limit(request('source_url'), 30) }}
+        </span>
+    @endif
+</div>
+```

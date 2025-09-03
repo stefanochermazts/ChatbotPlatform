@@ -144,7 +144,7 @@ class FormController extends Controller
             // Protezione anti-spam time-based (invece di status-based)
             $recentSubmission = FormSubmission::where('session_id', $validated['session_id'])
                 ->where('tenant_id', $tenantId)
-                ->where('form_id', $form->id)
+                ->where('tenant_form_id', $form->id)
                 ->where('submitted_at', '>=', now()->subMinutes(2)) // Solo ultimi 2 minuti
                 ->first();
 

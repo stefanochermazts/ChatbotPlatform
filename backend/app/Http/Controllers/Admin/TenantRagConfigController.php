@@ -180,7 +180,7 @@ class TenantRagConfigController extends Controller
             'bm25_top_k' => 'required|integer|min:1|max:300',
             'rrf_k' => 'required|integer|min:10|max:100',
             'mmr_lambda' => 'required|numeric|min:0|max:1',
-            'mmr_take' => 'required|integer|min:1|max:50',
+            'mmr_take' => 'required|integer|min:1|max:100',
             'neighbor_radius' => 'required|integer|min:0|max:10',
             
             // Multi-query
@@ -197,7 +197,7 @@ class TenantRagConfigController extends Controller
             'reranker_top_n' => 'required|integer|min:1|max:100',
             
             // Context
-            'context_max_chars' => 'required|integer|min:1000|max:20000',
+            'context_max_chars' => 'required|integer|min:1000|max:100000',
             'compress_if_over_chars' => 'required|integer|min:1000|max:25000',
             'compress_target_chars' => 'required|integer|min:500|max:15000',
             

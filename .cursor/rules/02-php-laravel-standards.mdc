@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+# Standard PHP/Laravel
+
+- **Stile**: PSR‑12 obbligatorio; usa Laravel Pint per lint/format. Evita `mixed`/array generici; preferisci proprietà tipizzate e return types.
+- **Architettura**: Controller sottili; logica di dominio in `app/Services` e `app/Actions`. Evita God classes.
+- **Dependency Injection**: preferisci constructor injection; evita service locator.
+- **Naming**: descrittivo e coerente. Funzioni/verbi; variabili/sostantivi.
+- **Migrazioni**: sicure e transazionali; non perdere dati. Aggiorna factory e seeder coerentemente.
+- **Config**: nessun segreto hardcoded; usa `.env` e `config/*.php`.
+- **Test**: Pest per unit/integration. Aggiungi test per nuove feature; copri comportamenti critici.
+
+### Percorsi di riferimento
+- Controller: [backend/app/Http/Controllers](mdc:backend/app/Http/Controllers)
+- Services: [backend/app/Services](mdc:backend/app/Services)
+- Actions: [backend/app/Actions](mdc:backend/app/Actions)
+- Jobs: [backend/app/Jobs](mdc:backend/app/Jobs)
+- Models: [backend/app/Models](mdc:backend/app/Models)
+- Config: [backend/config](mdc:backend/config)

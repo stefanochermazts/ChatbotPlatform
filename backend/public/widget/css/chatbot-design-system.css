@@ -26,6 +26,10 @@
   --chatbot-primary-900: #1e3a8a;
   --chatbot-primary-950: #172554;
   
+  /* Alias principale per compatibilità */
+  --chatbot-primary-color: var(--chatbot-primary-500);
+  --chatbot-primary-rgb: 59, 130, 246; /* RGB values for rgba() usage */
+  
   /* Secondary Colors */
   --chatbot-secondary-50: #f8fafc;
   --chatbot-secondary-100: #f1f5f9;
@@ -144,26 +148,39 @@
    * ================================================================= */
   
   --chatbot-radius-none: 0;
-  --chatbot-radius-sm: 0.125rem;   /* 2px */
-  --chatbot-radius-default: 0.25rem; /* 4px */
-  --chatbot-radius-md: 0.375rem;   /* 6px */
-  --chatbot-radius-lg: 0.5rem;     /* 8px */
-  --chatbot-radius-xl: 0.75rem;    /* 12px */
-  --chatbot-radius-2xl: 1rem;      /* 16px */
-  --chatbot-radius-3xl: 1.5rem;    /* 24px */
+  --chatbot-radius-sm: 0.25rem;    /* 4px */
+  --chatbot-radius-default: 0.5rem; /* 8px */
+  --chatbot-radius-md: 0.75rem;    /* 12px */
+  --chatbot-radius-lg: 1rem;       /* 16px */
+  --chatbot-radius-xl: 1.25rem;    /* 20px */
+  --chatbot-radius-2xl: 1.5rem;    /* 24px */
+  --chatbot-radius-3xl: 2rem;      /* 32px */
   --chatbot-radius-full: 9999px;   /* Circle */
   
   /* =================================================================
    * 🔲 BOX SHADOW SYSTEM
    * ================================================================= */
   
-  --chatbot-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --chatbot-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px 0 rgb(0 0 0 / 0.06);
   --chatbot-shadow-default: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --chatbot-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --chatbot-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --chatbot-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   --chatbot-shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
-  --chatbot-shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+  --chatbot-shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.06);
+  --chatbot-shadow-glow: 0 0 20px rgb(59 130 246 / 0.15);
+  
+  /* =================================================================
+   * 🌈 GRADIENTS & MODERN EFFECTS
+   * ================================================================= */
+  
+  --chatbot-gradient-primary: linear-gradient(135deg, rgb(59 130 246) 0%, rgb(37 99 235) 100%);
+  --chatbot-gradient-secondary: linear-gradient(135deg, rgb(107 114 128) 0%, rgb(75 85 99) 100%);
+  --chatbot-gradient-success: linear-gradient(135deg, rgb(34 197 94) 0%, rgb(22 163 74) 100%);
+  --chatbot-gradient-warning: linear-gradient(135deg, rgb(251 191 36) 0%, rgb(245 158 11) 100%);
+  --chatbot-gradient-error: linear-gradient(135deg, rgb(239 68 68) 0%, rgb(220 38 38) 100%);
+  --chatbot-gradient-glass: linear-gradient(135deg, rgb(255 255 255 / 0.1) 0%, rgb(255 255 255 / 0.05) 100%);
+  --chatbot-gradient-dark: linear-gradient(135deg, rgb(31 41 55) 0%, rgb(17 24 39) 100%);
   
   /* =================================================================
    * 📱 RESPONSIVE BREAKPOINTS
@@ -191,7 +208,7 @@
   --chatbot-button-offset: 20px;
   
   /* Message Container */
-  --chatbot-message-max-width: 80%;
+  --chatbot-message-max-width: 95%;
   --chatbot-avatar-size: 32px;
   
   /* Input Area */
@@ -404,8 +421,8 @@
     /* Input più accessibile su mobile */
     --chatbot-input-height: 48px; /* Da 44px a 48px */
     
-    /* Messaggi più stretti per mobile */
-    --chatbot-message-max-width: 250px;
+    /* Messaggi più larghi per mobile */
+    --chatbot-message-max-width: 320px;
     
     /* Typography ottimizzata per mobile */
     --chatbot-text-base: 1.125rem; /* 18px - Più leggibile su schermi piccoli */

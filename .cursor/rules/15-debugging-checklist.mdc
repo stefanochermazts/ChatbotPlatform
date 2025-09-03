@@ -1,0 +1,186 @@
+---
+alwaysApply: false
+description: Step-by-step debugging checklist for common issues
+---
+
+# Debugging Checklist - Problemi Comuni
+
+## 🔍 Widget Non Funziona
+
+### Step 1: Console Errors
+```javascript
+// In browser console
+console.log('Widget loaded:', window.ChatbotWidget);
+console.log('Theme:', localStorage.getItem('chatbot_user_theme_mode'));
+```
+
+### Step 2: CSS/JS File Integrity
+```bash
+# Check file sizes (0 bytes = corrupted)
+ls -la backend/public/widget/css/
+ls -la backend/public/widget/js/
+
+# Force refresh
+php artisan route:clear
+php artisan cache:clear
+```
+
+### Step 3: Theme Issues
+- **Icon non cambia**: Verifica `[data-chatbot-theme]` in CSS
+- **Colori non applicati**: Usa variabili da `chatbot-design-system.css`
+- **LocalStorage conflict**: Controlla chiavi diverse tra script
+
+### Step 4: URL Malformati
+- **Doppia linkificazione**: Controlla regex auto-link in `chatbot-widget.js`
+- **HTML rotto**: Verifica negative lookbehind/lookahead nelle regex
+
+## 🕷️ Scraper 0 Pagine
+
+### Step 1: Configurazione Base
+```bash
+php artisan tinker --execute="
+\$config = App\Models\ScraperConfig::find(X);
+echo 'Max Depth: ' . \$config->max_depth . PHP_EOL;
+echo 'Respect Robots: ' . (\$config->respect_robots ? 'YES' : 'NO') . PHP_EOL;
+echo 'Include Patterns: ' . implode(', ', \$config->include_patterns) . PHP_EOL;
+"
+```
+
+**Quick fixes**:
+- `max_depth` >= 3
+- `respect_robots = false` se robots.txt restrittivo
+- Include patterns con `\/$` per homepage
+
+### Step 2: URL Reachability
+```bash
+# Test manuale URL seed
+curl -I https://example.com/
+curl https://example.com/robots.txt
+```
+
+### Step 3: Include/Exclude Patterns
+```bash
+php artisan tinker --execute="
+// Test regex pattern
+\$url = 'https://example.com/news/article';
+\$pattern = '/news/.*/';
+echo preg_match(\$pattern, \$url) ? 'MATCH' : 'NO MATCH';
+"
+```
+
+### Step 4: Target KB
+```bash
+php artisan tinker --execute="
+\$config = App\Models\ScraperConfig::find(X);
+echo 'Target KB ID: ' . \$config->knowledge_base_id . PHP_EOL;
+\$kb = App\Models\KnowledgeBase::find(\$config->knowledge_base_id);
+echo 'KB Name: ' . (\$kb ? \$kb->name : 'NOT FOUND') . PHP_EOL;
+"
+```
+
+## 🎯 RAG Inconsistent Results
+
+### Step 1: KB Selection
+```bash
+php artisan tinker --execute="
+\$selector = app(App\Services\RAG\KnowledgeBaseSelector::class);
+\$kbId = \$selector->selectForQuery('query test', TENANT_ID);
+echo 'Selected KB: ' . \$kbId . PHP_EOL;
+"
+```
+
+### Step 2: Query Normalization
+```bash
+# Test normalization
+php artisan tinker --execute="
+\$selector = app(App\Services\RAG\KnowledgeBaseSelector::class);
+\$method = new ReflectionMethod(\$selector, 'normalizeQueryForKbSelection');
+\$method->setAccessible(true);
+echo \$method->invoke(\$selector, 'Cos\'è \"Studio e faccio i compiti\"?');
+"
+```
+
+### Step 3: Multi-KB Flag
+```bash
+php artisan tinker --execute="
+\$tenant = App\Models\Tenant::find(TENANT_ID);
+echo 'Multi KB: ' . (\$tenant->multi_kb_search ? 'YES' : 'NO') . PHP_EOL;
+"
+```
+
+### Step 4: Citations & Source URL
+```bash
+php artisan tinker --execute="
+\$doc = App\Models\Document::where('source_url', 'LIKE', '%search%')->first();
+echo 'Source URL: ' . \$doc->source_url . PHP_EOL;
+echo 'Length: ' . strlen(\$doc->source_url) . PHP_EOL;
+"
+```
+
+## 📝 Admin Table Filters
+
+### Step 1: Form Submission
+- **Auto-submit non funziona**: Manca `onchange="this.form.submit()"`
+- **Valori non persistono**: Manca `{{ request('field_name') }}`
+- **Update creates new**: Hidden `id` field con `{{ old('id', $model->id ?? '') }}`
+
+### Step 2: Controller Query
+```php
+// Debug query building
+$query = Model::where('tenant_id', $tenant->id);
+
+if ($request->filled('filter_field')) {
+    \Log::info('Applying filter', ['field' => $request->filter_field]);
+    $query->where('filter_field', 'ILIKE', '%' . $request->filter_field . '%');
+}
+
+\Log::info('Final query', ['sql' => $query->toSql(), 'bindings' => $query->getBindings()]);
+```
+
+### Step 3: Route Conflicts
+```bash
+# Check route names
+php artisan route:list | grep -i widget
+php artisan route:list | grep -i admin
+
+# Clear route cache
+php artisan route:clear
+```
+
+## 🔧 File Debugging
+
+### Corrupted Files (0 bytes)
+```bash
+# Find empty files
+find backend/public/widget -size 0 -type f
+
+# Check write permissions
+ls -la backend/public/widget/
+
+# Alternative: Inline content instead of separate files
+```
+
+### Log Analysis
+```bash
+# Real-time log monitoring
+tail -f backend/storage/logs/laravel.log
+
+# Filter specific patterns
+tail -f backend/storage/logs/laravel.log | grep -E "(ERROR|WARNING|Scraper|Widget)"
+
+# Debug specific functions
+grep -n "getBestSourceUrl\|extractContent\|analyzeContentType" backend/storage/logs/laravel.log
+```
+
+### Command Errors
+```bash
+# Fix continue/break context errors
+grep -n "continue\|break" backend/app/Console/Commands/
+
+# Test commands safely
+php artisan command:name --dry-run
+
+# Check for uncommitted changes
+git status
+git diff
+```

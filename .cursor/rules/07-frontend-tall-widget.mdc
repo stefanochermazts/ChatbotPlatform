@@ -1,0 +1,14 @@
+---
+alwaysApply: true
+---
+# Frontend TALL e Widget
+
+- **Accessibilità**: WCAG 2.1 AA; focus management/ARIA; ridotto movimento.
+- **Livewire 3 + Alpine**: componenti accessibili; evita JS non necessario.
+- **Tailwind**: usa design tokens/varianti; dark mode opzionale.
+- **Widget web**: theming/branding, SDK eventi, quick‑actions mediate dal backend con JWT breve + HMAC.
+
+### Percorsi
+- Blade/Livewire: [backend/resources/views](mdc:backend/resources/views)
+- JS/CSS: [backend/resources/js](mdc:backend/resources/js), [backend/resources/css](mdc:backend/resources/css)
+- Widget: [backend/public/widget](mdc:backend/public/widget)

@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             
             // Foreign Keys
-            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
             
             // Event Information
             $table->string('event_type', 50)->index(); // widget_opened, widget_closed, message_sent, message_received, etc.

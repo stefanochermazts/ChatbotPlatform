@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+# API OpenAI‑compatibili – `/v1/chat/completions`
+
+- **Endpoint**: `POST /v1/chat/completions` con SSE opzionale.
+- **Auth**: `Authorization: Bearer <API_KEY>` con scope per tenant/bot.
+- **Request**: campi OpenAI standard (`model`, `messages`, `temperature`, `tools`/`tool_choice`, `response_format`, `stream`, `stop`, `n`, ...).
+- **Tool calling**: includere `search_kb` per retrieval e mappare citazioni nei messaggi.
+- **Response**: schema OpenAI (`choices`, `message`, `tool_calls`, `usage`); includere header di rate limit e `Idempotency-Key`.
+- **Errori**: compatibili; non esporre stack trace; codici HTTP corretti.
+
+> Non introdurre breaking changes su questo endpoint. Vedi routing in [backend/routes/api.php](mdc:backend/routes/api.php).

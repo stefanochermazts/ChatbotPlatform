@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+# Osservabilità e Affidabilità
+
+- **Logging**: strutturato (JSON); redazione PII; correlation‑id per request/chat.
+- **Metriche**: latenza P95 (<2.5s), costi/token, groundedness, deflection.
+- **Resilienza**: retry/backoff per LLM/IO; circuit breaker dove necessario.
+- **Migrazioni**: feature flags per rollout; migrazioni transazionali.
+- **Jobs**: non bloccare thread web; usa code dedicate e Supervisor/Horizon.

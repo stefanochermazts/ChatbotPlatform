@@ -45,3 +45,8 @@ class WidgetPreviewController extends Controller
         return view('widget.preview', compact('tenant', 'config', 'apiKey'));
     }
 }
+
+
+
+
+

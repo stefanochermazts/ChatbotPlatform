@@ -1,0 +1,108 @@
+---
+alwaysApply: true
+description: Web scraper debugging and configuration guide
+---
+
+# Web Scraper - Debug e Configurazione
+
+## Configurazione ScraperConfig
+
+### ⚠️ Problemi Comuni
+- **0 pagine visitate**: `max_depth` troppo basso (min 3), `respect_robots=true` con robots.txt restrittivo
+- **Include patterns troppo stringenti**: Homepage esclusa se patterns non includono `\/$`
+- **KB target**: Controllare `knowledge_base_id` nella configurazione scraper
+- **Duplicazione config**: Form hidden `id` field deve avere `value="{{ old('id', $config->id ?? '') }}"`
+
+### ✅ Configurazione tipo
+```php
+// In php artisan tinker
+$config = ScraperConfig::find(X);
+$config->max_depth = 3;           // Non 1!
+$config->respect_robots = false;  // Se robots.txt troppo restrittivo
+$config->include_patterns = [
+    '\/$',                         // Homepage
+    '/numeri-indirizzi-utili/.*',  // Sezioni specifiche
+    '/news/.*'
+];
+$config->save();
+```
+
+### Debug Commands
+```bash
+# Controlla configurazione
+php artisan tinker --execute="dump(App\Models\ScraperConfig::find(X));"
+
+# Testa robots.txt
+curl https://example.com/robots.txt
+
+# Verifica regex patterns
+php artisan tinker --execute="
+preg_match('/\/news\/.*/', 'https://example.com/news/article'); // 1 = match
+"
+```
+
+## Content Extraction Strategy
+
+### Hybrid Approach in [WebScraperService.php](mdc:backend/app/Services/Scraper/WebScraperService.php)
+
+1. **analyzeContentType()** - Ispeziona HTML per decidere strategia
+2. **Tabelle responsive**: Priorità `extractWithManualDOM()` 
+3. **Articoli generali**: Priorità `extractWithReadability()` + fallback manuale
+4. **Quality assessment**: Confronta lunghezza/qualità output
+
+### Table Extraction Fix
+HTML responsive con `hidden-xs`/`visible-xs`:
+```html
+<td class="hidden-xs">Contenuto desktop</td>
+<td class="visible-xs">Contenuto mobile</td>
+```
+
+Fix: `extractWithManualDOM()` processa entrambi i contenuti e li unifica.
+
+## Source URL Management
+
+### Database Migration
+```bash
+# Migra source_url per documenti esistenti
+php artisan scraper:migrate-source-urls --tenant=X --dry-run
+php artisan scraper:migrate-source-urls --tenant=X  # Reale
+```
+
+### ⚠️ Attenzione: Command Fix
+File [MigrateOldDocumentsSourceUrl.php](mdc:backend/app/Console/Commands/MigrateOldDocumentsSourceUrl.php):
+```php
+// BUGGY
+if ($skip) {
+    continue; // ❌ Non in loop context
+}
+
+// FIXED
+if (!$skip) {
+    return $url; // ✅ Return diretto
+}
+```
+
+## Quality Control
+
+### Markdown Issues
+- **Backslash escape**: `escapeMarkdownCharsForLinkText()` solo per `\`, `[`, `]` in link text
+- **Table conversion**: Usa Readability.php per tabelle complesse
+- **Content preservation**: Non rimuovere double spaces (line breaks) in `cleanupContent()`
+
+### Debug Extraction
+```bash
+# Log levels in storage/logs/laravel.log
+tail -f storage/logs/laravel.log | grep "Analisi tipo contenuto\|estrazione"
+
+# Test specifici
+php artisan tinker --execute="
+\$service = new App\Services\Scraper\WebScraperService();
+\$result = \$service->analyzeContentType(\$html);
+dump(\$result);
+"
+```
+
+## Files critici scraper
+- [WebScraperService.php](mdc:backend/app/Services/Scraper/WebScraperService.php) - Logica extraction
+- [ScraperAdminController.php](mdc:backend/app/Http/Controllers/Admin/ScraperAdminController.php) - Admin interface
+- [scraper/edit.blade.php](mdc:backend/resources/views/admin/scraper/edit.blade.php) - Form configurazione

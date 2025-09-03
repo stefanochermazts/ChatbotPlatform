@@ -210,3 +210,8 @@ Il sistema include tools per management di configurazioni complex con version co
 
 ### **Operational Dashboard**
 Il modulo fornisce dashboard comprehensive per monitoring e management delle scraping operations. Include real-time metrics, historical analytics e management tools per efficient operations oversight.
+
+
+
+
+

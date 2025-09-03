@@ -1,0 +1,30 @@
+---
+alwaysApply: true
+---
+# ChatbotPlatform – Guida rapida al progetto e struttura
+
+- **Obiettivo**: Piattaforma SaaS multitenant per chatbot con RAG avanzato, API compatibili OpenAI Chat Completions, UI TALL (Tailwind, Alpine, Laravel, Livewire). Priorità: affidabilità, scalabilità, governance, sicurezza, accessibilità.
+- **Stack**: PHP 8.2+ (Laravel 11), Node 18+/20+ (Vite/Tailwind), Livewire 3 + Alpine, PostgreSQL 16 + pgvector, Redis, Storage S3/Azure, OpenAI, GraphQL (Lighthouse) per admin; REST per runtime chat.
+
+### Percorsi chiave nel repo
+- **Laravel backend**: `backend/`
+  - **Routing**: [routes/api.php](mdc:backend/routes/api.php), [routes/web.php](mdc:backend/routes/web.php), [routes/console.php](mdc:backend/routes/console.php)
+  - **Controller REST**: [app/Http/Controllers](mdc:backend/app/Http/Controllers)
+  - **GraphQL**: schema/resolver in [app/GraphQL](mdc:backend/app/GraphQL) se presente, altrimenti vedi [config](mdc:backend/config)
+  - **Servizi/Domain**: [app/Services](mdc:backend/app/Services), [app/Actions](mdc:backend/app/Actions), [app/Jobs](mdc:backend/app/Jobs)
+  - **Modelli/Policies**: [app/Models](mdc:backend/app/Models), [app/Policies](mdc:backend/app/Policies)
+  - **Config**: [config/*.php](mdc:backend/config)
+  - **Docs tecniche**: [docs/analisi-funzionale/analisi-funzionale.md](mdc:docs/analisi-funzionale/analisi-funzionale.md), [backend/docs](mdc:backend/docs)
+  - **Frontend TALL**: [resources/views](mdc:backend/resources/views), [resources/js](mdc:backend/resources/js), [resources/css](mdc:backend/resources/css)
+
+### Invarianti critiche
+- **Multitenancy**: ogni accesso ai dati deve essere scope‑ato al tenant/KB; evitare leakage cross‑tenant.
+- **API OpenAI‑compatibili**: non introdurre breaking changes su `/v1/chat/completions`.
+- **RAG**: retrieval ibrido (vector + BM25/Full‑text), citazioni obbligatorie, fallback "Non lo so" a bassa confidence.
+- **Qualità**: PSR‑12, controller sottili, logica in Services/Actions, test con Pest.
+
+### Comandi utili (dev Windows/Laragon)
+- Setup: `composer install` → copia `.env` → `php artisan key:generate` → configura Postgres/pgvector → `php artisan migrate --seed` → `npm install && npm run dev`.
+- Code/queue: `php artisan queue:work --queue=default,ingestion,embeddings,indexing,evaluation`.
+- Test: `php artisan test` o `./vendor/bin/pest`.
+- Build: `npm run build` e `php artisan optimize`.

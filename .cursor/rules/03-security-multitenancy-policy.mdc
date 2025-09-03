@@ -1,0 +1,15 @@
+---
+alwaysApply: true
+---
+# Sicurezza, Multitenancy e Policy
+
+- **Scoping tenant/KB**: ogni query deve filtrare per tenant e, quando rilevante, per `knowledge_base_id`. Evitare leakage cross‑tenant.
+- **RBAC/ABAC**: usa `Policies`/`Gates`; autorizzazione anche a livello field (GraphQL).
+- **Dati sensibili**: minimizza PII, maschera nei log; log in JSON strutturato.
+- **Auth API**: `Authorization: Bearer <API_KEY>` con scope per tenant/bot. Rate limit e `Retry-After` quando applicabile.
+- **Audit**: traccia azioni sensibili con correlation‑id.
+- **Secure defaults**: input validation con `FormRequest`/rules; WAF opzionale; header sicuri.
+
+### Riferimenti
+- Models e policy: [backend/app/Models](mdc:backend/app/Models), [backend/app/Policies](mdc:backend/app/Policies)
+- Config sicurezza: [backend/config](mdc:backend/config)

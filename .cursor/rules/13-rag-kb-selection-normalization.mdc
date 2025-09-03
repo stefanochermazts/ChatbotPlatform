@@ -1,0 +1,135 @@
+---
+alwaysApply: true
+description: RAG Knowledge Base selection and query normalization
+---
+
+# RAG - KB Selection e Query Normalization
+
+## KB Selection Consistency
+
+### ⚠️ Problema
+RAG Tester e Chatbot Widget selezionavano KB diverse per stessa query, causando:
+- Risposte inconsistenti
+- Confusion utente finale  
+- Debug difficile
+
+### ✅ Soluzione: Query Normalization
+In [KnowledgeBaseSelector.php](mdc:backend/app/Services/RAG/KnowledgeBaseSelector.php):
+
+```php
+private function normalizeQueryForKbSelection(string $query): string
+{
+    // Rimuovi punteggiatura
+    $normalized = preg_replace('/[^\w\s]/u', ' ', $query);
+    
+    // Stop words italiane common  
+    $stopWords = [
+        'cos\'è', 'cosa è', 'dimmi', 'iniziativa', 'parlami',
+        'cosa', 'come', 'quando', 'dove', 'perché', 'chi'
+    ];
+    
+    $normalized = str_ireplace($stopWords, '', $normalized);
+    return trim(preg_replace('/\s+/', ' ', $normalized));
+}
+```
+
+**Applicazione**:
+```php
+public function selectForQuery(string $query, int $tenantId): ?int
+{
+    $normalizedQuery = $this->normalizeQueryForKbSelection($query);
+    // Usa $normalizedQuery per BM25 search
+    $this->sowKeywords($normalizedQuery, $searchTopK);
+}
+```
+
+## Multi-KB Search Feature
+
+### Configurazione Tenant
+Aggiunto flag `multi_kb_search` alla tabella `tenants`:
+
+```sql
+-- Migration
+ALTER TABLE tenants ADD COLUMN multi_kb_search BOOLEAN DEFAULT FALSE;
+```
+
+### Logica in [KbSearchService.php](mdc:backend/app/Services/RAG/KbSearchService.php)
+```php
+public function search(string $query, int $tenantId, ?int $kbId = null): array
+{
+    $tenant = Tenant::find($tenantId);
+    
+    if ($tenant->multi_kb_search) {
+        // Cerca in tutte le KB del tenant
+        $selectedKbId = null; // null = all KBs
+        $knowledgeBases = $this->getAllKnowledgeBasesForTenant($tenantId);
+    } else {
+        // Logica standard con KB selector
+        $selectedKbId = $this->kbSelector->selectForQuery($query, $tenantId);
+    }
+}
+```
+
+## Source URL in Responses
+
+### ChatBot Widget + RAG Tester
+Entrambi [ChatCompletionsController.php](mdc:backend/app/Http/Controllers/Api/ChatCompletionsController.php) e [RagTestController.php](mdc:backend/app/Http/Controllers/Admin/RagTestController.php) implementano:
+
+```php
+private function getBestSourceUrl(array $citations): ?string
+{
+    $bestCitation = null;
+    $bestScore = -1;
+    
+    foreach ($citations as $citation) {
+        $score = (float) ($citation['score'] ?? 1.0);
+        if ($score > $bestScore && !empty($citation['document_source_url'])) {
+            $bestScore = $score;
+            $bestCitation = $citation;
+        }
+    }
+    
+    return $bestCitation['document_source_url'] ?? null;
+}
+```
+
+**Usage**:
+```php
+$bestSourceUrl = $this->getBestSourceUrl($citations);
+if ($bestSourceUrl && count($citations) > 0) {
+    $response .= "\n\n🔗 **Fonte principale**: " . $bestSourceUrl;
+}
+```
+
+## Debug Commands
+
+### Test KB Selection
+```bash
+php artisan tinker --execute="
+\$selector = app(App\Services\RAG\KnowledgeBaseSelector::class);
+\$kbId = \$selector->selectForQuery('Cos\'è Studio e faccio i compiti?', 5);
+echo 'KB Selected: ' . \$kbId;
+"
+```
+
+### Check Multi-KB Flag
+```bash  
+php artisan tinker --execute="
+\$tenant = App\Models\Tenant::find(5);
+echo 'Multi KB Search: ' . (\$tenant->multi_kb_search ? 'YES' : 'NO');
+"
+```
+
+### Source URL Verification
+```bash
+php artisan tinker --execute="
+\$doc = App\Models\Document::where('source_url', 'LIKE', '%numeri-indirizzi%')->first();
+echo 'Source URL: ' . \$doc->source_url;
+"
+```
+
+## Files critici RAG
+- [KnowledgeBaseSelector.php](mdc:backend/app/Services/RAG/KnowledgeBaseSelector.php) - KB selection logic
+- [KbSearchService.php](mdc:backend/app/Services/RAG/KbSearchService.php) - Main search service  
+- [tenants/edit.blade.php](mdc:backend/resources/views/admin/tenants/edit.blade.php) - Multi-KB config UI
+- [TenantAdminController.php](mdc:backend/app/Http/Controllers/Admin/TenantAdminController.php) - Tenant config validation

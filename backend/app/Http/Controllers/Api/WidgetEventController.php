@@ -235,18 +235,38 @@ class WidgetEventController extends Controller
      */
     public function trackPublic(Request $request): JsonResponse
     {
+        // 🔍 DEBUG: Log della richiesta in arrivo (solo in debug mode)
+        if (config('app.debug')) {
+            Log::info('🔍 WIDGET EVENT DEBUG - Request received', [
+                'method' => $request->method(),
+                'url' => $request->url(),
+                'headers' => $request->headers->all(),
+                'body' => $request->all(),
+                'content_type' => $request->header('Content-Type'),
+            ]);
+        }
+
         $validator = Validator::make($request->all(), [
             'event' => 'required|string|max:255',
             'properties' => 'nullable|array',
             'properties.tenant_id' => 'nullable|integer',
+            'properties.session_id' => 'nullable|string|max:255',
             'properties.page_url' => 'nullable|string',
             'properties.user_agent' => 'nullable|string',
-            'properties.timestamp' => 'nullable|integer',
+            'properties.timestamp' => 'nullable', // Rimuoviamo la validazione per gestire qualsiasi formato
             'properties.theme' => 'nullable|string',
             'properties.referrer' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
+            // 🔍 DEBUG: Log degli errori di validazione (solo in debug mode)
+            if (config('app.debug')) {
+                Log::error('🔍 WIDGET EVENT DEBUG - Validation failed', [
+                    'errors' => $validator->errors()->toArray(),
+                    'request_data' => $request->all(),
+                ]);
+            }
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid event data',
@@ -259,8 +279,7 @@ class WidgetEventController extends Controller
             $properties = $data['properties'] ?? [];
             
             // Create simplified widget event for embed tracking
-            $widgetEvent = WidgetEvent::create([
-                'tenant_id' => $properties['tenant_id'] ?? null,
+            $eventData = [
                 'event_type' => $data['event'],
                 'session_id' => $properties['session_id'] ?? 'embed_' . uniqid(),
                 'event_timestamp' => now(),
@@ -274,7 +293,25 @@ class WidgetEventController extends Controller
                     'timestamp' => $properties['timestamp'] ?? time(),
                     'original_properties' => $properties,
                 ],
-            ]);
+            ];
+            
+            // Aggiungi tenant_id solo se presente e valido
+            if (!empty($properties['tenant_id']) && is_numeric($properties['tenant_id'])) {
+                $eventData['tenant_id'] = (int) $properties['tenant_id'];
+            }
+            
+            // Gestisci timestamp in qualsiasi formato
+            if (isset($properties['timestamp'])) {
+                if (is_numeric($properties['timestamp'])) {
+                    // Timestamp numerico (millisecondi JavaScript)
+                    $eventData['custom_properties']['timestamp_numeric'] = (int) $properties['timestamp'];
+                } elseif (is_string($properties['timestamp'])) {
+                    // Timestamp stringa (ISO o altro formato)
+                    $eventData['custom_properties']['timestamp_string'] = $properties['timestamp'];
+                }
+            }
+            
+            $widgetEvent = WidgetEvent::create($eventData);
 
             Log::info('Public widget event tracked', [
                 'event_id' => $widgetEvent->id,

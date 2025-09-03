@@ -34,6 +34,7 @@ return [
             'token' => env('MILVUS_TOKEN'),
             'tls' => filter_var(env('MILVUS_TLS', false), FILTER_VALIDATE_BOOLEAN),
             'collection' => env('MILVUS_COLLECTION', 'kb_chunks_v1'),
+            'python_path' => env('MILVUS_PYTHON_PATH', 'python'), // Percorso completo a python.exe per Windows
             // Abilita/disabilita la creazione automatica di partizioni per tenant
             // Su Windows può causare problemi con grpcio, impostare a false se necessario
             'partitions_enabled' => filter_var(env('MILVUS_PARTITIONS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
@@ -80,8 +81,8 @@ return [
     // Reranker cross-encoder (pluggable)
     'reranker' => [
         // Driver: embedding | cohere | llm
-        'driver' => env('RAG_RERANK_DRIVER', 'llm'), // 🔧 Cambiato da embedding a llm per miglior ranking
-        'top_n'  => (int) env('RAG_RERANK_TOP_N', 100), // 🔧 MASSIMO per processare tutto
+        'driver' => env('RAG_RERANK_DRIVER', 'embedding'), // 🔧 Embedding per velocità (widget), llm per accuratezza (admin)
+        'top_n'  => (int) env('RAG_RERANK_TOP_N', 50), // 🔧 Ridotto per velocità (era 100)
 
         // Cohere
         'cohere' => [
@@ -159,6 +160,7 @@ return [
         'summary_model' => env('RAG_CONVERSATION_SUMMARY_MODEL', 'gpt-4o-mini'),
         'require_min_messages' => (int) env('RAG_CONVERSATION_MIN_MESSAGES', 2),
     ],
+
 ];
 
 

@@ -42,9 +42,8 @@ class FormAdminNotificationMail extends Mailable
             $subject .= " da {$this->submission->user_email}";
         }
 
-        return Envelope::create(
+        return new Envelope(
             from: config('mail.from.address', 'noreply@chatbotplatform.com'),
-            fromName: "ChatBot Platform - {$tenant->name}",
             subject: $subject,
             replyTo: $this->submission->user_email 
                 ? [$this->submission->user_email]
@@ -57,7 +56,9 @@ class FormAdminNotificationMail extends Mailable
      */
     public function content(): Content
     {
-        return Content::with('emails.form-admin-notification');
+        return new Content(
+            view: 'emails.form-admin-notification'
+        );
     }
 
     /**
@@ -182,6 +183,10 @@ class FormAdminNotificationMail extends Mailable
                    ->with($viewData);
     }
 }
+
+
+
+
 
 
 

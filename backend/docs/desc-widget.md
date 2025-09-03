@@ -298,3 +298,4 @@ Protezione vulnerabilità:
 - **CSRF Protection**: Protezione attacchi CSRF
 - **Input Sanitization**: Sanitizzazione input utente
 - **Content Security Policy**: Implementazione CSP
+

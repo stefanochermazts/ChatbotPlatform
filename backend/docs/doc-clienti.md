@@ -604,3 +604,4 @@ curl -H "Authorization: Bearer cb_your_api_key" \
 - **Configuration Accuracy**: % config tenant corrette
 - **Self-Service Rate**: % tenant che configurano autonomamente
 - **Satisfaction Score**: Rating medio tenant experience
+

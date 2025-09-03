@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Contrasto Form Button</title>
+    <link rel="stylesheet" href="css/chatbot-design-system.css">
+    <link rel="stylesheet" href="css/chatbot-widget.css">
+    <link rel="stylesheet" href="css/chatbot-forms.css">
+    <link rel="stylesheet" href="css/chatbot-accessibility.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .theme-toggle {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #e5e7eb;
+            border-radius: 4px;
+        }
+        .theme-toggle button {
+            margin-right: 10px;
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .theme-toggle button.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .widget-container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Test Contrasto Pulsante Form</h1>
+        
+        <div class="theme-toggle">
+            <h3>Seleziona Tema:</h3>
+            <button onclick="setTheme('light')" id="btn-light" class="active">☀️ Chiaro</button>
+            <button onclick="setTheme('dark')" id="btn-dark">🌙 Scuro</button>
+            <button onclick="setTheme('high-contrast')" id="btn-contrast">⚡ Alto Contrasto</button>
+        </div>
+
+        <div class="widget-container">
+            <div class="chatbot-widget" id="widget" data-chatbot-theme="light">
+                <div style="padding: 20px;">
+                    <h2>Test Form di Supporto</h2>
+                    
+                    <!-- Form di esempio -->
+                    <div class="chatbot-form-container">
+                        <form class="chatbot-form">
+                            <div class="chatbot-form-header">
+                                <div class="chatbot-form-intro">Ciao! Ho bisogno di alcune informazioni per aiutarti meglio.</div>
+                                <h3 class="chatbot-form-title">Richiedi Supporto</h3>
+                                <p class="chatbot-form-description">Compila il form per contattare il nostro team di supporto</p>
+                            </div>
+                            
+                            <div class="chatbot-form-body">
+                                <div class="chatbot-form-field">
+                                    <label class="chatbot-form-label">Nome <span class="chatbot-form-required">*</span></label>
+                                    <input type="text" class="chatbot-form-input" placeholder="Il tuo nome" required>
+                                </div>
+                                
+                                <div class="chatbot-form-field">
+                                    <label class="chatbot-form-label">Email <span class="chatbot-form-required">*</span></label>
+                                    <input type="email" class="chatbot-form-input" placeholder="tua@email.com" required>
+                                </div>
+                                
+                                <div class="chatbot-form-field">
+                                    <label class="chatbot-form-label">Messaggio <span class="chatbot-form-required">*</span></label>
+                                    <textarea class="chatbot-form-input chatbot-form-textarea" placeholder="Descrivi il problema..." required></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="chatbot-form-actions">
+                                <button type="button" class="chatbot-form-cancel">❌ Annulla</button>
+                                <button type="submit" class="chatbot-form-submit">📧 Invia richiesta</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Test diversi stati del pulsante -->
+                    <div style="margin-top: 30px;">
+                        <h3>Test Stati Pulsante:</h3>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                            <button class="chatbot-form-submit">✅ Normale</button>
+                            <button class="chatbot-form-submit" disabled>🚫 Disabilitato</button>
+                            <button class="chatbot-form-submit" style="background: #60a5fa;">🔵 Primary-400</button>
+                            <button class="chatbot-form-submit" style="background: #3b82f6;">🔵 Primary-500</button>
+                            <button class="chatbot-form-submit" style="background: #2563eb;">🔵 Primary-600</button>
+                            <button class="chatbot-form-submit" style="background: #1d4ed8;">🔵 Primary-700</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; padding: 15px; background: #f0f9ff; border-radius: 4px;">
+            <h4>🎯 Cosa controllare:</h4>
+            <ul>
+                <li>Il testo "Invia richiesta" deve essere <strong>sempre leggibile</strong></li>
+                <li>Contrasto sufficiente in modalità chiara</li>
+                <li>Contrasto sufficiente in modalità scura</li>
+                <li>Contrasto ottimale in modalità alto contrasto</li>
+                <li>Il pulsante deve essere distinguibile quando disabilitato</li>
+                <li>⭐ <strong>NON deve esserci l'icona bot con puntini thinking</strong></li>
+                <li>Il messaggio introduttivo deve apparire nel form stesso</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function setTheme(theme) {
+            const widget = document.getElementById('widget');
+            const buttons = document.querySelectorAll('.theme-toggle button');
+            
+            // Reset tutte le classi di tema
+            widget.classList.remove('dark-theme', 'high-contrast');
+            widget.removeAttribute('data-chatbot-theme');
+            
+            // Reset stati pulsanti
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            // Applica nuovo tema
+            switch(theme) {
+                case 'light':
+                    widget.setAttribute('data-chatbot-theme', 'light');
+                    document.getElementById('btn-light').classList.add('active');
+                    break;
+                case 'dark':
+                    widget.setAttribute('data-chatbot-theme', 'dark');
+                    widget.classList.add('dark-theme');
+                    document.getElementById('btn-dark').classList.add('active');
+                    break;
+                case 'high-contrast':
+                    widget.classList.add('high-contrast');
+                    document.getElementById('btn-contrast').classList.add('active');
+                    break;
+            }
+            
+            console.log('Tema cambiato a:', theme);
+        }
+
+        // Test automatico del contrasto
+        function testContrast() {
+            const submitButton = document.querySelector('.chatbot-form-submit');
+            const computedStyle = window.getComputedStyle(submitButton);
+            const bgColor = computedStyle.backgroundColor;
+            const textColor = computedStyle.color;
+            
+            console.log('Background:', bgColor);
+            console.log('Text:', textColor);
+            
+            return { background: bgColor, text: textColor };
+        }
+
+        // Esegui test al cambio tema
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🧪 Test contrasto form caricato');
+            console.log('Tema iniziale:', testContrast());
+        });
+    </script>
+</body>
+</html>

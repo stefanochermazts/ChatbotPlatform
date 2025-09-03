@@ -25,10 +25,12 @@ class ChatbotFormRenderer {
         this.currentFormData = {};
         this.validationErrors = {};
 
-        // Aggiungi messaggio introduttivo
-        const introMessage = this.widget.ui.addBotMessage(formConfig.message || 'Compila questo form per aiutarmi ad assisterti meglio:');
-        
-        // Crea e aggiungi il form
+        // Assicurati che non ci sia il thinking state
+        if (this.widget.ui && this.widget.ui.hideTyping) {
+            this.widget.ui.hideTyping();
+        }
+
+        // Crea e aggiungi il form direttamente (senza messaggio bot introduttivo)
         const formElement = this.createFormElement(formConfig);
         this.widget.addCustomMessage(formElement);
         
@@ -57,6 +59,7 @@ class ChatbotFormRenderer {
         let html = `
             <div class="chatbot-form">
                 <div class="chatbot-form-header">
+                    ${formConfig.message ? `<div class="chatbot-form-intro">${this.escapeHtml(formConfig.message)}</div>` : ''}
                     <h3 class="chatbot-form-title">${this.escapeHtml(formConfig.form_name)}</h3>
                     ${formConfig.form_description ? `<p class="chatbot-form-description">${this.escapeHtml(formConfig.form_description)}</p>` : ''}
                 </div>
@@ -404,7 +407,21 @@ class ChatbotFormRenderer {
 
         } catch (error) {
             console.error('📝 Form submission error:', error);
-            this.showFormErrors(['Errore di connessione. Riprova più tardi.']);
+            
+            let errorMessage = 'Errore di connessione. Riprova più tardi.';
+            
+            // Messaggi di errore più specifici
+            if (error.message.includes('404')) {
+                errorMessage = 'Servizio non disponibile. Contatta il supporto.';
+            } else if (error.message.includes('422')) {
+                errorMessage = 'Alcuni dati inseriti non sono validi. Controlla i campi.';
+            } else if (error.message.includes('500')) {
+                errorMessage = 'Errore interno del server. Riprova tra qualche minuto.';
+            } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage = 'Errore di rete. Controlla la connessione internet.';
+            }
+            
+            this.showFormErrors([errorMessage]);
             
             // Notifica widget dell'errore
             if (this.widget.onFormError) {
@@ -419,7 +436,11 @@ class ChatbotFormRenderer {
      * Invia dati al server
      */
     async submitToServer(data) {
-        const response = await fetch('/api/v1/forms/submit', {
+        // Costruisci URL base dal widget
+        const baseUrl = this.widget.options.baseUrl || window.location.origin;
+        const apiUrl = `${baseUrl}/api/v1/forms/submit`;
+        
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

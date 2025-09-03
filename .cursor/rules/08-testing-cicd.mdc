@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+## Test e CI/CD
+
+- **Test**: Pest per unit/integration; Postman/Insomnia per suite API; contract tests per OpenAPI/SDL.
+- **Pipeline**: lint → test → build → canary/blue‑green → rollback automatico.
+- **Build prod**: `composer install --no-dev --prefer-dist`, `npm ci && npm run build`, `php artisan optimize`.
+- **Migrazioni**: `--force`; verifica compatibilità.
+- **Deploy**: senza downtime; migrazioni safe e backup.

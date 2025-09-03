@@ -218,19 +218,188 @@ class IngestUploadedDocumentJob implements ShouldQueue
 
     /**
      * Spezza il testo in chunk con overlap, rispettando i limiti da config.
+     * 🚀 TABLE-AWARE CHUNKING: Preserva tabelle complete in chunk dedicati
      * @return array<int, string>
      */
     private function chunkText(string $text): array
     {
         $max = (int) config('rag.chunk.max_chars', 1500);
         $overlap = (int) config('rag.chunk.overlap_chars', 200);
-        $text = trim(preg_replace('/\s+/', ' ', $text));
+        $text = trim($text);
         if ($text === '') {
             return [];
         }
+
+        // 🔍 STEP 1: Rileva tabelle markdown nel testo
+        $tables = $this->findTablesInText($text);
+        $chunks = [];
+
+        // 🚀 STEP 2: Crea chunk dedicati per ogni tabella (IGNORA limiti di caratteri)
+        foreach ($tables as $tableIndex => $table) {
+            $tableContent = trim($table['content']);
+            if (strlen($tableContent) > 0) {
+                // Aggiungi contesto se disponibile
+                $contextualizedTable = $table['context_before'] . "\n\n" . $tableContent . "\n\n" . $table['context_after'];
+                $contextualizedTable = trim($contextualizedTable);
+                
+                $chunks[] = $contextualizedTable;
+                Log::info("table_aware_chunking.table_preserved", [
+                    'table_index' => $tableIndex,
+                    'table_chars' => strlen($tableContent),
+                    'with_context_chars' => strlen($contextualizedTable),
+                    'rows_detected' => substr_count($tableContent, '|'),
+                    'preview' => substr($tableContent, 0, 200)
+                ]);
+            }
+        }
+
+        // 📝 STEP 3: Chunking normale per il resto del testo (escludendo tabelle)
+        if (count($tables) > 0) {
+            $textWithoutTables = $this->removeTablesFromText($text, $tables);
+            $normalizedText = trim(preg_replace('/\s+/', ' ', $textWithoutTables));
+            if (trim($normalizedText) !== '') {
+                $regularChunks = $this->performStandardChunking($normalizedText, $max, $overlap);
+                $chunks = array_merge($chunks, $regularChunks);
+            }
+        } else {
+            // Nessuna tabella trovata, chunking normale su tutto il testo
+            $normalizedText = trim(preg_replace('/\s+/', ' ', $text));
+            $regularChunks = $this->performStandardChunking($normalizedText, $max, $overlap);
+            $chunks = array_merge($chunks, $regularChunks);
+        }
+
+        Log::info("table_aware_chunking.completed", [
+            'total_chunks' => count($chunks),
+            'table_chunks' => count($tables),
+            'regular_chunks' => count($chunks) - count($tables),
+            'original_text_chars' => strlen($text),
+            'tables_detected' => count($tables)
+        ]);
+
+        return $chunks;
+    }
+
+    /**
+     * 🔍 Trova tabelle markdown nel testo preservando contesto
+     */
+    private function findTablesInText(string $text): array
+    {
+        $lines = explode("\n", $text);
+        $tables = [];
+        $inTable = false;
+        $tableLines = [];
+        $tableStartIndex = 0;
+
+        foreach ($lines as $lineIndex => $line) {
+            $trimmedLine = trim($line);
+            
+            // 🔍 Rileva linea di tabella: contiene almeno 2 pipe
+            $isTableLine = preg_match('/\|.*\|/', $trimmedLine) && substr_count($trimmedLine, '|') >= 2;
+            $isEmptyLine = trim($line) === '';
+            
+            if ($isTableLine) {
+                if (!$inTable) {
+                    // Inizia nuova tabella
+                    $inTable = true;
+                    $tableStartIndex = $lineIndex;
+                    $tableLines = [];
+                }
+                $tableLines[] = $line;
+            } elseif ($inTable && $isEmptyLine) {
+                // Riga vuota all'interno di una tabella - mantieni la tabella aperta
+                // ma non aggiungere la riga vuota
+                continue;
+            } else {
+                // Linea con contenuto non-tabella dopo essere in tabella = fine tabella
+                if ($inTable && count($tableLines) >= 2) {
+                    // Cattura contesto prima della tabella (max 3 righe)
+                    $contextBefore = '';
+                    $contextStart = max(0, $tableStartIndex - 3);
+                    for ($i = $contextStart; $i < $tableStartIndex; $i++) {
+                        if (isset($lines[$i]) && trim($lines[$i]) !== '') {
+                            $contextBefore .= $lines[$i] . "\n";
+                        }
+                    }
+                    
+                    // Cattura contesto dopo la tabella (max 3 righe)
+                    $contextAfter = '';
+                    $contextEnd = min(count($lines), $lineIndex + 3);
+                    for ($i = $lineIndex; $i < $contextEnd; $i++) {
+                        if (isset($lines[$i]) && trim($lines[$i]) !== '') {
+                            $contextAfter .= $lines[$i] . "\n";
+                        }
+                    }
+
+                    $tables[] = [
+                        'content' => implode("\n", $tableLines),
+                        'context_before' => trim($contextBefore),
+                        'context_after' => trim($contextAfter),
+                        'start_line' => $tableStartIndex,
+                        'end_line' => $lineIndex - 1,
+                        'rows_count' => count($tableLines)
+                    ];
+                }
+                $inTable = false;
+                $tableLines = [];
+            }
+        }
+
+        // 🔄 Gestisci tabella che finisce alla fine del file
+        if ($inTable && count($tableLines) >= 2) {
+            $contextBefore = '';
+            $contextStart = max(0, $tableStartIndex - 3);
+            for ($i = $contextStart; $i < $tableStartIndex; $i++) {
+                if (isset($lines[$i]) && trim($lines[$i]) !== '') {
+                    $contextBefore .= $lines[$i] . "\n";
+                }
+            }
+            
+            $tables[] = [
+                'content' => implode("\n", $tableLines),
+                'context_before' => trim($contextBefore),
+                'context_after' => '',
+                'start_line' => $tableStartIndex,
+                'end_line' => count($lines) - 1,
+                'rows_count' => count($tableLines)
+            ];
+        }
+
+        return $tables;
+    }
+
+    /**
+     * 🗑️ Rimuove tabelle dal testo mantenendo il resto
+     */
+    private function removeTablesFromText(string $text, array $tables): string
+    {
+        $lines = explode("\n", $text);
+        
+        // Marca le linee delle tabelle per rimozione
+        foreach ($tables as $table) {
+            for ($i = $table['start_line']; $i <= $table['end_line']; $i++) {
+                if (isset($lines[$i])) {
+                    $lines[$i] = ''; // Marca per rimozione
+                }
+            }
+        }
+        
+        // Rimuovi linee vuote e ricomponi
+        $cleanLines = array_filter($lines, function($line) {
+            return trim($line) !== '';
+        });
+        
+        return implode("\n", $cleanLines);
+    }
+
+    /**
+     * 📝 Chunking standard per testo normale
+     */
+    private function performStandardChunking(string $text, int $max, int $overlap): array
+    {
         $chunks = [];
         $start = 0;
         $len = mb_strlen($text);
+        
         while ($start < $len) {
             $end = min($len, $start + $max);
             $slice = mb_substr($text, $start, $end - $start);
@@ -241,6 +410,7 @@ class IngestUploadedDocumentJob implements ShouldQueue
             $start = $end - $overlap;
             if ($start < 0) { $start = 0; }
         }
+        
         return $chunks;
     }
 

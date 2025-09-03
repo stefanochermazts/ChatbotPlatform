@@ -52,8 +52,9 @@ class ChatCompletionsController extends Controller
             }
         }
 
-        // Stesse config avanzate del tester
-        $kb = $this->forceAdvancedRagConfiguration();
+        // FORZA configurazioni veloci per widget PRIMA di qualsiasi operazione
+        $this->forceAdvancedRagConfiguration();
+        $kb = $this->kb;
 
         // 🔍 LOG: Configurazioni RAG applicate
         \Log::info('ChatCompletionsController RAG Config', [
@@ -109,7 +110,7 @@ class ChatCompletionsController extends Controller
         // Inserisci system prompt: custom del tenant oppure default come nel tester
         $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
             ? $tenant->custom_system_prompt
-            : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". Riporta sempre le fonti (titoli) usate.';
+            : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se il contesto contiene tabelle, estrai e formatta i dati in modo chiaro e leggibile. Se non sono sufficienti, rispondi: "Non lo so". Riporta sempre le fonti (titoli) usate.';
         $payload['messages'] = array_merge([
             ['role' => 'system', 'content' => $systemPrompt],
         ], $payload['messages']);
@@ -197,16 +198,16 @@ class ChatCompletionsController extends Controller
         // Disabilita HyDE per evitare timeout con OpenAI
         Config::set('rag.advanced.hyde.enabled', false);
         
-        // Usa embedding reranker invece di LLM per velocità
-        Config::set('rag.reranker.driver', 'embedding');
+        // DISABILITA completamente il reranker per velocità massima nel widget
+        Config::set('rag.features.reranker', false);
         
-        // Usa configurazioni standard per il retrieval (più veloci)
-        Config::set('rag.hybrid.vector_top_k', 30);
-        Config::set('rag.hybrid.bm25_top_k', 50);
-        Config::set('rag.hybrid.mmr_take', 8);
+        // Usa configurazioni veloci per il widget (ridotte per performance)
+        Config::set('rag.hybrid.vector_top_k', 20);  // Ridotto da 120 a 20
+        Config::set('rag.hybrid.bm25_top_k', 30);    // Ridotto da 200 a 30
+        Config::set('rag.hybrid.mmr_take', 5);       // Ridotto da 8 a 5
         Config::set('rag.hybrid.mmr_lambda', 0.3);
         Config::set('rag.hybrid.neighbor_radius', 1);
-        Config::set('rag.reranker.top_n', 30);
+        // Config::set('rag.reranker.top_n', 15);    // Non necessario se reranker disabilitato
         
         // Parametri LLM e fallback più permissivi
         Config::set('rag.answer.min_citations', 1);
@@ -227,14 +228,15 @@ class ChatCompletionsController extends Controller
             $parts = [];
             foreach ($citations as $c) {
                 $title = $c['title'] ?? ('Doc '.($c['id'] ?? ''));
-                $snippet = trim((string) ($c['snippet'] ?? ''));
+                // Usa chunk_text (contenuto completo) se disponibile, altrimenti snippet
+                $content = trim((string) ($c['chunk_text'] ?? $c['snippet'] ?? ''));
                 $extra = '';
                 if (!empty($c['phone'])) { $extra .= ($extra ? "\n" : '').'Telefono: '.$c['phone']; }
                 if (!empty($c['email'])) { $extra .= ($extra ? "\n" : '').'Email: '.$c['email']; }
                 if (!empty($c['address'])) { $extra .= ($extra ? "\n" : '').'Indirizzo: '.$c['address']; }
                 if (!empty($c['schedule'])) { $extra .= ($extra ? "\n" : '').'Orario: '.$c['schedule']; }
-                if ($snippet !== '') {
-                    $parts[] = '['.$title."]\n".$snippet.($extra !== '' ? "\n".$extra : '');
+                if ($content !== '') {
+                    $parts[] = '['.$title."]\n".$content.($extra !== '' ? "\n".$extra : '');
                 } elseif ($extra !== '') {
                     $parts[] = '['.$title."]\n".$extra;
                 }

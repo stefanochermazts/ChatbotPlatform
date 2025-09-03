@@ -1,0 +1,12 @@
+---
+alwaysApply: true
+---
+# GraphQL (Lighthouse)
+
+- **Approccio**: schema‑first. Mantieni resolver sottili che delegano a `Services`.
+- **Autorizzazione**: applica policy e scoping al livello field. Rispetta RBAC/ABAC.
+- **Query**: pagination coerente, filtri e sorting consistenti.
+- **Subscriptions/Eventi**: usa dove sensato; evita overfetching.
+- **Compatibilità**: non esporre dati cross‑tenant; masking per PII.
+
+> Colloca schema in `backend/graphql/schema.graphql` se presente; resolver in `backend/app/GraphQL`.

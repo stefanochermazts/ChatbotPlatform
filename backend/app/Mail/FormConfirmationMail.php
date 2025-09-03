@@ -43,9 +43,8 @@ class FormConfirmationMail extends Mailable
         // Replace placeholders in subject
         $subject = $this->replacePlaceholders($subject);
 
-        return Envelope::create(
+        return new Envelope(
             from: config('mail.from.address', 'noreply@chatbotplatform.com'),
-            fromName: $tenant->name ?? config('mail.from.name', 'Chatbot Platform'),
             subject: $subject,
             replyTo: $form->admin_notification_email 
                 ? [$form->admin_notification_email]
@@ -58,7 +57,9 @@ class FormConfirmationMail extends Mailable
      */
     public function content(): Content
     {
-        return Content::with('emails.form-confirmation');
+        return new Content(
+            view: 'emails.form-confirmation'
+        );
     }
 
     /**
@@ -167,6 +168,10 @@ class FormConfirmationMail extends Mailable
                    ->with($viewData);
     }
 }
+
+
+
+
 
 
 

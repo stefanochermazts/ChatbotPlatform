@@ -1,0 +1,19 @@
+---
+alwaysApply: true
+---
+# RAG – Linee guida
+
+- **Pipeline ingestion**: upload/crawler → parsing/OCR → chunking → embeddings → indicizzazione → QA/versioning.
+- **Embeddings**: OpenAI `text-embedding-3-*`; salva dimensione corretta; usa `pgvector` per KNN.
+- **Retrieval ibrido**: vettoriale + BM25/Meilisearch/Typesense; filtri per tag/lingua/data/ACL; recency boost.
+- **Reranking**: opzionale (MMR/cross‑encoder) dietro interfaccia; non hardcodare vendor.
+- **Context builder**: token‑aware con dedup; citazioni obbligatorie con deep‑link.
+- **Anti‑allucinazioni**: soglia di confidence e fallback "Non lo so".
+- **Caching**: query/risposte con invalidazione su update KB.
+- **Jobs**: ingestion/embeddings/indicizzazione/evaluation in coda; Supervisor/Horizon in prod.
+
+### Chunking configurabile
+- Leggi i valori da [config/rag.php](mdc:backend/config/rag.php): `RAG_CHUNK_MAX_CHARS` (default 2200) e `RAG_CHUNK_OVERLAP_CHARS` (default 250). Dopo modifiche, rilancia l'ingestion per rigenerare i chunk.
+
+### Scoping per intent e fallback
+- I lookup intent (telefono, email, indirizzo, orari) devono essere scope‑ati alla KB selezionata, includendo filtri KB anche nei fallback semantico/testuale.

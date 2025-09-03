@@ -37,8 +37,9 @@ class MilvusClient
             $tempFile = tempnam(sys_get_temp_dir(), 'milvus_params_');
             file_put_contents($tempFile, json_encode($pythonParams));
             
-            // Modifica lo script per leggere da file invece che da parametro
-            $command = "python \"{$this->pythonScript}\" \"@{$tempFile}\" 2>&1";
+            // Usa percorso completo a Python per evitare problemi di PATH su Windows
+            $pythonPath = config('rag.vector.milvus.python_path', 'python');
+            $command = "\"{$pythonPath}\" \"{$this->pythonScript}\" \"@{$tempFile}\" 2>&1";
             $output = shell_exec($command);
             
             // Pulisci file temporaneo
@@ -179,6 +180,44 @@ class MilvusClient
         ];
     }
 
+    public function countByTenant(int $tenantId): int
+    {
+        $result = $this->executePythonOperation('count_by_tenant', [
+            'tenant_id' => $tenantId
+        ]);
+        
+        if (!$result['success']) {
+            Log::error('milvus.count_by_tenant_failed', [
+                'tenant_id' => $tenantId,
+                'error' => $result['error'] ?? 'Unknown error'
+            ]);
+            return 0;
+        }
+        
+        return (int) ($result['count'] ?? 0);
+    }
+
+    public function deleteByTenant(int $tenantId): bool
+    {
+        $result = $this->executePythonOperation('delete_by_tenant', [
+            'tenant_id' => $tenantId
+        ]);
+        
+        if (!$result['success']) {
+            Log::error('milvus.delete_by_tenant_failed', [
+                'tenant_id' => $tenantId,
+                'error' => $result['error'] ?? 'Unknown error'
+            ]);
+            return false;
+        }
+        
+        Log::info('milvus.delete_by_tenant_success', [
+            'tenant_id' => $tenantId
+        ]);
+        
+        return true;
+    }
+
     public function deleteByPrimaryIds(array $primaryIds): void
     {
         if (empty($primaryIds)) {
@@ -201,23 +240,7 @@ class MilvusClient
         }
     }
 
-    public function deleteByTenant(int $tenantId): void
-    {
-        $result = $this->executePythonOperation('delete_by_tenant', [
-            'tenant_id' => $tenantId
-        ]);
-        
-        if (!$result['success']) {
-            Log::error('milvus.delete_by_tenant_failed', [
-                'tenant_id' => $tenantId,
-                'error' => $result['error'] ?? 'Unknown error'
-            ]);
-        } else {
-            Log::info('milvus.delete_by_tenant_success', [
-                'tenant_id' => $tenantId
-            ]);
-        }
-    }
+
 
     public function createPartition(string $partitionName): void
     {

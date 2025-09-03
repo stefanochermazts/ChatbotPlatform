@@ -20,6 +20,22 @@ class ScraperAdminController extends Controller
 
     public function update(Request $request, Tenant $tenant)
     {
+        // 🐛 DEBUG: Log tutti i dati ricevuti per tracciare il problema
+        \Log::info('ScraperAdmin: Dati ricevuti nel form', [
+            'tenant_id' => $tenant->id,
+            'form_data' => $request->all(),
+            'id_field' => $request->get('id'),
+            'has_id' => $request->has('id'),
+            'id_empty' => empty($request->get('id')),
+            // 🐛 DEBUG: Valori specifici dei checkbox
+            'checkbox_values' => [
+                'enabled' => $request->boolean('enabled'),
+                'render_js' => $request->boolean('render_js'),
+                'respect_robots' => $request->boolean('respect_robots'),
+                'skip_known_urls' => $request->boolean('skip_known_urls'),
+            ]
+        ]);
+
         $data = $request->validate([
             'id' => ['nullable', 'integer', 'exists:scraper_configs,id'],
             'name' => ['nullable', 'string', 'max:255'],
@@ -50,24 +66,36 @@ class ScraperAdminController extends Controller
             'exclude_patterns' => $this->toArray($data['exclude_patterns'] ?? ''),
             'link_only_patterns' => $this->toArray($data['link_only_patterns'] ?? ''),
             'max_depth' => (int) ($data['max_depth'] ?? 2),
-            'render_js' => (bool) ($data['render_js'] ?? false),
-            'respect_robots' => (bool) ($data['respect_robots'] ?? true),
+            'render_js' => $request->boolean('render_js'),  // ✅ Fix checkbox
+            'respect_robots' => $request->boolean('respect_robots'),  // ✅ Fix checkbox  
             'rate_limit_rps' => (int) ($data['rate_limit_rps'] ?? 1),
             'auth_headers' => $this->parseHeaders($data['auth_headers'] ?? ''),
             'target_knowledge_base_id' => isset($data['target_knowledge_base_id']) && $data['target_knowledge_base_id'] !== ''
                 ? (int) $data['target_knowledge_base_id']
                 : null,
-            'enabled' => (bool) ($data['enabled'] ?? true),
+            'enabled' => $request->boolean('enabled'),  // ✅ Fix checkbox
             'interval_minutes' => isset($data['interval_minutes']) && $data['interval_minutes'] !== '' ? (int) $data['interval_minutes'] : null,
-            'skip_known_urls' => (bool) ($data['skip_known_urls'] ?? true),
+            'skip_known_urls' => $request->boolean('skip_known_urls'),  // ✅ Fix checkbox
             'recrawl_days' => isset($data['recrawl_days']) && $data['recrawl_days'] !== '' ? (int) $data['recrawl_days'] : null,
         ];
 
         if (!empty($data['id'])) {
+            // UPDATE: Aggiorna configurazione esistente
             $config = ScraperConfig::where('tenant_id', $tenant->id)->findOrFail((int) $data['id']);
+            \Log::info('ScraperAdmin: Aggiornamento configurazione esistente', [
+                'tenant_id' => $tenant->id,
+                'config_id' => $data['id'],
+                'config_name' => $payload['name']
+            ]);
             $config->fill($payload + ['tenant_id' => $tenant->id]);
             $config->save();
         } else {
+            // CREATE: Crea nuova configurazione
+            \Log::info('ScraperAdmin: Creazione nuova configurazione', [
+                'tenant_id' => $tenant->id,
+                'config_name' => $payload['name'],
+                'reason' => 'ID non presente nel form'
+            ]);
             $config = new ScraperConfig($payload + ['tenant_id' => $tenant->id]);
             $config->save();
         }

@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('api_keys', function (Blueprint $table) {
-            $table->string('key')->nullable()->after('name')->comment('Plain text API key for widget usage');
-        });
+        if (!Schema::hasColumn('api_keys', 'key')) {
+            Schema::table('api_keys', function (Blueprint $table) {
+                $table->string('key')->nullable()->after('name')->comment('Plain text API key for widget usage');
+            });
+        }
     }
 
     /**
@@ -21,8 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('api_keys', function (Blueprint $table) {
-            $table->dropColumn('key');
-        });
+        if (Schema::hasColumn('api_keys', 'key')) {
+            Schema::table('api_keys', function (Blueprint $table) {
+                $table->dropColumn('key');
+            });
+        }
     }
 };

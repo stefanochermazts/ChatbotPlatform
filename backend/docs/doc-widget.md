@@ -267,3 +267,8 @@ public/widget/
 - ✅ Mobile iOS Safari, Chrome Mobile
 - ✅ Screen readers: NVDA, JAWS, VoiceOver
 - ✅ Keyboard navigation completa
+
+
+
+
+

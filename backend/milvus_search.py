@@ -151,6 +151,33 @@ def delete_by_tenant(collection_name, tenant_id):
             "error_type": type(e).__name__
         }
 
+def count_by_tenant(collection_name, tenant_id):
+    """Conta i chunk per uno specifico tenant"""
+    try:
+        connect_milvus()
+        collection = Collection(collection_name)
+        collection.load()
+        
+        # Fai una query limitata per contare gli elementi
+        expr = f"tenant_id == {tenant_id}"
+        results = collection.query(
+            expr=expr,
+            output_fields=["id"],
+            limit=10000  # Limite alto per contare tutto
+        )
+        
+        return {
+            "success": True,
+            "count": len(results)
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
 def health_check(collection_name):
     """Controllo salute di Milvus"""
     try:
@@ -303,6 +330,15 @@ def main():
                 sys.exit(1)
             
             result = delete_by_tenant(collection_name, tenant_id)
+            
+        elif operation == 'count_by_tenant':
+            tenant_id = int(params.get('tenant_id', 0))
+            
+            if tenant_id <= 0:
+                print(json.dumps({"success": False, "error": "valid tenant_id is required"}))
+                sys.exit(1)
+            
+            result = count_by_tenant(collection_name, tenant_id)
             
         elif operation == 'health':
             result = health_check(collection_name)

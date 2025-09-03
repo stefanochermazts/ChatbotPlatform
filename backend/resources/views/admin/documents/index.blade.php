@@ -42,9 +42,9 @@
 @endif
 
 <!-- 🎯 NUOVA SEZIONE: Scraping Singolo URL -->
-<div class="bg-white border rounded p-4 mb-6">
+<div class="bg-white border rounded p-4 mb-6" x-data="singleUrlScraper()">
   <h2 class="text-lg font-semibold mb-4">🎯 Scraping Singolo URL</h2>
-  <form x-data="singleUrlScraper()" @submit.prevent="submitForm" class="flex flex-wrap items-end gap-3">
+  <form @submit.prevent="submitForm" class="flex flex-wrap items-end gap-3">
     <div class="flex-1 min-w-64">
       <label class="block text-sm font-medium text-gray-700 mb-1">URL da scrapare</label>
       <input type="url" x-model="url" required 
@@ -74,14 +74,14 @@
   </form>
   
   <!-- Risultati -->
-  <div x-show="result" x-data class="mt-4 p-3 rounded" :class="result?.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
+  <div x-show="result" class="mt-4 p-3 rounded" :class="result?.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
     <div x-show="result?.success" class="text-green-800">
       <h4 class="font-medium">✅ Scraping completato!</h4>
-      <p class="text-sm mt-1" x-text="result.message"></p>
-      <div x-show="result.data" class="text-xs mt-2">
-        <span>Documenti salvati: </span><span x-text="result.data?.saved_count"></span> | 
-        <span>Nuovi: </span><span x-text="result.data?.stats?.new"></span> | 
-        <span>Aggiornati: </span><span x-text="result.data?.stats?.updated"></span>
+      <p class="text-sm mt-1" x-text="result?.message"></p>
+      <div x-show="result?.data" class="text-xs mt-2">
+        <span>Documenti salvati: </span><span x-text="result?.data?.saved_count"></span> | 
+        <span>Nuovi: </span><span x-text="result?.data?.stats?.new"></span> | 
+        <span>Aggiornati: </span><span x-text="result?.data?.stats?.updated"></span>
       </div>
     </div>
     <div x-show="!result?.success" class="text-red-800">
@@ -89,13 +89,15 @@
       <p class="text-sm mt-1" x-text="result?.message"></p>
       <div x-show="result?.existing_document" class="text-xs mt-2 p-2 bg-red-100 rounded">
         <p><strong>Documento esistente:</strong></p>
-        <p>ID: <span x-text="result.existing_document?.id"></span></p>
-        <p>Titolo: <span x-text="result.existing_document?.title"></span></p>
+        <p>ID: <span x-text="result?.existing_document?.id"></span></p>
+        <p>Titolo: <span x-text="result?.existing_document?.title"></span></p>
         <p class="mt-1 text-red-600">💡 Usa "Force" per sovrascrivere</p>
       </div>
     </div>
   </div>
 </div>
+
+
 
 <div class="bg-white border rounded p-4 mb-6">
   <div x-data="uploader()" x-init="init()">
@@ -184,8 +186,9 @@
             if(it.status==='queued') this.uploadOne(it).then(()=>pump());
           }
           if(this.inflight===0 && this.queueIndex>=this.items.length){
-            // tutte completate
-            setTimeout(()=>window.location.reload(), 600);
+            // tutte completate - aspetta di più per dare tempo all'ingestion
+            console.log('✅ Upload completato! Ricaricando la pagina tra 3 secondi per mostrare i documenti...');
+            setTimeout(()=>window.location.reload(), 3000);
           }
         };
         pump();
@@ -193,7 +196,10 @@
       uploadOne(it){
         return new Promise((resolve)=>{
           this.inflight++; it.status='uploading'; it.progress=0;
-          const form=new FormData(); form.append('files[]', it.file); if(this.targetKbId){ form.append('knowledge_base_id', this.targetKbId); }
+          const form=new FormData(); 
+          form.append('files[]', it.file); 
+          if(this.targetKbId){ form.append('knowledge_base_id', this.targetKbId); }
+          console.log('🚀 Starting upload:', it.name, 'KB:', this.targetKbId, 'URL:', '{{ route('admin.documents.upload', $tenant) }}');
           const xhr=new XMLHttpRequest();
           xhr.open('POST', '{{ route('admin.documents.upload', $tenant) }}', true);
           xhr.setRequestHeader('X-CSRF-TOKEN', '{{ csrf_token() }}');
@@ -201,8 +207,15 @@
           xhr.upload.onprogress=(e)=>{ if(e.lengthComputable){ it.progress = Math.min(99, Math.round((e.loaded/e.total)*100)); } };
           xhr.onerror=()=>{ it.status='error'; it.error='Errore di rete'; this.inflight--; resolve(); };
           xhr.onload=()=>{
-            if(xhr.status>=200 && xhr.status<300){ it.progress=100; it.status='done'; }
-            else { it.status='error'; it.error = (xhr.responseText||'Errore'); }
+            console.log('📤 Upload response:', xhr.status, xhr.responseText);
+            if(xhr.status>=200 && xhr.status<300){ 
+              it.progress=100; it.status='done';
+              console.log('✅ File uploaded successfully:', it.name);
+            }
+            else { 
+              it.status='error'; it.error = (xhr.responseText||'Errore');
+              console.error('❌ Upload failed:', xhr.status, xhr.responseText);
+            }
             this.inflight--; resolve();
           };
           xhr.send(form);
@@ -473,7 +486,17 @@ async function rescrapeDocument(documentId, title) {
 async function rescrapeAllDocuments() {
   const scrapedCount = {{ $scrapedDocsCount }};
   
-  if (!confirm(`Re-scrapare TUTTI i ${scrapedCount} documenti con source_url?\\n\\n⚠️ ATTENZIONE: Questa operazione può richiedere molto tempo e aggiornerà tutti i documenti scraped.\\n\\nSei sicuro di voler procedere?`)) {
+  @php($selectedKb = ($kbId ?? 0) > 0 ? \App\Models\KnowledgeBase::find($kbId) : null)
+  const filterInfo = @if(($kbId ?? 0) > 0 || !empty($sourceUrlSearch ?? ''))
+    '\\n\\n🔍 FILTRI APPLICATI:' +
+    @if(($kbId ?? 0) > 0) '\\n- KB: {{ $selectedKb?->name ?? "ID $kbId" }}' + @endif
+    @if(!empty($sourceUrlSearch ?? '')) '\\n- URL: "{{ addslashes($sourceUrlSearch) }}"' + @endif
+    ''
+  @else
+    ''
+  @endif;
+  
+  if (!confirm(`Re-scrapare TUTTI i ${scrapedCount} documenti con source_url?${filterInfo}\\n\\n⚠️ ATTENZIONE: Questa operazione può richiedere molto tempo e aggiornerà tutti i documenti scraped.\\n\\nSei sicuro di voler procedere?`)) {
     return;
   }
   
@@ -500,7 +523,9 @@ async function rescrapeAllDocuments() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        confirm: true
+        confirm: true,
+        kb_id: {{ $kbId ?? 0 }},
+        source_url: '{{ $sourceUrlSearch ?? '' }}'
       })
     });
     

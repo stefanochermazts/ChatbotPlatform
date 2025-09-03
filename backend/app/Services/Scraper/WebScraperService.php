@@ -46,7 +46,7 @@ class WebScraperService
         }
 
         // Salva i risultati come documenti
-        $savedCount = $this->saveResults($tenant);
+        $savedCount = $this->saveResults($tenant, false);
 
         return [
             'success' => true,
@@ -143,7 +143,131 @@ class WebScraperService
             return null;
         }
 
-        return $response->body();
+        $content = $response->body();
+        
+        // Gestione robusta dell'encoding UTF-8
+        $content = $this->ensureUtf8Encoding($content, $response);
+        
+        return $content;
+    }
+
+    /**
+     * Assicura che il contenuto sia correttamente codificato in UTF-8
+     */
+    private function ensureUtf8Encoding(string $content, $response): string
+    {
+        // 1. Rileva encoding dal Content-Type header
+        $contentType = $response->header('Content-Type', '');
+        $detectedCharset = null;
+        
+        if (preg_match('/charset=([^;\s]+)/i', $contentType, $matches)) {
+            $detectedCharset = strtolower(trim($matches[1], '"\''));
+        }
+        
+        // 2. Rileva encoding dal meta tag HTML se presente
+        if (!$detectedCharset && preg_match('/<meta[^>]+charset\s*=\s*["\']?([^"\'>\s]+)/i', $content, $matches)) {
+            $detectedCharset = strtolower($matches[1]);
+        }
+        
+        // 3. Auto-detect encoding se non specificato
+        if (!$detectedCharset) {
+            $detected = mb_detect_encoding($content, ['UTF-8', 'ISO-8859-1', 'Windows-1252', 'ASCII'], true);
+            if ($detected) {
+                $detectedCharset = strtolower($detected);
+            }
+        }
+        
+        // 4. Override per Windows-1252 smart quotes (spesso mal-dichiarato come ISO-8859-1)
+        if ($detectedCharset === 'iso-8859-1') {
+            // Cerca bytes tipici di Windows-1252 smart quotes che non esistono in ISO-8859-1
+            $windows1252Bytes = ["\x91", "\x92", "\x93", "\x94", "\x96", "\x97", "\x85"];
+            $hasSmartQuotes = false;
+            
+            foreach ($windows1252Bytes as $byte) {
+                if (strpos($content, $byte) !== false) {
+                    $hasSmartQuotes = true;
+                    break;
+                }
+            }
+            
+            if ($hasSmartQuotes) {
+                $detectedCharset = 'windows-1252';
+                \Log::debug("Detected Windows-1252 smart quotes, overriding declared ISO-8859-1");
+            }
+        }
+        
+        // 5. Converti a UTF-8 se necessario
+        if ($detectedCharset && $detectedCharset !== 'utf-8') {
+            $converted = mb_convert_encoding($content, 'UTF-8', $detectedCharset);
+            if ($converted !== false) {
+                $content = $converted;
+                \Log::debug("Converted encoding from {$detectedCharset} to UTF-8");
+            }
+        }
+        
+        // 6. Verifica finale e pulizia caratteri problematici
+        if (!mb_check_encoding($content, 'UTF-8')) {
+            // Rimuovi caratteri non validi UTF-8
+            $content = mb_convert_encoding($content, 'UTF-8', 'UTF-8');
+            \Log::warning("Removed invalid UTF-8 characters from content");
+        }
+        
+        // 7. Fix caratteri malformati comuni da encoding doppio o errato
+        $encodingFixes = [
+            // Caratteri latini base
+            'Ã¬' => 'ì',
+            'Ã ' => 'à',
+            'Ã¹' => 'ù',
+            'Ã¨' => 'è',
+            'Ã©' => 'é',
+            'Ã²' => 'ò',
+            // Apostrofi e virgolette malformati (problema comune da encoding doppio)
+            'â€™' => "'",
+            'â€œ' => '"',
+            'â€' => '"',
+            'â€˜' => "'",
+            'â€š' => "'",
+            'â€¦' => '...',
+            // Trattini
+            'â€"' => '–',
+            'â€"' => '—',
+        ];
+        
+        // 8. Normalizza smart quotes Unicode ad ASCII per compatibilità
+        $unicodeNormalization = [
+            mb_chr(8217, 'UTF-8') => "'",   // U+2019 RIGHT SINGLE QUOTATION MARK
+            mb_chr(8216, 'UTF-8') => "'",   // U+2018 LEFT SINGLE QUOTATION MARK 
+            mb_chr(8220, 'UTF-8') => '"',   // U+201C LEFT DOUBLE QUOTATION MARK
+            mb_chr(8221, 'UTF-8') => '"',   // U+201D RIGHT DOUBLE QUOTATION MARK
+            mb_chr(8218, 'UTF-8') => "'",   // U+201A SINGLE LOW-9 QUOTATION MARK
+            mb_chr(8222, 'UTF-8') => '"',   // U+201E DOUBLE LOW-9 QUOTATION MARK
+            mb_chr(8230, 'UTF-8') => '...', // U+2026 HORIZONTAL ELLIPSIS
+            mb_chr(8211, 'UTF-8') => '-',   // U+2013 EN DASH
+            mb_chr(8212, 'UTF-8') => '--',  // U+2014 EM DASH
+        ];
+        
+        $originalLength = strlen($content);
+        
+        // Applica fix per encoding malformati
+        foreach ($encodingFixes as $wrong => $correct) {
+            $content = str_replace($wrong, $correct, $content);
+        }
+        
+        // Applica normalizzazione Unicode a ASCII
+        foreach ($unicodeNormalization as $unicode => $ascii) {
+            $content = str_replace($unicode, $ascii, $content);
+        }
+        
+        $newLength = strlen($content);
+        if ($newLength !== $originalLength) {
+            \Log::debug("Fixed malformed encoding and normalized Unicode characters", [
+                'original_length' => $originalLength,
+                'new_length' => $newLength,
+                'changes' => $originalLength - $newLength
+            ]);
+        }
+        
+        return $content;
     }
 
     private function extractContent(string $html, string $url): ?array
@@ -307,7 +431,8 @@ class WebScraperService
             // Verifica qualità estrazione
             $qualityScore = $this->assessExtractionQuality($markdownContent, $html);
             
-            if (strlen($markdownContent) < 50 || $qualityScore < 0.3) {
+            // Soglia ridotta da 0.3 a 0.1 per siti comunali con tabelle difficili da estrarre
+            if (strlen($markdownContent) < 50 || $qualityScore < 0.1) {
                 \Log::debug("Readability.php qualità insufficiente", [
                     'url' => $url,
                     'content_length' => strlen($markdownContent),
@@ -442,19 +567,7 @@ class WebScraperService
             $content
         );
         
-        // Fix encoding problemi comuni
-        $encodingFixes = [
-            'Ã¬' => 'ì',
-            'Ã ' => 'à',
-            'Ã¹' => 'ù',
-            'Ã¨' => 'è',
-            'Ã©' => 'é',
-            'Ã²' => 'ò',
-        ];
-        
-        foreach ($encodingFixes as $wrong => $correct) {
-            $content = str_replace($wrong, $correct, $content);
-        }
+        // I fix di encoding sono ora gestiti in ensureUtf8Encoding()
         
         return $content;
     }
@@ -471,7 +584,8 @@ class WebScraperService
             if (strpos($markdownContent, '|') !== false) {
                 $score += 0.3; // Tabelle estratte
             } else {
-                $score -= 0.2; // Tabelle mancanti - CRITICO
+                // Non penalizziamo troppo le tabelle mancanti - alcuni siti hanno tabelle layout
+                $score += 0.0; // Neutro invece di penalizzare -0.2
             }
         }
         
@@ -500,6 +614,11 @@ class WebScraperService
             if ($lengthRatio > 0.3 && $lengthRatio < 0.8) {
                 $score += 0.1; // Buon rapporto contenuto/rumore
             }
+        }
+        
+        // Bonus per contenuto sostanzioso anche se qualità bassa
+        if ($markdownLength > 200) {
+            $score += 0.15; // Incentiva contenuto lungo
         }
         
         return max(0.0, min(1.0, $score));
@@ -1079,7 +1198,7 @@ class WebScraperService
         return $q->exists();
     }
 
-    private function saveResults(Tenant $tenant): int
+    private function saveResults(Tenant $tenant, bool $forceReingestion = false): int
     {
         $savedCount = 0;
         $updatedCount = 0;
@@ -1125,7 +1244,7 @@ class WebScraperService
 
                 if ($existingDocument) {
                     // Controlla se il contenuto è cambiato
-                    if ($existingDocument->content_hash === $contentHash) {
+                    if ($existingDocument->content_hash === $contentHash && !$forceReingestion) {
                         // Contenuto identico - aggiorna solo timestamp e, se configurata, la KB target
                         $targetKbId = null;
                         try {
@@ -1144,7 +1263,13 @@ class WebScraperService
                         \Log::info("Documento invariato, skip", ['url' => $result['url']]);
                         continue;
                     } else {
-                        // Contenuto cambiato - aggiorna documento esistente
+                        // Contenuto cambiato O force reingestion - aggiorna documento esistente
+                        if ($forceReingestion && $existingDocument->content_hash === $contentHash) {
+                            \Log::info("🔄 Force reingestion - stesso contenuto ma aggiorno comunque", [
+                                'url' => $result['url'],
+                                'document_id' => $existingDocument->id
+                            ]);
+                        }
                         $this->updateExistingDocument($existingDocument, $result, $markdownContent, $contentHash);
                         $updatedCount++;
                         $this->stats['updated']++;
@@ -1327,8 +1452,8 @@ class WebScraperService
             if ($result) {
                 $this->results[] = $result;
                 
-                // Salva il risultato
-                $savedCount = $this->saveResults($tenant);
+                // Salva il risultato (force=true per re-scraping)
+                $savedCount = $this->saveResults($tenant, $force);
                 
                 \Log::info("✅ [SINGLE-URL] Scraping completato", [
                     'url' => $url,
@@ -1502,5 +1627,50 @@ class WebScraperService
             ]);
             return null;
         }
+    }
+
+
+
+    /**
+     * Chunking del contenuto per embeddings
+     */
+    public function chunkContent(string $content): array
+    {
+        $maxChars = config('rag.chunk.max_chars', 2200);
+        $overlapChars = config('rag.chunk.overlap_chars', 250);
+        
+        $chunks = [];
+        $contentLength = strlen($content);
+        $start = 0;
+        
+        while ($start < $contentLength) {
+            $end = $start + $maxChars;
+            
+            // Se non siamo alla fine, cerca un punto di interruzione naturale
+            if ($end < $contentLength) {
+                // Cerca il primo punto o newline dopo la posizione target
+                $breakPoint = strpos($content, '.', $end - 100);
+                if ($breakPoint !== false && $breakPoint < $end + 100) {
+                    $end = $breakPoint + 1;
+                } else {
+                    // Fallback: cerca newline
+                    $breakPoint = strpos($html, "\n", $end - 100);
+                    if ($breakPoint !== false && $breakPoint < $end + 100) {
+                        $end = $breakPoint + 1;
+                    }
+                }
+            }
+            
+            $chunk = substr($content, $start, $end - $start);
+            $chunk = trim($chunk);
+            
+            if (!empty($chunk)) {
+                $chunks[] = $chunk;
+            }
+            
+            $start = $end - $overlapChars;
+        }
+        
+        return $chunks;
     }
 }

@@ -12,6 +12,9 @@
 
 (function() {
   'use strict';
+  
+  // Version check log
+  console.log('🤖 Chatbot Widget Loading...', new Date().toISOString());
 
   // =================================================================
   // 🔌 CONFIGURATION & CONSTANTS
@@ -20,10 +23,11 @@
   const CONFIG = {
     // API Configuration
     apiEndpoint: '/api/v1/chat/completions',
-    analyticsEndpoint: '/api/v1/widget/events',
+    analyticsEndpoint: '/api/v1/widget/events/public',
+    version: '1.0.1-fix-events', // Debug version
     maxRetries: 3,
     retryDelay: 1000,
-    requestTimeout: 30000,
+    requestTimeout: 45000,
     
     // Widget behavior
     maxMessageLength: 2000,
@@ -240,7 +244,11 @@
 
       let html = text;
 
-      // Escape HTML di base per sicurezza
+      // PRE-PULIZIA: Ripara URL malformati che potrebbero arrivare dal backend
+      // Cerca pattern come: url" target="_blank" rel="noopener noreferrer" class="chatbot-link">Testo
+      html = html.replace(/(https?:\/\/[^\s"']+?)"[^>]*>([^<]+)/g, '$1');
+      
+      // Escape HTML di base per sicurezza (dopo la pre-pulizia)
       html = html.replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
@@ -258,17 +266,21 @@
       const urlPlaceholders = [];
       let urlCounter = 0;
       
-      // Maschera https:// URLs - uso formato immune alle regex bold/italic
-      html = html.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]}])/g, (match) => {
+      // Maschera https:// URLs - versione migliorata per evitare malformazioni
+      html = html.replace(/(https?:\/\/[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
+        // Rimuovi eventuali caratteri finali problematici
+        const cleanUrl = match.replace(/[.,;:!?)\]}"'>]+$/, '');
         const placeholder = `###URLMASK${urlCounter++}###`;
-        urlPlaceholders.push({ placeholder, url: match });
+        urlPlaceholders.push({ placeholder, url: cleanUrl });
         return placeholder;
       });
       
-      // Maschera www. URLs - uso formato immune alle regex bold/italic
-      html = html.replace(/(?<!["\[>])(www\.[^\s<]+[^\s<.,;:!?)\]}])/g, (match) => {
+      // Maschera www. URLs - versione migliorata
+      html = html.replace(/(?<!["\[>])(www\.[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
+        // Rimuovi eventuali caratteri finali problematici
+        const cleanUrl = match.replace(/[.,;:!?)\]}"'>]+$/, '');
         const placeholder = `###URLMASK${urlCounter++}###`;
-        urlPlaceholders.push({ placeholder, url: match });
+        urlPlaceholders.push({ placeholder, url: cleanUrl });
         return placeholder;
       });
 
@@ -280,16 +292,32 @@
       html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
-      // 6. Links markdown [text](url)
-      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>');
+      // 6. Links markdown [text](url) - gestisce URL completi e troncati
+      // Prima gestisce link completi con parentesi di chiusura
+      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+        const cleanUrl = url.trim().replace(/[.,;:!?)"'>]+$/, '');
+        const finalUrl = cleanUrl.match(/^(https?|mailto|tel):/) ? cleanUrl : 
+                        cleanUrl.startsWith('www.') ? `http://${cleanUrl}` : 
+                        cleanUrl.startsWith('/') ? cleanUrl : 
+                        `https://${cleanUrl}`;
+        return `<a href="${finalUrl}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
+      });
+      
+      // Poi gestisce link troncati senza parentesi di chiusura (alla fine della riga)
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]*?)(?=\s|$)/g, (match, text, url) => {
+        const cleanUrl = url.trim().replace(/[.,;:!?)"'>]+$/, '');
+        return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
+      });
 
       // 7. RESTORE URLs e linkificali
       urlPlaceholders.forEach(({ placeholder, url }) => {
-        const linkedUrl = url.startsWith('www.') 
-          ? `<a href="http://${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${url}</a>`
-          : `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${url}</a>`;
+        // Assicurati che l'URL sia pulito e valido
+        const cleanUrl = url.trim();
+        const href = cleanUrl.startsWith('www.') ? `http://${cleanUrl}` : cleanUrl;
+        const linkedUrl = `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${cleanUrl}</a>`;
         
-        html = html.replace(placeholder, linkedUrl);
+        // Usa replaceAll per sostituire tutte le occorrenze del placeholder
+        html = html.replaceAll ? html.replaceAll(placeholder, linkedUrl) : html.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), linkedUrl);
       });
       
       // 8. Auto-link Email  
@@ -318,12 +346,15 @@
         return '<ul class="chatbot-list">' + match + '</ul>';
       });
 
-      // 12. Line breaks (doppio spazio + newline o doppio newline)
+      // 12. Tables (Markdown tables)
+      html = this.parseTables(html);
+
+      // 13. Line breaks (doppio spazio + newline o doppio newline)
       html = html.replace(/  \n/g, '<br>')
                 .replace(/\n\n/g, '<br><br>')
                 .replace(/\n/g, '<br>');
 
-      // 13. Strikethrough (~~text~~)
+      // 14. Strikethrough (~~text~~)
       html = html.replace(/~~([^~\n]+)~~/g, '<del class="chatbot-strikethrough">$1</del>');
 
       return this.sanitize(html);
@@ -334,6 +365,67 @@
       return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                 .replace(/on\w+="[^"]*"/g, '')
                 .replace(/javascript:/gi, 'blocked:');
+    }
+
+    static parseTables(html) {
+      // Regex per rilevare tabelle Markdown
+      const tableRegex = /(\|[^\n]+\|\n\|[\s\-:|]+\|\n(?:\|[^\n]+\|\n?)+)/g;
+      
+      return html.replace(tableRegex, (match) => {
+        const lines = match.trim().split('\n');
+        if (lines.length < 3) return match; // Almeno header, separator e una riga
+        
+        // Rimuovi la riga separator (la seconda riga con |----|)
+        const dataLines = lines.filter((line, index) => index !== 1);
+        
+        // Parse delle righe
+        const rows = dataLines.map(line => {
+          // Rimuovi | iniziale e finale, poi split per |
+          const cells = line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
+          return cells;
+        });
+        
+        if (rows.length === 0) return match;
+        
+        // Crea HTML della tabella
+        let tableHtml = '<div class="chatbot-table-container">';
+        tableHtml += '<table class="chatbot-table">';
+        
+        // Header
+        if (rows.length > 0) {
+          tableHtml += '<thead><tr>';
+          rows[0].forEach(cell => {
+            tableHtml += `<th class="chatbot-table-header">${this.escapeHtml(cell)}</th>`;
+          });
+          tableHtml += '</tr></thead>';
+        }
+        
+        // Body
+        if (rows.length > 1) {
+          tableHtml += '<tbody>';
+          for (let i = 1; i < rows.length; i++) {
+            tableHtml += '<tr>';
+            rows[i].forEach(cell => {
+              tableHtml += `<td class="chatbot-table-cell">${this.escapeHtml(cell)}</td>`;
+            });
+            tableHtml += '</tr>';
+          }
+          tableHtml += '</tbody>';
+        }
+        
+        tableHtml += '</table></div>';
+        
+        return tableHtml;
+      });
+    }
+
+    static escapeHtml(text) {
+      // Escape HTML per sicurezza
+      return text.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
     }
   }
 
@@ -1072,20 +1164,63 @@
       if (!this.enabled) return;
 
       try {
+        // Adapt event format for public endpoint
+        const publicEvent = {
+          event: event.event_type,
+          properties: {
+            tenant_id: this.tenantId,
+            session_id: event.session_id,
+            page_url: window.location.href,
+            user_agent: navigator.userAgent,
+            timestamp: Date.now(),
+            ...(event.event_data || {})
+          }
+        };
+
+        // 🔍 DEBUG: Log dei dati inviati (solo in debug mode)
+        if (window.chatbotDebug) {
+          console.log('🔍 WIDGET DEBUG - Sending event:', {
+            url: `${this.baseURL}${CONFIG.analyticsEndpoint}`,
+            event: JSON.stringify(publicEvent, null, 2),
+            tenantId: this.tenantId,
+            sessionId: event.session_id,
+            eventType: event.event_type,
+            eventData: event.event_data
+          });
+        }
+
         const response = await fetch(`${this.baseURL}${CONFIG.analyticsEndpoint}`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
-            'X-Tenant-Id': this.tenantId.toString()
+            'Content-Type': 'application/json'
           },
-          body: JSON.stringify(event)
+          body: JSON.stringify(publicEvent)
         });
 
         if (!response.ok) {
+          // 🔍 DEBUG: Log dettagliato dell'errore (solo in debug mode)
+          if (window.chatbotDebug) {
+            const responseText = await response.text();
+            console.error('🔍 WIDGET DEBUG - Analytics event failed:', {
+              status: response.status,
+              statusText: response.statusText,
+              url: response.url,
+              event: JSON.stringify(publicEvent, null, 2),
+              responseBody: responseText
+            });
+          }
+          
           // Only warn in development mode (when console is open or specific debug flag)
           if (window.location.hostname === 'localhost' || window.chatbotDebug) {
             console.warn('Analytics event failed:', response.status, response.statusText);
+          }
+        } else {
+          // 🔍 DEBUG: Log success (solo in debug mode)
+          if (window.chatbotDebug) {
+            console.log('🔍 WIDGET DEBUG - Analytics event success:', {
+              status: response.status,
+              event: publicEvent
+            });
           }
         }
       } catch (error) {
@@ -1181,6 +1316,12 @@
 
   class ChatbotWidget {
     constructor(options = {}) {
+      console.log('🤖 ChatbotWidget initializing with CONFIG:', {
+        version: CONFIG.version,
+        analyticsEndpoint: CONFIG.analyticsEndpoint,
+        requestTimeout: CONFIG.requestTimeout
+      });
+      
       this.options = {
         apiKey: null,
         tenantId: null,

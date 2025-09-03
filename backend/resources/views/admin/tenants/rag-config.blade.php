@@ -156,7 +156,7 @@
 
                         <div>
                             <label for="mmr_take" class="block text-sm font-medium text-gray-700">MMR Take</label>
-                            <input type="number" name="mmr_take" id="mmr_take" min="1" max="50"
+                            <input type="number" name="mmr_take" id="mmr_take" min="1" max="100"
                                    value="{{ $currentConfig['hybrid']['mmr_take'] ?? 10 }}"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <div class="text-xs text-gray-600 mt-1 space-y-1">
@@ -373,13 +373,14 @@
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label for="context_max_chars" class="block text-sm font-medium text-gray-700">Max Caratteri</label>
-                                <input type="number" name="context_max_chars" id="context_max_chars" min="1000" max="20000"
+                                <input type="number" name="context_max_chars" id="context_max_chars" min="1000" max="100000"
                                        value="{{ $currentConfig['context']['max_chars'] ?? 6000 }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 <div class="text-xs text-gray-600 mt-1">
                                     <p><strong>Limite assoluto</strong> del contesto inviato al LLM</p>
                                     <p><strong>4000-6000:</strong> Standard per risposte bilanciate</p>
-                                    <p><strong>8000+:</strong> Per domande complesse che richiedono molto contesto</p>
+                                    <p><strong>8000-15000:</strong> Per domande complesse che richiedono molto contesto</p>
+                                    <p><strong>20000-50000:</strong> Testing avanzato e estrazione massima (costi elevati)</p>
                                 </div>
                             </div>
                             <div>

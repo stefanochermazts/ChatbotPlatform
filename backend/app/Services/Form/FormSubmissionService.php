@@ -281,12 +281,19 @@ class FormSubmissionService
      */
     private function extractUserEmail(array $formData): ?string
     {
-        // Cerca campi che potrebbero contenere l'email
-        $emailFields = ['email', 'mail', 'e_mail', 'user_email', 'email_address'];
+        // Cerca campi che potrebbero contenere l'email (case-insensitive)
+        $emailFields = ['email', 'mail', 'e_mail', 'user_email', 'email_address', 'Email', 'Mail', 'E_mail'];
         
         foreach ($emailFields as $field) {
             if (isset($formData[$field]) && filter_var($formData[$field], FILTER_VALIDATE_EMAIL)) {
                 return $formData[$field];
+            }
+        }
+
+        // Fallback: cerca qualsiasi campo che contenga "email" nel nome (case-insensitive)
+        foreach ($formData as $key => $value) {
+            if (stripos($key, 'email') !== false && filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                return $value;
             }
         }
 
@@ -298,8 +305,8 @@ class FormSubmissionService
      */
     private function extractUserName(array $formData): ?string
     {
-        // Cerca campi che potrebbero contenere il nome
-        $nameFields = ['name', 'nome', 'full_name', 'user_name', 'first_name', 'cognome', 'nome_cognome'];
+        // Cerca campi che potrebbero contenere il nome (case-insensitive)
+        $nameFields = ['name', 'nome', 'full_name', 'user_name', 'first_name', 'cognome', 'nome_cognome', 'Name', 'Nome', 'Full_name'];
         
         foreach ($nameFields as $field) {
             if (isset($formData[$field]) && !empty(trim($formData[$field]))) {
@@ -307,12 +314,19 @@ class FormSubmissionService
             }
         }
 
-        // Prova a combinare nome e cognome se separati
-        $firstName = $formData['first_name'] ?? $formData['nome'] ?? null;
-        $lastName = $formData['last_name'] ?? $formData['cognome'] ?? null;
+        // Prova a combinare nome e cognome se separati (varie combinazioni case-insensitive)
+        $firstName = $formData['first_name'] ?? $formData['nome'] ?? $formData['Nome'] ?? $formData['First_name'] ?? null;
+        $lastName = $formData['last_name'] ?? $formData['cognome'] ?? $formData['Cognome'] ?? $formData['Last_name'] ?? null;
         
         if ($firstName && $lastName) {
             return trim($firstName . ' ' . $lastName);
+        }
+
+        // Fallback: cerca qualsiasi campo che contenga "nome" o "name" nel nome
+        foreach ($formData as $key => $value) {
+            if ((stripos($key, 'nome') !== false || stripos($key, 'name') !== false) && !empty(trim($value))) {
+                return trim($value);
+            }
         }
 
         return $firstName ?: $lastName ?: null;

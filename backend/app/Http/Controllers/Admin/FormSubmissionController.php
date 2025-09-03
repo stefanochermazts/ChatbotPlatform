@@ -23,7 +23,7 @@ class FormSubmissionController extends Controller
     public function __construct(
         private FormSubmissionService $submissionService
     ) {
-        $this->middleware('auth');
+        // Autenticazione gestita dal middleware EnsureAdminToken a livello route
     }
 
     /**
@@ -40,18 +40,39 @@ class FormSubmissionController extends Controller
             'per_page' => 'nullable|integer|min:5|max:100'
         ]);
 
-        // TODO: Implementare tenant scoping per utenti non super-admin
-        $tenantId = 1; // Per ora hardcoded, da implementare tramite middleware/policy
+        // Ricava tenant_id dinamicamente dal form_id se presente
+        $tenantId = null;
+        if (!empty($validated['form_id'])) {
+            $form = TenantForm::find($validated['form_id']);
+            if ($form) {
+                $tenantId = $form->tenant_id;
+            }
+        }
+        
+        // TODO: Implementare gestione admin per vedere tutti i tenant
+        // Per ora se non c'è form_id specifico, default al tenant 5
+        if (!$tenantId) {
+            $tenantId = 5; // Fallback per admin
+        }
 
         $filters = array_filter($validated);
         $submissions = $this->submissionService->getSubmissions($tenantId, $filters);
         $stats = $this->submissionService->getSubmissionStats($tenantId);
 
         // Carica form per filtro dropdown
-        $forms = TenantForm::forTenant($tenantId)
-            ->select('id', 'name')
-            ->orderBy('name')
-            ->get();
+        // Se abbiamo un tenant specifico, filtra per quel tenant
+        // Altrimenti carica tutti i form per admin
+        if ($tenantId) {
+            $forms = TenantForm::forTenant($tenantId)
+                ->select('id', 'name', 'tenant_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $forms = TenantForm::with('tenant:id,name')
+                ->select('id', 'name', 'tenant_id')
+                ->orderBy('name')
+                ->get();
+        }
 
         return view('admin.forms.submissions.index', compact(
             'submissions',
@@ -221,8 +242,20 @@ class FormSubmissionController extends Controller
             'date_to' => 'nullable|date'
         ]);
 
-        // TODO: Implementare tenant scoping
-        $tenantId = 1;
+        // Ricava tenant_id dinamicamente dal form_id se presente
+        $tenantId = null;
+        if (!empty($validated['form_id'])) {
+            $form = TenantForm::find($validated['form_id']);
+            if ($form) {
+                $tenantId = $form->tenant_id;
+            }
+        }
+        
+        // TODO: Implementare gestione admin per vedere tutti i tenant
+        // Per ora se non c'è form_id specifico, default al tenant 5
+        if (!$tenantId) {
+            $tenantId = 5; // Fallback per admin
+        }
 
         $filters = array_filter($validated);
         $filters['per_page'] = 1000; // Export massimo 1000 record
@@ -293,11 +326,24 @@ class FormSubmissionController extends Controller
             'form_id' => 'nullable|integer|exists:tenant_forms,id'
         ]);
 
-        // TODO: Implementare tenant scoping
-        $tenantId = 1;
+        // Ricava tenant_id dinamicamente dal form_id se presente
+        $tenantId = null;
+        $formId = $validated['form_id'] ?? null;
+        
+        if ($formId) {
+            $form = TenantForm::find($formId);
+            if ($form) {
+                $tenantId = $form->tenant_id;
+            }
+        }
+        
+        // TODO: Implementare gestione admin per vedere tutti i tenant
+        // Per ora se non c'è form_id specifico, default al tenant 5
+        if (!$tenantId) {
+            $tenantId = 5; // Fallback per admin
+        }
 
         $period = $validated['period'] ?? 'month';
-        $formId = $validated['form_id'] ?? null;
 
         // Calcola statistiche per il periodo
         $baseQuery = FormSubmission::forTenant($tenantId);

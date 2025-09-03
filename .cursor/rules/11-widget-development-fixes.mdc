@@ -1,0 +1,64 @@
+---
+alwaysApply: true
+description: Widget development common issues and fixes
+---
+
+# Widget Development - Problemi Comuni e Fix
+
+## Tema Toggle e Theming
+
+### ⚠️ Problemi Ricorrenti
+- **Theme toggle icon non cambia**: Verifica attributi CSS `[data-chatbot-theme="dark/light"]` vs `[data-theme]`
+- **Colori tema non applicati**: Usa variabili CSS corrette (`--chatbot-bg-primary` non `--chatbot-bg-body`)
+- **Conflitti localStorage**: Chiavi diverse per sistemi diversi (`chatbot_user_theme_mode` vs `chatbot_theme_preference`)
+- **Errori JSON.parse**: Non mescolare storage di stringhe vs JSON
+
+### ✅ Best Practices
+- **CSS Variables**: Usa sempre [chatbot-design-system.css](mdc:backend/public/widget/css/chatbot-design-system.css)
+- **Attributi tema**: `[data-chatbot-theme="dark"]` e `[data-chatbot-theme="light"]` per selettori CSS
+- **JavaScript inline**: Se file CSS/JS si corrompono, inline il codice in [chatbot-embed.js](mdc:backend/public/widget/embed/chatbot-embed.js)
+- **Storage cleanup**: Migra sempre vecchie chiavi localStorage per compatibilità
+
+## Auto-linkificazione URL - CRITICAL FIX
+
+### 🐛 Problema doppia linkificazione
+Il widget applica regex consecutive che rilinkificano URL già processati:
+
+```javascript
+// BUGGY - rilinkifica URL già dentro <a>
+html.replace(/(?<!["\[>])(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
+html.replace(/(?<!["\[>])(www\.[^\s<]+)/g, '<a href="http://$1">$1</a>');
+```
+
+### ✅ Fix corretto in [chatbot-widget.js](mdc:backend/public/widget/js/chatbot-widget.js)
+```javascript
+// CORRETTO - evita doppia linkificazione
+html.replace(/(?<!["\[>]|href="|>)(?![^<]*<\/a>)(https?:\/\/[^\s<]+)/g, ...);
+html.replace(/(?<!["\[>]|href="|>)(?![^<]*<\/a>)(www\.[^\s<]+)/g, ...);
+```
+
+**Protezioni essenziali:**
+- `(?<!["\[>]|href="|>)` - Non applicare se preceduto da tag HTML
+- `(?![^<]*<\/a>)` - Non applicare se già dentro un link
+
+## Debug Widget
+
+### Console Errors
+- **`chatbot-theming.js` JSON parse**: Verifica localStorage key conflicts
+- **Theme toggle non funziona**: Controlla `EmbeddingEngine.initThemeToggle()` in embed script
+- **CSS non caricato**: File CSS potrebbe essere corrotto (0 bytes) - usa inline CSS
+
+### Test Manuale
+```bash
+# Testa widget preview (deve essere pubblico)
+curl http://localhost:8000/admin/tenants/{id}/widget-config/preview
+
+# Verifica route
+php artisan route:list | grep widget-config
+```
+
+## Files critici widget
+- [chatbot-embed.js](mdc:backend/public/widget/embed/chatbot-embed.js) - Script principale embedding
+- [chatbot-widget.js](mdc:backend/public/widget/js/chatbot-widget.js) - Logica UI e markdown
+- [chatbot-design-system.css](mdc:backend/public/widget/css/chatbot-design-system.css) - Variabili e temi
+- [routes/web.php](mdc:backend/routes/web.php) - Route admin vs public per preview

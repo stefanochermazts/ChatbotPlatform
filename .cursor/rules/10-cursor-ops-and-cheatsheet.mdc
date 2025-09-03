@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+# Regole operative per Cursor e cheat‑sheet dev
+
+- **Prima di modificare**: leggi [docs/analisi-funzionale/analisi-funzionale.md](mdc:docs/analisi-funzionale/analisi-funzionale.md) e limita gli edit ai file necessari.
+- **API**: mantieni compatibilità su `/v1/chat/completions`.
+- **Dati**: non esporre segreti; usa `config/*.php` e `.env`.
+- **Preferenze**: Services/Actions su Controller; naming descrittivo; PSR‑12.
+- **RAG**: fallback "Non lo so" a bassa confidence; cita sempre le fonti.
+- **Dipendenze**: evita quelle non necessarie; isola integrazioni dietro interfacce.
+
+### Comandi utili (Windows/Laragon)
+- Setup: `composer install` → `cp .env.example .env` → `php artisan key:generate` → configura Postgres/pgvector → `php artisan migrate --seed` → `npm install` → `npm run dev`
+- Code/queue: `php artisan queue:work --queue=default,ingestion,embeddings,indexing,evaluation`
+- Test: `php artisan test` o `./vendor/bin/pest`
+- Build: `npm run build` e `php artisan optimize`

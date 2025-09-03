@@ -23,12 +23,20 @@ class DeleteVectorsJobFixed implements ShouldQueue
 
     /**
      * 🚀 SOLUZIONE: Passiamo direttamente i primaryIds invece di calcolarli nel job
+     * 🛡️ SAFETY: Parametri opzionali per evitare errori se chiamato senza parametri
      */
-    public function __construct(array $primaryIds, array $documentIds = [])
+    public function __construct(array $primaryIds = [], array $documentIds = [])
     {
         $this->onQueue('indexing');
         $this->primaryIds = array_values(array_unique(array_map('intval', $primaryIds)));
         $this->documentIds = array_values(array_unique(array_map('intval', $documentIds)));
+        
+        // 🐛 DEBUG: Log se chiamato senza parametri per tracciare la source
+        if (empty($primaryIds) && empty($documentIds)) {
+            Log::warning('DeleteVectorsJobFixed chiamato senza parametri!', [
+                'stack_trace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 10)
+            ]);
+        }
     }
 
     /**

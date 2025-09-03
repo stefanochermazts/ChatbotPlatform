@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\HandlesFailureGracefully;
 use App\Models\Tenant;
 use App\Services\Scraper\WebScraperService;
+use App\Services\Scraper\ScrapingHealthMonitor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -12,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class RunWebScrapingJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, HandlesFailureGracefully;
 
     public function __construct(
         private readonly int $tenantId,
@@ -21,8 +23,17 @@ class RunWebScrapingJob implements ShouldQueue
         $this->onQueue('scraping');
     }
 
-    public function handle(WebScraperService $scraper): void
+    public function handle(WebScraperService $scraper, ScrapingHealthMonitor $monitor): void
     {
+        // Verifica se lo scraping è disabilitato per questo tenant
+        if ($monitor->isScrapingDisabled($this->tenantId)) {
+            \Log::warning("Scraping saltato - temporaneamente disabilitato", [
+                'tenant_id' => $this->tenantId,
+                'scraper_config_id' => $this->scraperConfigId
+            ]);
+            return;
+        }
+
         try {
             $result = $scraper->scrapeForTenant($this->tenantId, $this->scraperConfigId);
             
@@ -33,23 +44,28 @@ class RunWebScrapingJob implements ShouldQueue
                 'documents_saved' => $result['documents_saved'] ?? 0
             ]);
             
+            // Reset contatori errori se il job ha successo
+            if (($result['urls_visited'] ?? 0) > 0) {
+                $monitor->resetErrorCounters($this->tenantId);
+            }
+            
         } catch (\Exception $e) {
             \Log::error("Errore durante web scraping", [
                 'tenant_id' => $this->tenantId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'attempts' => $this->attempts()
             ]);
             
             throw $e;
         }
     }
 
-    public function failed(\Throwable $exception): void
+    /**
+     * Implementazione richiesta dal trait HandlesFailureGracefully
+     */
+    protected function getTenantId(): int
     {
-        \Log::error("Job web scraping fallito", [
-            'tenant_id' => $this->tenantId,
-            'error' => $exception->getMessage()
-        ]);
+        return $this->tenantId;
     }
 }
 

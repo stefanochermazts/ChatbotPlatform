@@ -55,6 +55,22 @@
     padding-bottom: 1rem;
 }
 
+.chatbot-form-intro {
+    background: rgba(var(--chatbot-primary-rgb), 0.05);
+    color: var(--chatbot-text-color);
+    padding: 0.75rem 1rem;
+    border-radius: calc(var(--chatbot-border-radius) * 0.75);
+    border-left: 3px solid var(--chatbot-primary-color);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.chatbot-form-intro::before {
+    content: "💬 ";
+    margin-right: 0.5rem;
+}
+
 .chatbot-form-title {
     color: var(--chatbot-primary-color);
     font-size: 1.1rem;
@@ -329,8 +345,9 @@
 
 .chatbot-form-submit {
     background: var(--chatbot-primary-color);
-    color: white;
+    color: var(--chatbot-neutral-0); /* Bianco garantito */
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 1px solid transparent;
 }
 
 .chatbot-form-submit:hover:not(:disabled) {
@@ -482,6 +499,19 @@
     border-color: #4b5563;
 }
 
+.chatbot-widget.dark-theme .chatbot-form-intro {
+    background: rgba(var(--chatbot-primary-rgb), 0.1);
+    color: var(--chatbot-text-color-dark, #f9fafb);
+    border-left-color: var(--chatbot-primary-color-dark, var(--chatbot-primary-color));
+}
+
+/* Light theme specific overrides */
+.chatbot-widget[data-chatbot-theme="light"] .chatbot-form-submit,
+.chatbot-widget:not([data-chatbot-theme="dark"]) .chatbot-form-submit {
+    background: var(--chatbot-primary-600, #2563eb); /* Colore più scuro per contrasto */
+    color: var(--chatbot-neutral-0) !important; /* Bianco forzato */
+}
+
 /* High contrast theme support */
 .chatbot-widget.high-contrast .chatbot-form {
     border-width: 3px;
@@ -493,6 +523,12 @@
 
 .chatbot-widget.high-contrast .chatbot-form-input:focus {
     box-shadow: 0 0 0 4px rgba(var(--chatbot-primary-rgb), 0.3);
+}
+
+.chatbot-widget.high-contrast .chatbot-form-submit {
+    background: var(--chatbot-neutral-900) !important; /* Nero per alto contrasto */
+    color: var(--chatbot-neutral-0) !important; /* Bianco per alto contrasto */
+    border: 2px solid var(--chatbot-neutral-900) !important;
 }
 
 /* =================================================================
