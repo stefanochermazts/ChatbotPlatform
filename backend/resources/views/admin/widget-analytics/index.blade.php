@@ -11,27 +11,42 @@
       <p class="text-gray-600 mt-1">Analisi dettagliate dell'utilizzo del chatbot</p>
     </div>
     
-    <div class="flex gap-3">
-      <a href="{{ route('admin.widget-config.index') }}" class="btn btn-secondary">
-        🛠️ Configurazioni
-      </a>
-    </div>
+    @if(auth()->user()->isAdmin())
+      <div class="flex gap-3">
+        <a href="{{ route('admin.widget-config.index') }}" class="btn btn-secondary">
+          🛠️ Configurazioni
+        </a>
+      </div>
+    @endif
   </div>
 
   <!-- Filters -->
   <div class="bg-white rounded-lg shadow p-6 mb-6">
     <form method="GET" class="flex flex-wrap gap-4 items-end">
-      <div class="flex-1 min-w-0">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
-        <select name="tenant_id" class="w-full border rounded-lg px-3 py-2" onchange="this.form.submit()">
-          <option value="">Seleziona tenant per analytics dettagliate</option>
-          @foreach($tenants as $tenantOption)
-            <option value="{{ $tenantOption->id }}" @selected(request('tenant_id') == $tenantOption->id)>
-              {{ $tenantOption->name }} ({{ $tenantOption->slug }})
-            </option>
-          @endforeach
-        </select>
-      </div>
+      @if(auth()->user()->isAdmin())
+        <div class="flex-1 min-w-0">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
+          <select name="tenant_id" class="w-full border rounded-lg px-3 py-2" onchange="this.form.submit()">
+            <option value="">Seleziona tenant per analytics dettagliate</option>
+            @foreach($tenants as $tenantOption)
+              <option value="{{ $tenantOption->id }}" @selected(request('tenant_id') == $tenantOption->id)>
+                {{ $tenantOption->name }} ({{ $tenantOption->slug }})
+              </option>
+            @endforeach
+          </select>
+        </div>
+      @else
+        {{-- Per i clienti, mostra solo il nome del tenant selezionato --}}
+        @if($tenant)
+          <input type="hidden" name="tenant_id" value="{{ $tenant->id }}">
+          <div class="flex-1 min-w-0">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
+            <div class="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700">
+              {{ $tenant->name }} ({{ $tenant->slug }})
+            </div>
+          </div>
+        @endif
+      @endif
       
       <div class="w-48">
         <label class="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>

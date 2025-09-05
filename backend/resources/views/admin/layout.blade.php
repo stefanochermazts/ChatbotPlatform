@@ -11,14 +11,23 @@
 <body class="bg-gray-50 text-gray-900">
   <nav class="bg-white border-b border-gray-200">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <a href="{{ route('admin.dashboard') }}" class="font-semibold">Admin</a>
+      <div class="flex items-center space-x-4">
+        <a href="{{ route('admin.dashboard') }}" class="font-semibold">Admin Panel</a>
+        @auth
+          <span class="text-sm text-gray-600">{{ auth()->user()->name }}</span>
+        @endauth
+      </div>
       <div class="flex gap-4">
-        <a class="hover:text-blue-600" href="{{ route('admin.tenants.index') }}">Clienti</a>
+        @if(auth()->user()->isAdmin())
+          <a class="hover:text-blue-600" href="{{ route('admin.tenants.index') }}">Clienti</a>
+          <a class="hover:text-blue-600" href="{{ route('admin.users.index') }}">👥 Utenti</a>
+        @endif
         <a class="hover:text-blue-600" href="{{ route('admin.forms.index') }}">📝 Form</a>
         <a class="hover:text-blue-600" href="{{ route('admin.widget-config.index') }}">Widget</a>
+        <a class="hover:text-blue-600" href="{{ route('admin.whatsapp-config.index') }}">📱 WhatsApp</a>
         <a class="hover:text-blue-600" href="{{ route('admin.widget-analytics.index') }}">Analytics</a>
         <a class="hover:text-blue-600" href="{{ route('admin.rag.index') }}">RAG Tester</a>
-        <form method="post" action="{{ route('admin.logout') }}">
+        <form method="post" action="{{ route('logout') }}">
           @csrf
           <button class="text-red-600 hover:underline">Logout</button>
         </form>

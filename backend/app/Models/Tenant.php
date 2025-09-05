@@ -27,11 +27,13 @@ class Tenant extends Model
         'multi_kb_search',
         'rag_settings',
         'rag_profile',
+        'whatsapp_config',
     ];
 
     protected $casts = [
         'metadata' => 'array',
         'languages' => 'array',
+        'whatsapp_config' => 'array',
         'extra_intent_keywords' => 'array',
         'custom_synonyms' => 'array',
         'multi_kb_search' => 'boolean',
@@ -87,6 +89,58 @@ class Tenant extends Model
     public function knowledgeBases(): HasMany
     {
         return $this->hasMany(KnowledgeBase::class);
+    }
+
+    /**
+     * Relazione con i messaggi Vonage
+     */
+    public function vonageMessages(): HasMany
+    {
+        return $this->hasMany(VonageMessage::class);
+    }
+
+    /**
+     * Verifica se il tenant ha configurazione WhatsApp attiva
+     */
+    public function hasWhatsAppConfig(): bool
+    {
+        return !empty($this->whatsapp_config['phone_number']) && 
+               ($this->whatsapp_config['is_active'] ?? false);
+    }
+
+    /**
+     * Ottieni il numero WhatsApp del tenant
+     */
+    public function getWhatsAppNumber(): ?string
+    {
+        return $this->whatsapp_config['phone_number'] ?? null;
+    }
+
+    /**
+     * Ottieni la configurazione completa WhatsApp
+     */
+    public function getWhatsAppConfig(): array
+    {
+        return $this->whatsapp_config ?: [
+            'phone_number' => null,
+            'is_active' => false,
+            'welcome_message' => null,
+            'business_hours' => [
+                'enabled' => false,
+                'timezone' => 'Europe/Rome',
+                'monday' => ['start' => '09:00', 'end' => '18:00'],
+                'tuesday' => ['start' => '09:00', 'end' => '18:00'],
+                'wednesday' => ['start' => '09:00', 'end' => '18:00'],
+                'thursday' => ['start' => '09:00', 'end' => '18:00'],
+                'friday' => ['start' => '09:00', 'end' => '18:00'],
+                'saturday' => ['start' => '09:00', 'end' => '13:00'],
+                'sunday' => ['closed' => true]
+            ],
+            'auto_response' => [
+                'enabled' => true,
+                'response_delay' => 1 // secondi
+            ]
+        ];
     }
 }
 

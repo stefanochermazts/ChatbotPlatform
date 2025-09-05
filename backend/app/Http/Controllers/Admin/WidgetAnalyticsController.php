@@ -18,11 +18,33 @@ class WidgetAnalyticsController extends Controller
      */
     public function index(Request $request)
     {
+        $user = auth()->user();
         $tenant = null;
         $tenantId = $request->get('tenant_id');
         
+        // Auto-scoping per clienti
+        if (!$user->isAdmin()) {
+            $userTenants = $user->tenants()->wherePivot('role', 'customer')->get();
+            $tenants = $userTenants;
+            
+            // Se non specificato tenant_id, usa il primo tenant del cliente
+            if (!$tenantId && $userTenants->isNotEmpty()) {
+                $tenantId = $userTenants->first()->id;
+            }
+        } else {
+            $tenants = Tenant::orderBy('name')->get();
+        }
+        
         if ($tenantId) {
             $tenant = Tenant::findOrFail($tenantId);
+            
+            // Controllo accesso per clienti
+            if (!$user->isAdmin()) {
+                $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id')->toArray();
+                if (!in_array($tenant->id, $userTenantIds)) {
+                    abort(403, 'Non hai accesso a questo tenant.');
+                }
+            }
         }
         
         // Date range
@@ -36,8 +58,6 @@ class WidgetAnalyticsController extends Controller
         if ($request->filled('end_date')) {
             $endDate = Carbon::parse($request->end_date);
         }
-        
-        $tenants = Tenant::orderBy('name')->get();
         
         // Get analytics data
         $analytics = [];
@@ -55,6 +75,8 @@ class WidgetAnalyticsController extends Controller
      */
     public function show(Tenant $tenant, Request $request)
     {
+        $this->checkTenantAccess($tenant);
+        
         // Date range
         $endDate = Carbon::now();
         $startDate = Carbon::now()->subDays(7);
@@ -274,6 +296,8 @@ class WidgetAnalyticsController extends Controller
      */
     public function export(Tenant $tenant, Request $request): Response
     {
+        $this->checkTenantAccess($tenant);
+        
         $startDate = $request->filled('start_date') 
             ? Carbon::parse($request->start_date) 
             : now()->subDays(30);
@@ -325,5 +349,20 @@ class WidgetAnalyticsController extends Controller
             'Pragma' => 'no-cache',
             'Expires' => '0',
         ]);
+    }
+
+    /**
+     * Controlla se l'utente corrente ha accesso al tenant
+     */
+    private function checkTenantAccess(Tenant $tenant)
+    {
+        $user = auth()->user();
+        
+        if (!$user->isAdmin()) {
+            $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id')->toArray();
+            if (!in_array($tenant->id, $userTenantIds)) {
+                abort(403, 'Non hai accesso a questo tenant.');
+            }
+        }
     }
 }

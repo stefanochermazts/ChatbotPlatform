@@ -618,6 +618,30 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- Nuovi campi configurazione boost -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                            <div>
+                                <label for="kb_upload_boost" class="block text-sm font-medium text-gray-700">Boost documenti Upload</label>
+                                <input type="number" name="kb_upload_boost" id="kb_upload_boost" min="0.5" max="3" step="0.05"
+                                       value="{{ $currentConfig['kb_selection']['upload_boost'] ?? 1.0 }}"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
+                                <p class="text-xs text-gray-600 mt-1">1.0 = neutro. Esempio 1.25 per privilegiare documenti caricati manualmente.</p>
+                            </div>
+                            <div>
+                                <label for="kb_title_keyword_boosts" class="block text-sm font-medium text-gray-700">Boost per keyword nel titolo (JSON)</label>
+                                <textarea name="kb_title_keyword_boosts" id="kb_title_keyword_boosts" rows="5"
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                                          placeholder='{"attività commerciali":1.2, "negozi":1.15}'>{{ isset($currentConfig['kb_selection']['title_keyword_boosts']) ? json_encode($currentConfig['kb_selection']['title_keyword_boosts']) : '' }}</textarea>
+                                <p class="text-xs text-gray-600 mt-1">Mappa "keyword": fattore. Case-insensitive, match su titolo documento.</p>
+                            </div>
+                            <div>
+                                <label for="kb_location_boosts" class="block text-sm font-medium text-gray-700">Boost per location nella query (JSON)</label>
+                                <textarea name="kb_location_boosts" id="kb_location_boosts" rows="5"
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                                          placeholder='{"san cesareo":1.15}'>{{ isset($currentConfig['kb_selection']['location_boosts']) ? json_encode($currentConfig['kb_selection']['location_boosts']) : '' }}</textarea>
+                                <p class="text-xs text-gray-600 mt-1">Mappa "location": fattore. Case-insensitive, match sulla query normalizzata.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

@@ -42,75 +42,25 @@ class TenantRagConfigController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
-        $validated = $validator->validated();
+        // Build settings array from request (partial, only fields present)
+        $settings = $request->all();
+
+        // Parse JSON maps for kb selection
+        if ($request->filled('kb_title_keyword_boosts')) {
+            $decoded = json_decode($request->input('kb_title_keyword_boosts'), true);
+            if (is_array($decoded)) {
+                $settings['kb_selection']['title_keyword_boosts'] = $decoded;
+            }
+        }
+        if ($request->filled('kb_location_boosts')) {
+            $decoded = json_decode($request->input('kb_location_boosts'), true);
+            if (is_array($decoded)) {
+                $settings['kb_selection']['location_boosts'] = $decoded;
+            }
+        }
+
+        $this->configService->updateTenantConfig($tenant->id, $settings);
         
-        // Build RAG settings from form data
-        $ragSettings = [
-            'hybrid' => [
-                'vector_top_k' => (int) $validated['vector_top_k'],
-                'bm25_top_k' => (int) $validated['bm25_top_k'],
-                'rrf_k' => (int) $validated['rrf_k'],
-                'mmr_lambda' => (float) $validated['mmr_lambda'],
-                'mmr_take' => (int) $validated['mmr_take'],
-                'neighbor_radius' => (int) $validated['neighbor_radius'],
-            ],
-            'multiquery' => [
-                'enabled' => $request->boolean('multiquery_enabled'),
-                'num' => (int) $validated['multiquery_num'],
-                'temperature' => (float) $validated['multiquery_temperature'],
-            ],
-            'answer' => [
-                'min_citations' => (int) $validated['min_citations'],
-                'min_confidence' => (float) $validated['min_confidence'],
-                'force_if_has_citations' => $request->boolean('force_if_has_citations'),
-                'fallback_message' => $validated['fallback_message'] ?? '',
-            ],
-            'reranker' => [
-                'driver' => $validated['reranker_driver'],
-                'top_n' => (int) $validated['reranker_top_n'],
-            ],
-            'context' => [
-                'max_chars' => (int) $validated['context_max_chars'],
-                'compress_if_over_chars' => (int) $validated['compress_if_over_chars'],
-                'compress_target_chars' => (int) $validated['compress_target_chars'],
-            ],
-            'advanced' => [
-                'hyde' => [
-                    'enabled' => $request->boolean('hyde_enabled'),
-                    'weight_original' => (float) $validated['hyde_weight_original'],
-                    'weight_hypothetical' => (float) $validated['hyde_weight_hypothetical'],
-                ],
-                'llm_reranker' => [
-                    'enabled' => $request->boolean('llm_reranker_enabled'),
-                    'batch_size' => (int) $validated['llm_reranker_batch_size'],
-                ],
-            ],
-            'intents' => [
-                'enabled' => [
-                    'thanks' => $request->boolean('intent_thanks'),
-                    'phone' => $request->boolean('intent_phone'),
-                    'email' => $request->boolean('intent_email'),
-                    'address' => $request->boolean('intent_address'),
-                    'schedule' => $request->boolean('intent_schedule'),
-                ],
-                'min_score' => (float) $validated['intent_min_score'],
-                'execution_strategy' => $validated['intent_execution_strategy'],
-            ],
-            'kb_selection' => [
-                'mode' => $validated['kb_selection_mode'],
-                'bm25_boost_factor' => (float) $validated['bm25_boost_factor'],
-                'vector_boost_factor' => (float) $validated['vector_boost_factor'],
-            ],
-        ];
-
-        // Update tenant profile and settings
-        $tenant->rag_profile = $validated['rag_profile'] !== 'custom' ? $validated['rag_profile'] : null;
-        $tenant->rag_settings = $ragSettings;
-        $tenant->save();
-
-        // Clear config cache
-        $this->configService->updateTenantConfig($tenant->id, $ragSettings);
-
         return back()->with('success', 'Configurazione RAG aggiornata con successo!');
     }
 
@@ -214,6 +164,9 @@ class TenantRagConfigController extends Controller
             'kb_selection_mode' => 'required|in:auto,strict,multi',
             'bm25_boost_factor' => 'required|numeric|min:0.1|max:5',
             'vector_boost_factor' => 'required|numeric|min:0.1|max:5',
+            'kb_upload_boost' => 'nullable|numeric|min:0.5|max:3',
+            'kb_title_keyword_boosts' => 'nullable|string', // JSON
+            'kb_location_boosts' => 'nullable|string',      // JSON
         ], [
             'vector_top_k.max' => 'Vector Top K non può essere superiore a 200',
             'mmr_lambda.between' => 'MMR Lambda deve essere tra 0 e 1',

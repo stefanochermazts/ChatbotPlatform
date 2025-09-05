@@ -17,15 +17,23 @@ class TenantFormController extends Controller
      */
     public function index(Request $request): View
     {
+        $user = auth()->user();
+        
         $query = TenantForm::with(['tenant', 'fields'])
             ->withCount(['submissions as pending_count' => function ($query) {
                 $query->where('status', 'pending');
             }])
             ->withCount('submissions as total_count');
 
-        // Filtri
-        if ($request->filled('tenant_id')) {
-            $query->where('tenant_id', $request->tenant_id);
+        // Auto-scoping per clienti
+        if (!$user->isAdmin()) {
+            $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id');
+            $query->whereIn('tenant_id', $userTenantIds);
+        } else {
+            // Filtri per admin
+            if ($request->filled('tenant_id')) {
+                $query->where('tenant_id', $request->tenant_id);
+            }
         }
 
         if ($request->filled('active')) {

@@ -15,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.apikey' => \App\Http\Middleware\AuthenticateApiKey::class,
             'admin.token' => \App\Http\Middleware\EnsureAdminToken::class,
+            'auth.user' => \App\Http\Middleware\EnsureAuthenticated::class,
+            'tenant.access' => \App\Http\Middleware\EnsureTenantAccess::class,
+            'auto.tenant.scope' => \App\Http\Middleware\AutoTenantScope::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

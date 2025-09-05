@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\ScraperConfigController;
 use App\Http\Controllers\Api\TenantController;
 use App\Http\Controllers\Api\ChatCompletionsController;
+use App\Http\Controllers\Api\VonageWhatsAppController;
 use App\Http\Controllers\Api\WidgetEventController;
 use App\Http\Controllers\Api\DocumentViewController;
 use App\Http\Controllers\Api\FormController;
@@ -60,6 +61,12 @@ Route::prefix('v1')->group(function (): void {
 
 // Public widget events (for embed tracking without API key)
 Route::post('/v1/widget/events/public', [WidgetEventController::class, 'trackPublic']);
+
+// Vonage Webhooks (public - no auth needed)
+Route::prefix('v1/vonage/whatsapp')->group(function () {
+    Route::post('/inbound', [VonageWhatsAppController::class, 'inbound']);
+    Route::post('/status', [VonageWhatsAppController::class, 'status']);
+});
 
 // Health check endpoint
 Route::get('/health', function () {

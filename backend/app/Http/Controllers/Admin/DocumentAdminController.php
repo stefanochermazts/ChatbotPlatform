@@ -22,6 +22,7 @@ class DocumentAdminController extends Controller
     {
         $kbId = (int) $request->query('kb_id', 0);
         $sourceUrlSearch = $request->query('source_url', '');
+        $qualityFilter = $request->query('quality_filter', '');
         
         $query = Document::where('tenant_id', $tenant->id);
         
@@ -33,8 +34,33 @@ class DocumentAdminController extends Controller
             $query->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%');
         }
         
+        // 🧠 NUOVO: Filtro per qualità contenuto
+        if (!empty($qualityFilter)) {
+            switch ($qualityFilter) {
+                case 'high':
+                    $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.7");
+                    break;
+                case 'medium':
+                    $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.4")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.7");
+                    break;
+                case 'low':
+                    $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.4");
+                    break;
+                case 'no_analysis':
+                    $query->where(function($q) {
+                        $q->whereNull('metadata')
+                          ->orWhereRaw("metadata->'quality_analysis' IS NULL");
+                    });
+                    break;
+            }
+        }
+        
         $docs = $query->orderByDesc('id')->paginate(20)->withQueryString();
-        return view('admin.documents.index', compact('tenant', 'docs', 'kbId', 'sourceUrlSearch'));
+        return view('admin.documents.index', compact('tenant', 'docs', 'kbId', 'sourceUrlSearch', 'qualityFilter'));
     }
 
     public function upload(Request $request, Tenant $tenant)
@@ -301,9 +327,13 @@ class DocumentAdminController extends Controller
     /**
      * 🔄 NUOVA FUNZIONALITÀ: Re-scraping di un singolo documento
      */
-    public function rescrape(Document $document)
+    public function rescrape(\Illuminate\Http\Request $request, Document $document)
     {
         if (!$document->source_url) {
+            // Se richiesta UI, torna indietro con errore, altrimenti JSON
+            if (!$request->expectsJson()) {
+                return redirect()->back()->with('error', 'Documento senza source_url: impossibile eseguire il re-scrape.');
+            }
             return response()->json([
                 'success' => false,
                 'message' => 'Documento non ha source_url. Non può essere ri-scrapato.'
@@ -315,6 +345,11 @@ class DocumentAdminController extends Controller
             $result = $scraperService->forceRescrapDocument($document->id);
 
             if ($result['success']) {
+                if (!$request->expectsJson()) {
+                    // UI: redirect con flash message
+                    return redirect()->route('admin.documents.index', $document->tenant)
+                        ->with('ok', 'Documento ri-scrapato con successo');
+                }
                 return response()->json([
                     'success' => true,
                     'message' => $result['message'],
@@ -325,6 +360,10 @@ class DocumentAdminController extends Controller
                     ]
                 ]);
             } else {
+                if (!$request->expectsJson()) {
+                    return redirect()->route('admin.documents.index', $document->tenant)
+                        ->with('error', $result['message'] ?? 'Re-scrape fallito');
+                }
                 return response()->json([
                     'success' => false,
                     'message' => $result['message']
@@ -332,6 +371,9 @@ class DocumentAdminController extends Controller
             }
 
         } catch (\Exception $e) {
+            if (!$request->expectsJson()) {
+                return redirect()->back()->with('error', 'Errore durante il re-scrape: ' . $e->getMessage());
+            }
             return response()->json([
                 'success' => false,
                 'message' => 'Errore durante il re-scraping: ' . $e->getMessage()
@@ -455,6 +497,10 @@ class DocumentAdminController extends Controller
                 'success_rate' => round(($successCount / $totalDocuments) * 100, 1) . '%'
             ]);
 
+            if (!$request->expectsJson()) {
+                $msg = "Re-scraping completato. Successi: {$successCount}, Fallimenti: {$failureCount}";
+                return redirect()->route('admin.documents.index', $tenant)->with('ok', $msg);
+            }
             return response()->json([
                 'success' => $failureCount === 0,
                 'message' => "Re-scraping completato. Successi: {$successCount}, Fallimenti: {$failureCount}",
@@ -462,11 +508,14 @@ class DocumentAdminController extends Controller
                     'total_documents' => $totalDocuments,
                     'success_count' => $successCount,
                     'failure_count' => $failureCount,
-                    'errors' => array_slice($errors, 0, 10) // Max 10 errori nel response
+                    'errors' => array_slice($errors, 0, 10)
                 ]
             ]);
 
         } catch (\Exception $e) {
+            if (!$request->expectsJson()) {
+                return redirect()->back()->with('error', 'Errore durante il re-scrape batch: ' . $e->getMessage());
+            }
             return response()->json([
                 'success' => false,
                 'message' => 'Errore durante il re-scraping batch: ' . $e->getMessage()

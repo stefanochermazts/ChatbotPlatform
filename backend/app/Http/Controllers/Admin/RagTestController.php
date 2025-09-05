@@ -16,7 +16,15 @@ class RagTestController extends Controller
 {
     public function index()
     {
-        $tenants = Tenant::orderBy('name')->get();
+        $user = auth()->user();
+        
+        // Auto-scoping per clienti
+        if (!$user->isAdmin()) {
+            $tenants = $user->tenants()->wherePivot('role', 'customer')->orderBy('name')->get();
+        } else {
+            $tenants = Tenant::orderBy('name')->get();
+        }
+        
         return view('admin.rag.index', ['tenants' => $tenants, 'result' => null]);
     }
 
@@ -36,6 +44,15 @@ class RagTestController extends Controller
         ]);
         $tenantId = (int) $data['tenant_id'];
         $tenant = Tenant::find($tenantId);
+        
+        // Controllo accesso per clienti
+        $user = auth()->user();
+        if (!$user->isAdmin()) {
+            $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id')->toArray();
+            if (!in_array($tenantId, $userTenantIds)) {
+                abort(403, 'Non hai accesso a questo tenant.');
+            }
+        }
         $health = $milvus->health();
         
         // Gestisci configurazioni temporanee per test

@@ -17,12 +17,19 @@ class WidgetConfigController extends Controller
      */
     public function index(Request $request)
     {
-        // Determina i tenant da mostrare in base ai filtri
-        $tenantQuery = Tenant::query()->orderBy('name');
-        if ($request->filled('tenant_id')) {
-            $tenantQuery->where('id', (int) $request->tenant_id);
+        $user = auth()->user();
+        
+        // Auto-scoping per clienti
+        if (!$user->isAdmin()) {
+            $tenants = $user->tenants()->wherePivot('role', 'customer')->orderBy('name')->get();
+        } else {
+            // Determina i tenant da mostrare in base ai filtri per admin
+            $tenantQuery = Tenant::query()->orderBy('name');
+            if ($request->filled('tenant_id')) {
+                $tenantQuery->where('id', (int) $request->tenant_id);
+            }
+            $tenants = $tenantQuery->get();
         }
-        $tenants = $tenantQuery->get();
 
         // Assicura che ogni tenant abbia una configurazione (crea default se mancante)
         foreach ($tenants as $t) {
@@ -56,6 +63,8 @@ class WidgetConfigController extends Controller
      */
     public function show(Tenant $tenant)
     {
+        $this->checkTenantAccess($tenant);
+        
         $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
         
         // Get the API key for this tenant
@@ -303,5 +312,20 @@ class WidgetConfigController extends Controller
         $extension = $file->getClientOriginalExtension();
         $fileName = $safeName.'-'.uniqid().'.'.$extension;
         return $file->storeAs('public/widget/'.$tenantSlug.'/'.$folder, $fileName);
+    }
+
+    /**
+     * Controlla se l'utente corrente ha accesso al tenant
+     */
+    private function checkTenantAccess(Tenant $tenant)
+    {
+        $user = auth()->user();
+        
+        if (!$user->isAdmin()) {
+            $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id')->toArray();
+            if (!in_array($tenant->id, $userTenantIds)) {
+                abort(403, 'Non hai accesso a questo tenant.');
+            }
+        }
     }
 }

@@ -27,6 +27,9 @@ class KnowledgeBaseSelector
         $mode = $kbConfig['mode'] ?? 'auto';
         $bm25BoostFactor = (float) ($kbConfig['bm25_boost_factor'] ?? 1.0);
         $vectorBoostFactor = (float) ($kbConfig['vector_boost_factor'] ?? 1.0);
+        $uploadBoost = (float) ($kbConfig['upload_boost'] ?? 1.0);
+        $titleKeywordBoosts = (array) ($kbConfig['title_keyword_boosts'] ?? []);
+        $locationBoosts = (array) ($kbConfig['location_boosts'] ?? []);
         
         // Normalizza la query per evitare che punteggiatura e parole di contesto 
         // influenzino negativamente la selezione della KB
@@ -81,21 +84,55 @@ class KnowledgeBaseSelector
         // Mappa document_id -> knowledge_base_id
         $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $hits)));
         $rows = DB::table('documents')
-            ->select(['id', 'knowledge_base_id'])
+            ->select(['id', 'knowledge_base_id', 'source', 'title'])
             ->whereIn('id', $docIds)
             ->where('tenant_id', $tenantId)
             ->get();
-        $docToKb = [];
+        $docMeta = [];
         foreach ($rows as $r) {
-            $docToKb[(int) $r->id] = (int) ($r->knowledge_base_id ?? 0);
+            $docMeta[(int) $r->id] = [
+                'kb' => (int) ($r->knowledge_base_id ?? 0),
+                'source' => (string) ($r->source ?? ''),
+                'title' => (string) ($r->title ?? ''),
+            ];
         }
 
         $scoreByKb = [];
+        // Heuristics: boost upload/doc titles when query mentions specific concepts/location
+        $queryLower = mb_strtolower($normalizedQuery);
+        $mentionsCommerciali = str_contains($queryLower, 'attivita commerciali')
+            || str_contains($queryLower, 'attività commerciali')
+            || str_contains($queryLower, 'negozi');
+        $mentionsSanCesareo = str_contains($queryLower, 'san cesareo');
         foreach ($hits as $h) {
-            $kbId = $docToKb[(int) $h['document_id']] ?? 0;
+            $docId = (int) $h['document_id'];
+            $meta = $docMeta[$docId] ?? null;
+            $kbId = $meta['kb'] ?? 0;
             if ($kbId <= 0) { continue; }
             // Applica boost factor BM25 (dal config admin)
-            $boostedScore = (float) $h['score'] * $bm25BoostFactor;
+            $boostMultiplier = $bm25BoostFactor;
+            // Boost documenti caricati manualmente (configurabile)
+            if (!empty($meta['source']) && $meta['source'] === 'upload' && $uploadBoost > 0) {
+                $boostMultiplier *= $uploadBoost;
+            }
+            // Boost per keyword nel titolo (configurabili)
+            $titleLower = mb_strtolower((string) ($meta['title'] ?? ''));
+            foreach ($titleKeywordBoosts as $kw => $factor) {
+                $kw = mb_strtolower((string) $kw);
+                $f = (float) $factor;
+                if ($kw !== '' && $f > 0 && str_contains($titleLower, $kw)) {
+                    $boostMultiplier *= $f;
+                }
+            }
+            // Boost per location presenti nella query (configurabili)
+            foreach ($locationBoosts as $loc => $factor) {
+                $loc = mb_strtolower((string) $loc);
+                $f = (float) $factor;
+                if ($loc !== '' && $f > 0 && str_contains($queryLower, $loc)) {
+                    $boostMultiplier *= $f;
+                }
+            }
+            $boostedScore = (float) $h['score'] * $boostMultiplier;
             $scoreByKb[$kbId] = ($scoreByKb[$kbId] ?? 0.0) + $boostedScore;
         }
 

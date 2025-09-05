@@ -18,6 +18,14 @@ return [
         'token' => env('POSTMARK_TOKEN'),
     ],
 
+    'vonage' => [
+        'api_key' => env('VONAGE_API_KEY'),
+        'api_secret' => env('VONAGE_API_SECRET'),
+        'whatsapp_number' => env('VONAGE_WHATSAPP_NUMBER'),
+        'signature_secret' => env('VONAGE_SIGNATURE_SECRET'),
+        'webhook_base_url' => env('APP_URL'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_KEY'),
     ],

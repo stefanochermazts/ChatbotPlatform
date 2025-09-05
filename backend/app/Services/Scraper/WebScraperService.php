@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\ScraperConfig;
 use App\Models\Tenant;
 use App\Jobs\IngestUploadedDocumentJob;
+use App\Services\Scraper\ContentQualityAnalyzer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -17,6 +18,12 @@ class WebScraperService
     private array $visitedUrls = [];
     private array $results = [];
     private array $stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
+    private ContentQualityAnalyzer $qualityAnalyzer;
+
+    public function __construct()
+    {
+        $this->qualityAnalyzer = new ContentQualityAnalyzer();
+    }
 
     public function scrapeForTenant(int $tenantId, ?int $scraperConfigId = null): array
     {
@@ -87,12 +94,13 @@ class WebScraperService
                 // Estrai contenuto principale
                 $extractedContent = $this->extractContent($content, $url);
                 if ($extractedContent) {
-                    // Salva risultato
+                    // Salva risultato con metadata qualità
                     $this->results[] = [
                         'url' => $url,
                         'title' => $extractedContent['title'],
                         'content' => $extractedContent['content'],
-                        'depth' => $depth
+                        'depth' => $depth,
+                        'quality_analysis' => $extractedContent['quality_analysis'] ?? null
                     ];
                 }
                 }
@@ -272,51 +280,96 @@ class WebScraperService
 
     private function extractContent(string $html, string $url): ?array
     {
-        // Strategia ibrida intelligente: sceglie il metodo migliore in base al tipo di contenuto
+        // 🧠 ENHANCED: Analisi qualità avanzata per strategia ottimale
+        $analysis = $this->qualityAnalyzer->analyzeContent($html, $url);
         
-        // STEP 1: Analizza il tipo di contenuto per scegliere la strategia ottimale
-        $contentType = $this->analyzeContentType($html);
-        
-        \Log::debug("Analisi tipo contenuto", [
+        \Log::debug("🧠 Enhanced Content Analysis", [
             'url' => $url,
-            'content_type' => $contentType,
-            'has_tables' => $contentType['has_complex_tables'],
-            'text_ratio' => $contentType['text_ratio']
+            'content_type' => $analysis['content_type'],
+            'quality_score' => $analysis['quality_score'],
+            'extraction_strategy' => $analysis['extraction_strategy'],
+            'processing_priority' => $analysis['processing_priority']
         ]);
         
-        // STEP 2: Se ha tabelle complesse o dati strutturati, usa metodo manuale
-        if ($contentType['has_complex_tables'] || $contentType['text_ratio'] < 0.6) {
-            \Log::debug("Usando estrazione manuale per dati strutturati", [
+        // EARLY RETURN: Skip contenuto di bassa qualità
+        if ($analysis['extraction_strategy'] === 'skip_low_quality') {
+            \Log::info("⚠️ Skipping low quality content", [
                 'url' => $url,
-                'method' => 'manual_dom_primary'
+                'quality_score' => $analysis['quality_score'],
+                'reason' => 'Below minimum quality threshold'
             ]);
-            
-            $manualResult = $this->extractWithManualDOM($html, $url, null, null, null);
-            if ($manualResult && strlen($manualResult['content']) >= 100) {
-                return $manualResult;
-            }
+            return null;
         }
         
-        // STEP 3: Per contenuto testuale, prova Readability.php
-        $readabilityResult = $this->extractWithReadability($html, $url);
+        // STEP 1: Estrazione basata su strategia intelligente
+        $extractedContent = $this->executeExtractionStrategy($html, $url, $analysis);
         
-        if ($readabilityResult && strlen($readabilityResult['content']) >= 150) {
-            \Log::debug("Estrazione Readability.php riuscita", [
-                'url' => $url,
-                'content_length' => strlen($readabilityResult['content']),
-                'method' => 'readability'
-            ]);
-            return $readabilityResult;
+        if (!$extractedContent) {
+            \Log::warning("❌ All extraction methods failed", ['url' => $url]);
+            return null;
         }
         
-        // STEP 4: Fallback finale al metodo manuale
-        \Log::debug("Fallback finale a estrazione manuale", [
-            'url' => $url,
-            'readability_length' => $readabilityResult ? strlen($readabilityResult['content']) : 0,
-            'method' => 'manual_dom_fallback'
-        ]);
+        // STEP 2: Post-processing con quality score
+        $extractedContent['quality_analysis'] = [
+            'content_type' => $analysis['content_type'],
+            'quality_score' => $analysis['quality_score'],
+            'business_relevance' => $analysis['business_relevance'],
+            'processing_priority' => $analysis['processing_priority'],
+            'extraction_method' => $analysis['extraction_strategy']
+        ];
         
-        return $this->extractWithManualDOM($html, $url, null, null, null);
+        return $extractedContent;
+    }
+    
+    /**
+     * 🎯 Esegue strategia di estrazione basata su analisi qualità
+     */
+    private function executeExtractionStrategy(string $html, string $url, array $analysis): ?array
+    {
+        $strategy = $analysis['extraction_strategy'];
+        
+        switch ($strategy) {
+            case 'manual_dom_primary':
+                \Log::debug("📋 Using manual DOM extraction (tables/structured data)", ['url' => $url]);
+                $result = $this->extractWithManualDOM($html, $url, null, null, null);
+                break;
+                
+            case 'readability_primary':
+                \Log::debug("📖 Using Readability extraction (article content)", ['url' => $url]);
+                $result = $this->extractWithReadability($html, $url);
+                // Fallback se Readability fallisce
+                if (!$result || strlen($result['content']) < 100) {
+                    $result = $this->extractWithManualDOM($html, $url, null, null, null);
+                }
+                break;
+                
+            case 'hybrid_structured':
+                \Log::debug("🔄 Using hybrid extraction (structured info)", ['url' => $url]);
+                // Prova prima manual DOM per preservare struttura
+                $result = $this->extractWithManualDOM($html, $url, null, null, null);
+                if (!$result || strlen($result['content']) < 150) {
+                    // Fallback a Readability
+                    $result = $this->extractWithReadability($html, $url);
+                }
+                break;
+                
+            case 'hybrid_default':
+            default:
+                \Log::debug("⚖️ Using hybrid extraction (default)", ['url' => $url]);
+                // Strategia legacy migliorata
+                if ($analysis['has_complex_tables'] || $analysis['text_ratio'] < 0.6) {
+                    $result = $this->extractWithManualDOM($html, $url, null, null, null);
+                } else {
+                    $result = $this->extractWithReadability($html, $url);
+                    // Fallback se Readability fallisce
+                    if (!$result || strlen($result['content']) < 150) {
+                        $result = $this->extractWithManualDOM($html, $url, null, null, null);
+                    }
+                }
+                break;
+        }
+        
+        return $result;
     }
 
     /**
@@ -1326,6 +1379,12 @@ class WebScraperService
             $targetKbId = \App\Models\KnowledgeBase::where('tenant_id', $tenant->id)->where('is_default', true)->value('id');
         }
 
+        // Prepara metadata avanzati
+        $metadata = [];
+        if (isset($result['quality_analysis'])) {
+            $metadata['quality_analysis'] = $result['quality_analysis'];
+        }
+
         $document = Document::create([
             'tenant_id' => $tenant->id,
             'knowledge_base_id' => $targetKbId,
@@ -1337,7 +1396,8 @@ class WebScraperService
             'scrape_version' => 1,
             'size' => strlen($markdownContent),
             'ingestion_status' => 'pending',
-            'source' => 'web_scraper'
+            'source' => 'web_scraper',
+            'metadata' => !empty($metadata) ? $metadata : null
         ]);
 
         // Avvia job di ingestion
@@ -1374,6 +1434,22 @@ class WebScraperService
         $config = ScraperConfig::where('tenant_id', $existingDocument->tenant_id)->first();
         $targetKbId = $config->target_knowledge_base_id ?? null;
 
+        // Prepara metadata avanzati (merge con esistenti)
+        $existingMetadata = $existingDocument->metadata ?? [];
+        $newMetadata = $existingMetadata;
+        
+        if (isset($result['quality_analysis'])) {
+            $newMetadata['quality_analysis'] = $result['quality_analysis'];
+            $newMetadata['quality_history'] = $existingMetadata['quality_history'] ?? [];
+            // Mantieni storia delle ultime 5 analisi qualità
+            array_unshift($newMetadata['quality_history'], [
+                'version' => $existingDocument->scrape_version,
+                'analysis' => $existingMetadata['quality_analysis'] ?? null,
+                'scraped_at' => $existingDocument->last_scraped_at
+            ]);
+            $newMetadata['quality_history'] = array_slice($newMetadata['quality_history'], 0, 5);
+        }
+
         // Aggiorna record documento
         $existingDocument->update([
             'title' => $result['title'] . ' (Scraped)',
@@ -1384,6 +1460,7 @@ class WebScraperService
             'size' => strlen($markdownContent),
             'ingestion_status' => 'pending',
             'knowledge_base_id' => $targetKbId ?: $existingDocument->knowledge_base_id,
+            'metadata' => !empty($newMetadata) ? $newMetadata : null
         ]);
 
         // Avvia re-ingestion

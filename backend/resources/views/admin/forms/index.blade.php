@@ -3,25 +3,29 @@
 @section('content')
 <div class="flex justify-between items-center mb-6">
   <h1 class="text-2xl font-bold">Form Dinamici</h1>
-  <a href="{{ route('admin.forms.create') }}" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-    ➕ Nuovo Form
-  </a>
+  @if(auth()->user()->isAdmin())
+    <a href="{{ route('admin.forms.create') }}" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+      ➕ Nuovo Form
+    </a>
+  @endif
 </div>
 
 <!-- Filtri -->
 <div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
   <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-    <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
-      <select name="tenant_id" class="w-full border rounded-lg px-3 py-2">
-        <option value="">Tutti i tenant</option>
-        @foreach($tenants as $tenant)
-          <option value="{{ $tenant->id }}" @selected(request('tenant_id') == $tenant->id)>
-            {{ $tenant->name }}
-          </option>
-        @endforeach
-      </select>
-    </div>
+    @if(auth()->user()->isAdmin())
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
+        <select name="tenant_id" class="w-full border rounded-lg px-3 py-2">
+          <option value="">Tutti i tenant</option>
+          @foreach($tenants as $tenant)
+            <option value="{{ $tenant->id }}" @selected(request('tenant_id') == $tenant->id)>
+              {{ $tenant->name }}
+            </option>
+          @endforeach
+        </select>
+      </div>
+    @endif
     
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Stato</label>
