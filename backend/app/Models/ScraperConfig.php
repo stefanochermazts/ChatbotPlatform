@@ -30,6 +30,11 @@ class ScraperConfig extends Model
         'enabled',
         'interval_minutes',
         'last_run_at',
+        'download_linked_documents',
+        'linked_extensions',
+        'linked_max_size_mb',
+        'linked_same_domain_only',
+        'linked_target_kb_id',
     ];
 
     protected $casts = [
@@ -50,6 +55,11 @@ class ScraperConfig extends Model
         'enabled' => 'boolean',
         'interval_minutes' => 'integer',
         'last_run_at' => 'datetime',
+        'download_linked_documents' => 'boolean',
+        'linked_extensions' => 'array',
+        'linked_max_size_mb' => 'integer',
+        'linked_same_domain_only' => 'boolean',
+        'linked_target_kb_id' => 'integer',
     ];
 
     public function tenant(): BelongsTo

@@ -75,7 +75,7 @@
   <h2 class="text-base font-semibold mb-2">🔄 Re-scraping Batch</h2>
   <form method="post" action="{{ route('admin.documents.rescrape-all', $tenant) }}" onsubmit="return confirm('Eseguire il re-scrape di tutti i documenti filtrati con source_url?')">
     @csrf
-    <input type="hidden" name="confirm" value="true" />
+    <input type="hidden" name="confirm" value="1" />
     <input type="hidden" name="kb_id" value="{{ (int)request('kb_id', (int)($kbId ?? 0)) }}" />
     <input type="hidden" name="source_url" value="{{ request('source_url', $sourceUrlSearch ?? '') }}" />
     <button class="px-3 py-1 bg-orange-600 text-white rounded text-sm">Re-scrape documenti filtrati con source_url</button>
@@ -115,6 +115,7 @@
         <th class="p-2">Progress</th>
         <th class="p-2">Errore</th>
         <th class="p-2">Sorgente</th>
+        <th class="p-2">Ultimo scraping</th>
         <th class="p-2">Qualità</th>
         <th class="p-2">Path</th>
         <th class="p-2">Source URL</th>
@@ -142,6 +143,13 @@
           @endif
         </td>
         <td class="p-2">{{ $d->source }}</td>
+        <td class="p-2">
+          @if($d->last_scraped_at)
+            <span class="text-xs">{{ $d->last_scraped_at->format('Y-m-d H:i') }}</span>
+          @else
+            <span class="text-gray-400 text-xs">-</span>
+          @endif
+        </td>
         <td class="p-2">
           @php($qa = is_array($d->metadata ?? null) ? ($d->metadata['quality_analysis'] ?? null) : null)
           @if($qa && isset($qa['quality_score']))

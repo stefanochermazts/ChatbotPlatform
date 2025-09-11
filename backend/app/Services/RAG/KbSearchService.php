@@ -20,6 +20,7 @@ class KbSearchService
         private readonly RagTelemetry $telemetry = new RagTelemetry(),
         private readonly KnowledgeBaseSelector $kbSelector = new KnowledgeBaseSelector(new TextSearchService()),
         private readonly ?HyDEExpander $hyde = null,
+        private readonly ?EmbeddingBatchService $batchService = null,
     ) {}
 
     // Lingue attive per il tenant corrente (codici ISO, lowercase)
@@ -45,6 +46,12 @@ class KbSearchService
         if ($query === '') {
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? [] : null];
         }
+
+        // 🚀 Inizializza batch service con semantic caching
+        $semanticCache = new SemanticEmbeddingCache();
+        $batchService = $this->batchService ?? new EmbeddingBatchService($this->embeddings, $semanticCache);
+        $batchService->reset();
+        $batchService->setTenantId($tenantId);
 
         $this->activeLangs = $this->getTenantLanguages($tenantId);
 
@@ -168,6 +175,11 @@ class KbSearchService
         // Multi-query expansion (originale + parafrasi) - usa query normalizzata
         $queries = $this->mq ? $this->mq->expand($normalizedQuery) : [$normalizedQuery];
         $this->telemetry->event('mq.expanded', ['tenant_id'=>$tenantId,'query'=>$query,'variants'=>$queries]);
+        
+        // 🚀 BATCH OPTIMIZATION: Aggiungi tutte le query al batch prima del processing
+        $batchService->addToBatch($queries, 'query');
+        $batchService->addToBatch([$normalizedQuery], 'mmr_query');
+        
         $allFused = [];
         $trace = $debug ? ['queries' => $queries] : null;
         if ($debug) {
@@ -231,7 +243,8 @@ class KbSearchService
                     $qEmb = $hydeResult['combined_embedding'];
                     $embeddingSource = 'hyde_combined';
                 } else {
-                $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
+                    // 🚀 USA BATCH SERVICE invece di chiamata diretta
+                    $qEmb = $batchService->getEmbedding($q);
                 }
                 
                 $vecHit = [];
@@ -314,13 +327,14 @@ class KbSearchService
                 }
                 
                 $key = 'rag:vecfts:'.$tenantId.':'.sha1($q).":{$vecTopK},{$bmTopK},{$rrfK}" . $cacheKeySuffix;
-                $list = $this->cache->remember($key, function () use ($tenantId, $q, $vecTopK, $bmTopK, $rrfK, $useHyDE, $hydeResult) {
+                $list = $this->cache->remember($key, function () use ($tenantId, $q, $vecTopK, $bmTopK, $rrfK, $useHyDE, $hydeResult, $batchService) {
                     // Determina quale embedding usare
                     $qEmb = null;
                     if ($useHyDE && $hydeResult && $hydeResult['success'] && $hydeResult['combined_embedding']) {
                         $qEmb = $hydeResult['combined_embedding'];
                     } else {
-                    $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
+                        // 🚀 USA BATCH SERVICE invece di chiamata diretta
+                        $qEmb = $batchService->getEmbedding($q);
                     }
                     
                     $vecHit = [];
@@ -369,18 +383,37 @@ class KbSearchService
             $candidates[] = [
                 'document_id' => (int) $h['document_id'],
                 'chunk_index' => (int) $h['chunk_index'],
-                'text' => $this->text->getChunkSnippet((int)$h['document_id'], (int)$h['chunk_index'], 512) ?? '',
+                'text' => $this->text->getChunkSnippet((int)$h['document_id'], (int)$h['chunk_index'], 1500) ?? '', // 🔧 AUMENTATO per preservare numeri
                 'score' => (float) $h['score'],
             ];
         }
 
-        // Seleziona reranker basato su configurazione tenant
-        $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
+        // 🚀 DYNAMIC RERANKING: Seleziona reranker basato su tipo di query
+        $queryClassifier = new QueryTypeClassifier();
+        $queryClassification = $queryClassifier->classify($query);
+        
+        // Ottieni raccomandazione reranker
+        $recommendedDriver = $queryClassifier->recommendReranker($queryClassification);
+        
+        // Usa raccomandazione se configurato per auto-selection, altrimenti usa config tenant
+        $configDriver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'auto');
+        $driver = ($configDriver === 'auto') ? $recommendedDriver : $configDriver;
+        
         $reranker = match($driver) {
             'cohere' => new CohereReranker(),
             'llm' => new LLMReranker(app(\App\Services\LLM\OpenAIChatService::class)),
-            default => new EmbeddingReranker($this->embeddings),
+            default => new EmbeddingReranker($this->embeddings, $batchService),
         };
+        
+        Log::info('🎯 [DYNAMIC_RERANKER] Reranker selection', [
+            'query' => $query,
+            'query_type' => $queryClassification['primary_type'],
+            'classification_confidence' => round($queryClassification['confidence'], 3),
+            'recommended_driver' => $recommendedDriver,
+            'config_driver' => $configDriver,
+            'final_driver' => $driver,
+            'reranker_class' => get_class($reranker)
+        ]);
         
         // Cache key include driver per evitare conflitti
         $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN}";
@@ -418,29 +451,77 @@ class KbSearchService
                 'output_candidates' => count($ranked),
                 'top_candidates' => array_slice($ranked, 0, 10) // Mostra solo top 10 per debug
             ];
-            $trace['reranked_top'] = array_slice($ranked, 0, 20); 
+            $trace['reranked_top'] = array_slice($ranked, 0, 50); // 🔧 Aumentato per debug completo 
         }
 
         // Ora calcola MMR sugli embedding dei candidati rerankati (usa query normalizzata)
-        $qEmb = $this->embeddings->embedTexts([$normalizedQuery])[0] ?? null;
-        $texts = array_map(fn($c) => (string)$c['text'], $ranked);
-        $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
+        $qEmb = $batchService->getEmbedding($normalizedQuery);
+        
+        // 🔧 CRITICAL FIX: Filtra ranked per assicurare allineamento con texts
+        $validRanked = [];
+        $texts = [];
+        foreach ($ranked as $c) {
+            $text = (string)($c['text'] ?? '');
+            if (!empty(trim($text))) { // Solo chunk con testo valido
+                $validRanked[] = $c;
+                $texts[] = $text;
+            }
+        }
+        
+        // 🚀 BATCH OPTIMIZATION: Aggiungi chunk al batch e ottieni embeddings
+        if (!empty($texts)) {
+            $batchService->addToBatch($texts, 'chunk');
+        }
+        $docEmb = $texts ? $batchService->getEmbeddings($texts) : [];
         $selIdx = $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
-        if ($debug) { $trace['mmr_selected_idx'] = $selIdx; }
+        
+        // 🔧 Ora $validRanked e $selIdx sono allineati!
+        if ($debug) { 
+            $trace['mmr_selected_idx'] = $selIdx;
+            $trace['valid_ranked_count'] = count($validRanked);
+            $trace['texts_count'] = count($texts);
+            $trace['doc_emb_count'] = count($docEmb);
+            $trace['mmr_lambda'] = $mmrLambda;
+            $trace['mmr_take'] = $mmrTake;
+            
+            // 🚨 CRITICAL DEBUG: Verifica allineamento
+            $alignmentErrors = [];
+            foreach ($selIdx as $i) {
+                if (!isset($validRanked[$i])) {
+                    $alignmentErrors[] = "MMR indice $i non esiste in validRanked (size: " . count($validRanked) . ")";
+                }
+            }
+            $trace['mmr_alignment_errors'] = $alignmentErrors;
+            
+            // 🚀 BATCH STATISTICS: Aggiungi statistiche embedding batch
+            $trace['embedding_batch_stats'] = $batchService->getStats();
+            
+            // 🎯 DYNAMIC RERANKER STATISTICS: Aggiungi info classificazione query
+            $trace['dynamic_reranker'] = [
+                'query_classification' => $queryClassification,
+                'recommended_driver' => $recommendedDriver,
+                'config_driver' => $configDriver,
+                'final_driver' => $driver
+            ];
+        }
 
         $seen = [];
         $cits = [];
         foreach ($selIdx as $i) {
-            $base = $ranked[$i] ?? null;
+            $base = $validRanked[$i] ?? null;
             if ($base === null) { continue; }
             $docId = (int) $base['document_id'];
-            if (isset($seen[$docId])) continue;
-            $seen[$docId] = true;
+            
+            // 🔧 SMART DEDUPLICATION: Permetti multiple citazioni dello stesso documento
+            // se contengono informazioni critiche diverse (telefoni, email, orari)
+            $chunkKey = $docId . '_' . $base['chunk_index']; // Dedup per documento+chunk, non solo documento
+            if (isset($seen[$chunkKey])) continue;
+            $seen[$chunkKey] = true;
 
-            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 400) ?? '';
+            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 1500) ?? ''; // 🔧 AUMENTATO per preservare numeri telefono
             for ($d = -$neighbor; $d <= $neighbor; $d++) {
                 if ($d === 0) continue;
-                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 200);
+                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 500); // 🔧 AUMENTATO
                 if ($s2) $snippet .= "\n".$s2;
             }
 
@@ -448,7 +529,7 @@ class KbSearchService
             if (!$doc) continue;
             
             // Get full chunk text for deep-link highlighting (use large limit to get full text)
-            $chunkText = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 5000) ?? '';
+            $chunkText = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 10000) ?? ''; // 🔧 AUMENTATO per chunk completi
             
             $cits[] = [
                 'id' => (int) $doc->id,
@@ -548,19 +629,34 @@ class KbSearchService
     private function mmr(?array $queryEmbedding, array $docEmbeddings, float $lambda, int $k): array
     {
         if (!$queryEmbedding || $docEmbeddings === []) return array_slice(range(0, count($docEmbeddings)-1), 0, $k);
+        
+        // 🔧 SAFETY CHECK: Filtra embeddings null prima del processing
+        $validEmbeddings = [];
+        $validIndices = [];
+        foreach ($docEmbeddings as $i => $emb) {
+            if ($emb !== null && is_array($emb) && !empty($emb)) {
+                $validEmbeddings[] = $emb;
+                $validIndices[] = $i;
+            }
+        }
+        
+        if (empty($validEmbeddings)) {
+            return array_slice(range(0, count($docEmbeddings)-1), 0, $k);
+        }
+        
         $selected = [];
-        $candidates = range(0, count($docEmbeddings) - 1);
+        $candidates = range(0, count($validEmbeddings) - 1);
         $queryNorm = $this->l2norm($queryEmbedding);
-        $docNorms = array_map(fn ($v) => $this->l2norm($v), $docEmbeddings);
+        $docNorms = array_map(fn ($v) => $this->l2norm($v), $validEmbeddings);
 
         while (count($selected) < $k && $candidates !== []) {
             $bestIdx = null;
             $bestScore = -INF;
             foreach ($candidates as $i) {
-                $simToQuery = $this->cosine($queryEmbedding, $docEmbeddings[$i], $queryNorm, $docNorms[$i]);
+                $simToQuery = $this->cosine($queryEmbedding, $validEmbeddings[$i], $queryNorm, $docNorms[$i]);
                 $maxSimToSelected = 0.0;
                 foreach ($selected as $j) {
-                    $sim = $this->cosine($docEmbeddings[$i], $docEmbeddings[$j], $docNorms[$i], $docNorms[$j]);
+                    $sim = $this->cosine($validEmbeddings[$i], $validEmbeddings[$j], $docNorms[$i], $docNorms[$j]);
                     if ($sim > $maxSimToSelected) { $maxSimToSelected = $sim; }
                 }
                 $score = $lambda * $simToQuery - (1.0 - $lambda) * $maxSimToSelected;
@@ -570,7 +666,9 @@ class KbSearchService
             $selected[] = $bestIdx;
             $candidates = array_values(array_diff($candidates, [$bestIdx]));
         }
-        return $selected;
+        
+        // 🔧 Rimappa gli indici selezionati agli indici originali
+        return array_map(fn($i) => $validIndices[$i], $selected);
     }
 
     private function l2norm(array $v): float
@@ -1685,9 +1783,13 @@ class KbSearchService
     private function extractPhoneFromContent(string $content): array
     {
         $patterns = [
-            '/(?<!\d)(?:\+39\s*)?0\d{1,3}\s*\d{6,8}(?!\d)/u',
-            '/(?<!\d)(?:\+39\s*)?3\d{2}\s*\d{3}\s*\d{3,4}(?!\d)/u',
-            '/(?<!\d)(?:800|199|892|899|163|166)\s*\d{3,6}(?!\d)/u',
+            // Fissi con separatori opzionali (spazio, punto, trattino) e prefisso facoltativo "tel:"
+            '/(?<!\d)(?:tel[:\.]?\s*)?(?:\+39\s*)?0\d{1,3}[\.\s\-]?\d{6,8}(?!\d)/u',
+            // Mobili italiani 3xx con separatori opzionali
+            '/(?<!\d)(?:tel[:\.]?\s*)?(?:\+39\s*)?3\d{2}[\.\s\-]?\d{3}[\.\s\-]?\d{3,4}(?!\d)/u',
+            // Numerazioni speciali (toll free/premium) con separatori
+            '/(?<!\d)(?:800|199|892|899|163|166)[\.\s\-]?\d{3,6}(?!\d)/u',
+            // Emergenze
             '/(?<!\d)(?:112|113|115|117|118|1515|1530|1533|114)(?!\d)/u',
         ];
         
@@ -1696,6 +1798,9 @@ class KbSearchService
             preg_match_all($pattern, $content, $matches);
             if (!empty($matches[0])) {
                 foreach ($matches[0] as $phone) {
+                    // Normalizza rimuovendo eventuale prefisso tel: e caratteri finali di escape/punteggiatura
+                    $phone = preg_replace('/^\s*tel[:\.]?\s*/i', '', $phone);
+                    $phone = rtrim($phone, " \\).,;:");
                     // Usa la validazione del TextSearchService
                     $reflection = new \ReflectionClass($this->text);
                     $isValidMethod = $reflection->getMethod('isLikelyNotPhone');

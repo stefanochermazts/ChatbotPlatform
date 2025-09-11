@@ -29,15 +29,32 @@ class ChatbotQuickActions {
     }
     
     async loadActions() {
+        // Check if quick actions are disabled in config
+        if (this.widget.options.enableQuickActions === false) {
+            console.log('Quick actions disabled in config');
+            this.actions = [];
+            return;
+        }
+        
+        // Check if we have a demo/test API key
+        if (this.widget.options.apiKey && 
+            (this.widget.options.apiKey.includes('demo') || 
+             this.widget.options.apiKey.includes('test') || 
+             this.widget.options.apiKey.length < 10)) {
+            console.log('Demo API key detected, skipping quick actions');
+            this.actions = [];
+            return;
+        }
+
         try {
-                    const response = await fetch(`${this.widget.options.baseURL}/api/v1/quick-actions/`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${this.widget.options.apiKey}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            }
-        });
+            const response = await fetch(`${this.widget.options.baseURL}/api/v1/quick-actions/`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.widget.options.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -53,7 +70,7 @@ class ChatbotQuickActions {
             }
             
         } catch (error) {
-            console.error('Error loading quick actions:', error);
+            console.warn('Error loading quick actions (disabled):', error.message);
             this.actions = [];
         }
     }

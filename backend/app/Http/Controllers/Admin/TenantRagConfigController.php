@@ -42,22 +42,87 @@ class TenantRagConfigController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
-        // Build settings array from request (partial, only fields present)
-        $settings = $request->all();
+        // Costruisci struttura NIDIFICATA coerente con config/rag.php
+        $settings = [
+            'hybrid' => [
+                'vector_top_k' => (int) $request->input('vector_top_k'),
+                'bm25_top_k' => (int) $request->input('bm25_top_k'),
+                'rrf_k' => (int) $request->input('rrf_k'),
+                'mmr_lambda' => (float) $request->input('mmr_lambda'),
+                'mmr_take' => (int) $request->input('mmr_take'),
+                'neighbor_radius' => (int) $request->input('neighbor_radius'),
+            ],
+            'multiquery' => [
+                'enabled' => (bool) $request->boolean('multiquery_enabled'),
+                'num' => (int) $request->input('multiquery_num'),
+                'temperature' => (float) $request->input('multiquery_temperature'),
+            ],
+            'answer' => [
+                'min_citations' => (int) $request->input('min_citations'),
+                'min_confidence' => (float) $request->input('min_confidence'),
+                'force_if_has_citations' => (bool) $request->boolean('force_if_has_citations'),
+                'fallback_message' => (string) ($request->input('fallback_message') ?? ''),
+            ],
+            'reranker' => [
+                'driver' => (string) $request->input('reranker_driver'),
+                'top_n' => (int) $request->input('reranker_top_n'),
+            ],
+            'context' => [
+                'max_chars' => (int) $request->input('context_max_chars'),
+                'compress_if_over_chars' => (int) $request->input('compress_if_over_chars'),
+                'compress_target_chars' => (int) $request->input('compress_target_chars'),
+            ],
+            'advanced' => [
+                'hyde' => [
+                    'enabled' => (bool) $request->boolean('hyde_enabled'),
+                    'weight_original' => (float) $request->input('hyde_weight_original'),
+                    'weight_hypothetical' => (float) $request->input('hyde_weight_hypothetical'),
+                ],
+                'llm_reranker' => [
+                    'enabled' => (bool) $request->boolean('llm_reranker_enabled'),
+                    'batch_size' => (int) $request->input('llm_reranker_batch_size'),
+                ],
+            ],
+            'intents' => [
+                'enabled' => [
+                    'thanks' => (bool) $request->boolean('intent_thanks'),
+                    'phone' => (bool) $request->boolean('intent_phone'),
+                    'email' => (bool) $request->boolean('intent_email'),
+                    'address' => (bool) $request->boolean('intent_address'),
+                    'schedule' => (bool) $request->boolean('intent_schedule'),
+                ],
+                'min_score' => (float) $request->input('intent_min_score'),
+                'execution_strategy' => (string) $request->input('intent_execution_strategy'),
+            ],
+            'kb_selection' => [
+                'mode' => (string) $request->input('kb_selection_mode'),
+                'bm25_boost_factor' => (float) $request->input('bm25_boost_factor'),
+                'vector_boost_factor' => (float) $request->input('vector_boost_factor'),
+            ],
+        ];
 
-        // Parse JSON maps for kb selection
+        // Opzionale: upload_boost può essere nullo
+        if ($request->filled('kb_upload_boost')) {
+            $settings['kb_selection']['upload_boost'] = (float) $request->input('kb_upload_boost');
+        }
+
+        // Parse JSON maps per KB selection
         if ($request->filled('kb_title_keyword_boosts')) {
-            $decoded = json_decode($request->input('kb_title_keyword_boosts'), true);
+            $decoded = json_decode((string) $request->input('kb_title_keyword_boosts'), true);
             if (is_array($decoded)) {
                 $settings['kb_selection']['title_keyword_boosts'] = $decoded;
             }
         }
         if ($request->filled('kb_location_boosts')) {
-            $decoded = json_decode($request->input('kb_location_boosts'), true);
+            $decoded = json_decode((string) $request->input('kb_location_boosts'), true);
             if (is_array($decoded)) {
                 $settings['kb_selection']['location_boosts'] = $decoded;
             }
         }
+
+        // Salva il profilo selezionato sul tenant
+        $tenant->rag_profile = (string) $request->input('rag_profile');
+        $tenant->save();
 
         $this->configService->updateTenantConfig($tenant->id, $settings);
         

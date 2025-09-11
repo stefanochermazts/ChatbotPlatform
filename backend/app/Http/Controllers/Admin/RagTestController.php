@@ -38,8 +38,6 @@ class RagTestController extends Controller
             'enable_conversation' => ['nullable', 'boolean'],
             'conversation_messages' => ['nullable', 'string'],
             'reranker_driver' => ['nullable', 'string', 'in:embedding,llm,cohere'],
-            'top_k' => ['nullable', 'integer', 'min:1', 'max:50'],
-            'mmr_lambda' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'max_output_tokens' => ['nullable', 'integer', 'min:32', 'max:8192'],
         ]);
         $tenantId = (int) $data['tenant_id'];
@@ -196,21 +194,29 @@ class RagTestController extends Controller
             $messages[] = ['role' => 'user', 'content' => "Domanda: ".$data['query']."\n".$contextText];
             
             $payload = [
-                'model' => 'gpt-4o-mini',
+                'model' => (string) config('openai.chat_model', 'gpt-4o-mini'),
                 'messages' => $messages,
                 'max_tokens' => (int) ($data['max_output_tokens'] ?? config('openai.max_output_tokens', 700)),
             ];
-            $answer = $chat->chatCompletions($payload)['choices'][0]['message']['content'] ?? '';
+            $rawResponse = $chat->chatCompletions($payload);
+            $answer = $rawResponse['choices'][0]['message']['content'] ?? '';
             
             // 🆕 Aggiungi source_url del documento con confidenza più alta se disponibile
             $bestSourceUrl = $this->getBestSourceUrl($citations);
             if (!empty(trim($bestSourceUrl)) && count($citations) > 0 && $answer !== '') {
-                $answer .= "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
+                // 🔧 SMART DEDUPLICATION: Evita link duplicati se già presente nella risposta
+                $normalizedUrl = trim($bestSourceUrl);
+                $isDuplicate = strpos($answer, $normalizedUrl) !== false;
+                
+                if (!$isDuplicate) {
+                    $answer .= "\n\n🔗 **Fonte principale**: " . $normalizedUrl;
+                }
             }
             
             if (is_array($trace)) {
                 $trace['llm_context'] = $contextText;
                 $trace['llm_messages'] = $payload['messages'];
+                $trace['llm_raw_response'] = $rawResponse;
                 $trace['tenant_prompts'] = [
                     'custom_system_prompt' => $tenant->custom_system_prompt ?? null,
                     'custom_context_template' => $tenant->custom_context_template ?? null,

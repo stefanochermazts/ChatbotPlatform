@@ -132,16 +132,72 @@ class WidgetConfig extends Model
     public function getEmbedConfigAttribute(): array
     {
         return [
+            // Core API configuration
             'apiKey' => $this->tenant->getWidgetApiKey(),
-            'tenantId' => $this->tenant->id, // Use numeric ID instead of slug
+            'tenantId' => $this->tenant->id,
+            
+            // Theme and appearance from widget config form
             'theme' => $this->theme,
             'position' => $this->position,
             'autoOpen' => $this->auto_open,
+            
+            // Layout configuration from form
+            'layout' => [
+                'widget' => [
+                    'width' => $this->widget_width ?? '400px',
+                    'height' => $this->widget_height ?? '600px',
+                    'borderRadius' => $this->border_radius ?? '12px'
+                ],
+                'button' => [
+                    'size' => $this->button_size ?? '60px'
+                ]
+            ],
+            
+            // Behavior settings from form
+            'behavior' => [
+                'showHeader' => $this->show_header ?? true,
+                'showAvatar' => $this->show_avatar ?? true,
+                'showCloseButton' => $this->show_close_button ?? true,
+                'enableAnimations' => $this->enable_animations ?? true,
+                'enableDarkMode' => $this->enable_dark_mode ?? false
+            ],
+            
+            // Branding from form
+            'branding' => [
+                'logoUrl' => $this->logo_url,
+                'faviconUrl' => $this->favicon_url,
+                'fontFamily' => $this->font_family ?? "'Inter', sans-serif",
+                'customColors' => $this->custom_colors
+            ],
+            
+            // API and conversation settings
             'enableConversationContext' => $this->enable_conversation_context,
             'enableAnalytics' => $this->enable_analytics,
             'model' => $this->api_model,
             'temperature' => $this->temperature,
-            'maxTokens' => $this->max_tokens
+            'maxTokens' => $this->max_tokens,
+            
+            // 🔄 CONVERSATION PERSISTENCE: Always enabled for better UX
+            'enableConversationPersistence' => true,
+            
+            // Server-dependent features (will be overridden in preview if needed)
+            'enableQuickActions' => $this->advanced_config['enableQuickActions'] ?? true,
+            'enableThemeAPI' => $this->advanced_config['enableThemeAPI'] ?? true,
+            
+            // Widget content and messaging
+            'welcomeMessage' => $this->welcome_message,
+            'widgetName' => $this->widget_name,
+            
+            // Security settings
+            'allowedDomains' => $this->allowed_domains,
+            'gdprCompliant' => $this->gdpr_compliant ?? false,
+            
+            // Custom styling
+            'customCSS' => $this->custom_css,
+            'customJS' => $this->custom_js,
+            
+            // Advanced configuration
+            'advanced' => $this->advanced_config ?? []
         ];
     }
     

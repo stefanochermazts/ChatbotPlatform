@@ -392,9 +392,143 @@ class IngestUploadedDocumentJob implements ShouldQueue
     }
 
     /**
-     * 📝 Chunking standard per testo normale
+     * 📝 Chunking standard per testo normale - WORD-AWARE per preservare informazioni
      */
     private function performStandardChunking(string $text, int $max, int $overlap): array
+    {
+        $chunks = [];
+        $text = trim($text);
+        
+        if (mb_strlen($text) <= $max) {
+            return [$text]; // Testo piccolo, nessun chunking necessario
+        }
+        
+        // 🔍 Dividi per paragrafi prima, poi per frasi per preservare struttura
+        $paragraphs = preg_split('/\n\s*\n/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        $currentChunk = '';
+        
+        foreach ($paragraphs as $paragraph) {
+            $paragraph = trim($paragraph);
+            if (empty($paragraph)) continue;
+            
+            // Se il paragrafo corrente + quello nuovo supera il limite
+            if (mb_strlen($currentChunk . "\n\n" . $paragraph) > $max && !empty($currentChunk)) {
+                // Salva il chunk corrente e inizia nuovo
+                $chunks[] = trim($currentChunk);
+                
+                // 🔄 OVERLAP: inizia il nuovo chunk con gli ultimi N caratteri del precedente
+                $overlapText = $this->getLastWords($currentChunk, $overlap);
+                $currentChunk = $overlapText;
+            }
+            
+            // Aggiungi il paragrafo al chunk corrente
+            if (!empty($currentChunk)) {
+                $currentChunk .= "\n\n" . $paragraph;
+            } else {
+                $currentChunk = $paragraph;
+            }
+            
+            // 🚨 Se un singolo paragrafo è troppo lungo, suddividilo per frasi
+            if (mb_strlen($currentChunk) > $max) {
+                $sentenceChunks = $this->chunkLongParagraph($currentChunk, $max, $overlap);
+                if (count($sentenceChunks) > 1) {
+                    // Aggiungi tutti i chunk tranne l'ultimo
+                    for ($i = 0; $i < count($sentenceChunks) - 1; $i++) {
+                        $chunks[] = trim($sentenceChunks[$i]);
+                    }
+                    // L'ultimo diventa il chunk corrente
+                    $currentChunk = trim($sentenceChunks[count($sentenceChunks) - 1]);
+                }
+            }
+        }
+        
+        // Aggiungi l'ultimo chunk se non vuoto
+        if (!empty(trim($currentChunk))) {
+            $chunks[] = trim($currentChunk);
+        }
+        
+        // 🛡️ FAIL-SAFE: se nessun chunk generato, usa chunking caratteri di emergenza
+        if (empty($chunks)) {
+            Log::warning("chunking.fallback_to_char_chunking", [
+                'text_length' => mb_strlen($text),
+                'max_chars' => $max
+            ]);
+            return $this->performEmergencyCharChunking($text, $max, $overlap);
+        }
+        
+        return $chunks;
+    }
+    
+    /**
+     * 🔄 Ottieni le ultime N parole di un testo per overlap
+     */
+    private function getLastWords(string $text, int $maxChars): string
+    {
+        $text = trim($text);
+        if (mb_strlen($text) <= $maxChars) {
+            return $text;
+        }
+        
+        // Prendi gli ultimi N caratteri, poi trova l'ultimo spazio per non spezzare parole
+        $lastChars = mb_substr($text, -$maxChars);
+        $firstSpace = mb_strpos($lastChars, ' ');
+        
+        if ($firstSpace !== false && $firstSpace > 0) {
+            return mb_substr($lastChars, $firstSpace + 1);
+        }
+        
+        return $lastChars; // Se non trovi spazi, prendi tutto
+    }
+    
+    /**
+     * 🚨 Chunking di emergenza per paragrafi troppo lunghi - SENTENCE-AWARE
+     */
+    private function chunkLongParagraph(string $paragraph, int $max, int $overlap): array
+    {
+        // Dividi per frasi (. ! ? + spazio/newline)
+        $sentences = preg_split('/([.!?]+)(\s+|$)/', $paragraph, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        
+        $chunks = [];
+        $currentChunk = '';
+        
+        for ($i = 0; $i < count($sentences); $i += 3) { // Ogni frase ha 3 parti: testo, punteggiatura, spazio
+            $sentence = '';
+            if (isset($sentences[$i])) $sentence .= $sentences[$i];
+            if (isset($sentences[$i + 1])) $sentence .= $sentences[$i + 1];
+            if (isset($sentences[$i + 2])) $sentence .= $sentences[$i + 2];
+            
+            $sentence = trim($sentence);
+            if (empty($sentence)) continue;
+            
+            // Se aggiungere questa frase supera il limite
+            if (mb_strlen($currentChunk . ' ' . $sentence) > $max && !empty($currentChunk)) {
+                $chunks[] = trim($currentChunk);
+                
+                // Overlap con ultime parole
+                $overlapText = $this->getLastWords($currentChunk, $overlap);
+                $currentChunk = $overlapText . ' ' . $sentence;
+            } else {
+                $currentChunk = empty($currentChunk) ? $sentence : $currentChunk . ' ' . $sentence;
+            }
+        }
+        
+        // Ultimo chunk
+        if (!empty(trim($currentChunk))) {
+            $chunks[] = trim($currentChunk);
+        }
+        
+        // Se ancora troppo lungo, usa chunking caratteri di emergenza
+        if (empty($chunks) || max(array_map('mb_strlen', $chunks)) > $max * 1.5) {
+            return $this->performEmergencyCharChunking($paragraph, $max, $overlap);
+        }
+        
+        return $chunks;
+    }
+    
+    /**
+     * 🆘 Chunking di emergenza per caratteri (versione originale come fallback)
+     */
+    private function performEmergencyCharChunking(string $text, int $max, int $overlap): array
     {
         $chunks = [];
         $start = 0;

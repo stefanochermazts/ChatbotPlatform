@@ -487,6 +487,18 @@
     }
 
     async fetchTenantTheme(tenantId) {
+      // Check if theme API is disabled
+      if (window.chatbotConfig && window.chatbotConfig.enableThemeAPI === false) {
+        console.log('[WidgetTheme] Theme API disabled, using default theme');
+        return Promise.resolve('default');
+      }
+      
+      // Check for demo/test tenant
+      if (tenantId && (tenantId.includes('demo') || tenantId.includes('test') || tenantId === 'debug')) {
+        console.log('[WidgetTheme] Demo tenant detected, using default theme');
+        return Promise.resolve('default');
+      }
+
       try {
         const url = `/api/v1/tenants/${tenantId}/widget-theme`;
         console.log('[WidgetTheme] Fetching tenant theme', { url, tenantId });
@@ -496,9 +508,9 @@
           console.log('[WidgetTheme] Theme fetched', themeConfig?.layout?.widget);
           return this.createTenantTheme(tenantId, themeConfig);
         }
-        console.warn('[WidgetTheme] Theme fetch non-OK', response.status);
+        console.warn('[WidgetTheme] Theme fetch non-OK', response.status, '- using default theme');
       } catch (error) {
-        console.warn('[WidgetTheme] Could not fetch tenant theme:', error);
+        console.warn('[WidgetTheme] Could not fetch tenant theme:', error.message, '- using default theme');
       }
 
       return Promise.resolve('default');

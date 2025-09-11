@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Conversation Persistence</title>
+  <style>
+    body { 
+      font-family: monospace; 
+      padding: 20px; 
+      background: #f0f0f0;
+      line-height: 1.6;
+    }
+    .console-output {
+      background: #1a1a1a;
+      color: #00ff00;
+      padding: 20px;
+      border-radius: 8px;
+      max-height: 500px;
+      overflow-y: auto;
+      font-size: 12px;
+      margin: 20px 0;
+    }
+    .storage-info {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover { background: #0056b3; }
+    .error { color: #ff4444; }
+    .success { color: #44ff44; }
+    .warning { color: #ffaa44; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Debug Conversation Persistence</h1>
+  
+  <div class="storage-info">
+    <h3>📦 Current localStorage:</h3>
+    <div id="storageInfo">Loading...</div>
+  </div>
+  
+  <div>
+    <button onclick="inspectStorage()">🔍 Inspect Storage</button>
+    <button onclick="createTestData()">📝 Create Test Data</button>
+    <button onclick="clearStorage()">🗑️ Clear Storage</button>
+    <button onclick="toggleWidget()">🤖 Toggle Widget</button>
+    <button onclick="clearConsole()">🧹 Clear Console</button>
+  </div>
+  
+  <div class="console-output" id="consoleOutput">
+    <div class="success">🚀 Debug console initialized - watch for logs...</div>
+  </div>
+
+  <script>
+    // Simple console capture for debugging
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    
+    function addToConsole(message, type = 'log') {
+      const output = document.getElementById('consoleOutput');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'success';
+      output.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      addToConsole(args.join(' '), 'log');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      addToConsole('⚠️ ' + args.join(' '), 'warn');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      addToConsole('❌ ' + args.join(' '), 'error');
+    };
+    
+    function inspectStorage() {
+      const keys = Object.keys(localStorage).filter(k => k.includes('chatbot'));
+      let html = '<strong>🔍 Storage Keys:</strong><br>';
+      
+      if (keys.length === 0) {
+        html += '<em>No chatbot-related keys found</em>';
+      } else {
+        keys.forEach(key => {
+          const value = localStorage.getItem(key);
+          html += `<br><strong>${key}:</strong><br>`;
+          try {
+            const parsed = JSON.parse(value);
+            html += `<pre style="font-size: 11px; margin: 5px 0;">${JSON.stringify(parsed, null, 2)}</pre>`;
+          } catch (e) {
+            html += `<code>${value}</code>`;
+          }
+        });
+      }
+      
+      document.getElementById('storageInfo').innerHTML = html;
+      console.log('📦 Storage inspected');
+    }
+    
+    function createTestData() {
+      const testConversation = [
+        {
+          id: 'test_msg_1',
+          role: 'user',
+          content: 'Ciao, questo è un messaggio di test!',
+          timestamp: new Date(Date.now() - 120000).toISOString()
+        },
+        {
+          id: 'test_msg_2',
+          role: 'assistant',
+          content: 'Ciao! Questo è un messaggio di risposta di test. Come posso aiutarti?',
+          timestamp: new Date(Date.now() - 60000).toISOString()
+        }
+      ];
+      
+      localStorage.setItem('chatbot_widget_conversation_history', JSON.stringify(testConversation));
+      console.log('📝 Test conversation data created');
+      inspectStorage();
+    }
+    
+    function clearStorage() {
+      const keys = Object.keys(localStorage).filter(k => k.includes('chatbot'));
+      keys.forEach(key => localStorage.removeItem(key));
+      console.log('🗑️ Storage cleared');
+      inspectStorage();
+    }
+    
+    function toggleWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.toggle();
+        console.log('🤖 Widget toggled');
+      } else {
+        console.error('❌ Widget not loaded yet');
+      }
+    }
+    
+    function clearConsole() {
+      document.getElementById('consoleOutput').innerHTML = '<div class="success">🧹 Console cleared</div>';
+    }
+    
+    // Widget configuration - minimal setup to avoid auth errors
+    window.chatbotConfig = {
+      apiKey: 'demo_api_key_123',
+      tenantId: 'demo',
+      theme: 'default',
+      position: 'bottom-right',
+      welcomeMessage: 'Ciao! Widget in modalità debug per test persistenza.',
+      debug: true,
+      // Disable features that require server auth to prevent 401/500 errors
+      enableQuickActions: false,
+      enableThemeAPI: false,
+      enableAnalytics: false
+    };
+    
+    // Widget events
+    window.addEventListener('chatbot:embed:loaded', function(event) {
+      console.log('✅ Widget embed loaded successfully');
+      inspectStorage();
+    });
+    
+    window.addEventListener('chatbot:embed:error', function(event) {
+      console.error('❌ Widget embed error:', event.detail);
+    });
+    
+    window.addEventListener('chatbot:widget:opened', function() {
+      console.log('🔓 Widget opened');
+    });
+    
+    window.addEventListener('chatbot:widget:closed', function() {
+      console.log('🔒 Widget closed');
+    });
+    
+    // Initial storage inspection
+    setTimeout(inspectStorage, 1000);
+  </script>
+
+  <!-- Load Widget -->
+  <script src="./embed/chatbot-embed.js" async></script>
+</body>
+</html>

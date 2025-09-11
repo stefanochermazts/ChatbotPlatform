@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Embed Loading</title>
+  <style>
+    body { 
+      font-family: system-ui, sans-serif; 
+      padding: 20px; 
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .log {
+      background: #1a1a1a;
+      color: #00ff00;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin: 10px 0;
+      white-space: pre-wrap;
+    }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+    .warning { color: #ffc107; }
+    button {
+      padding: 12px 20px;
+      margin: 8px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Debug Embed Loading</h1>
+    <p>Verifica step-by-step il caricamento del widget embed</p>
+    
+    <button onclick="testFilePaths()">📁 Test File Paths</button>
+    <button onclick="testEmbedScript()">📜 Test Embed Script</button>
+    <button onclick="clearLog()">🧹 Clear Log</button>
+    
+    <div class="log" id="log">
+      <span class="success">[Init] Debug page loaded...</span>
+    </div>
+  </div>
+
+  <script>
+    // Simple config for testing
+    window.chatbotConfig = {
+      apiKey: 'test_key',
+      tenantId: 8,
+      debug: true
+    };
+    
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'success';
+      logDiv.innerHTML += `\n<span class="${className}">[${timestamp}] ${message}</span>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+    
+    async function testFilePaths() {
+      log('🔍 Testing file paths...');
+      
+      const filesToTest = [
+        './widget/embed/chatbot-embed.js',
+        './widget/js/chatbot-widget.js',
+        './widget/css/chatbot-design-system.css',
+        './widget/css/chatbot-conversation-persistence.css'
+      ];
+      
+      for (const file of filesToTest) {
+        try {
+          const response = await fetch(file);
+          if (response.ok) {
+            const size = response.headers.get('content-length');
+            log(`✅ ${file} - OK (${size ? size + ' bytes' : 'size unknown'})`);
+          } else {
+            log(`❌ ${file} - HTTP ${response.status}`, 'error');
+          }
+        } catch (error) {
+          log(`❌ ${file} - Error: ${error.message}`, 'error');
+        }
+      }
+    }
+    
+    function testEmbedScript() {
+      log('📜 Testing embed script manually...');
+      
+      // Check if script tag exists
+      const scripts = document.querySelectorAll('script[src*="chatbot-embed"]');
+      log(`Found ${scripts.length} embed script(s)`);
+      
+      // Create and load script manually
+      const script = document.createElement('script');
+      script.src = './widget/embed/chatbot-embed.js';
+      script.async = true;
+      
+      script.onload = function() {
+        log('✅ Embed script loaded successfully');
+        setTimeout(() => {
+          checkGlobalObjects();
+        }, 1000);
+      };
+      
+      script.onerror = function() {
+        log('❌ Embed script failed to load', 'error');
+      };
+      
+      document.head.appendChild(script);
+      log('📥 Script tag added to DOM');
+    }
+    
+    function checkGlobalObjects() {
+      log('🔍 Checking global objects...');
+      
+      // Check for widget classes
+      if (window.ChatbotWidget) {
+        log('✅ ChatbotWidget class available');
+      } else {
+        log('❌ ChatbotWidget class not found', 'error');
+      }
+      
+      if (window.chatbotWidget) {
+        log('✅ chatbotWidget instance exists');
+      } else {
+        log('❌ chatbotWidget instance not found', 'error');
+      }
+      
+      // Check for DOM elements
+      const container = document.getElementById('chatbot-widget-container');
+      if (container) {
+        log('✅ chatbot-widget-container found');
+      } else {
+        log('❌ chatbot-widget-container not found', 'error');
+      }
+      
+      const widget = document.getElementById('chatbot-widget');
+      if (widget) {
+        log('✅ chatbot-widget found');
+      } else {
+        log('❌ chatbot-widget not found', 'error');
+      }
+      
+      const toggleBtn = document.getElementById('chatbot-toggle-btn');
+      if (toggleBtn) {
+        log('✅ chatbot-toggle-btn found');
+      } else {
+        log('❌ chatbot-toggle-btn not found', 'error');
+      }
+    }
+    
+    function clearLog() {
+      document.getElementById('log').innerHTML = '<span class="success">[Cleared] Log cleared</span>';
+    }
+    
+    // Capture all console messages
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    const logDiv = document.getElementById('log');
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      // Direct DOM update to avoid infinite loop
+      const timestamp = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `\n<span class="success">[${timestamp}] CONSOLE: ${args.join(' ')}</span>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      const timestamp = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `\n<span class="error">[${timestamp}] ERROR: ${args.join(' ')}</span>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      const timestamp = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `\n<span class="warning">[${timestamp}] WARN: ${args.join(' ')}</span>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    };
+    
+    // Check for embed events
+    window.addEventListener('chatbot:embed:loaded', function(event) {
+      log('🎉 EMBED LOADED EVENT!', 'success');
+    });
+    
+    window.addEventListener('chatbot:embed:error', function(event) {
+      log('💥 EMBED ERROR EVENT: ' + event.detail, 'error');
+    });
+    
+    // DOMContentLoaded check
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() {
+        log('📄 DOMContentLoaded fired');
+      });
+    } else {
+      log('📄 DOM already loaded');
+    }
+    
+    log('🚀 Debug page initialized');
+    log('📊 chatbotConfig present: ' + (window.chatbotConfig ? 'YES' : 'NO'));
+    
+    // Auto-test file paths after 1 second
+    setTimeout(testFilePaths, 1000);
+  </script>
+
+  <!-- Try to load the embed script -->
+  <script src="./widget/embed/chatbot-embed.js" async></script>
+</body>
+</html>

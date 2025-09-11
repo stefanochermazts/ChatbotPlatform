@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Final Integration - Conversation Persistence</title>
+  <style>
+    body { 
+      font-family: system-ui, sans-serif; 
+      padding: 20px; 
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      margin: 0;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    .status-bar {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #dc3545;
+    }
+    .status-indicator.loading { background: #ffc107; }
+    .status-indicator.ready { background: #28a745; }
+    .test-section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 15px 0;
+    }
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+      margin: 15px 0;
+    }
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #007bff; color: white; }
+    .btn-primary:hover { background: #0056b3; }
+    .btn-success { background: #28a745; color: white; }
+    .btn-success:hover { background: #1e7e34; }
+    .btn-danger { background: #dc3545; color: white; }
+    .btn-danger:hover { background: #c82333; }
+    .btn-secondary { background: #6c757d; color: white; }
+    .btn-secondary:hover { background: #545b62; }
+    .console {
+      background: #1a1a1a;
+      color: #00ff00;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin: 15px 0;
+    }
+    .info-box {
+      background: #e7f3ff;
+      border: 1px solid #b3d9ff;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 15px 0;
+    }
+    .storage-info {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: monospace;
+    }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+    .warning { color: #ffc107; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Test Final Integration - Conversation Persistence</h1>
+    <p>Test completo della persistenza delle conversazioni con widget reale</p>
+    
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="status-indicator loading" id="widgetStatus"></div>
+        <span id="widgetStatusText">Widget Loading...</span>
+      </div>
+      <div class="status-item">
+        <div class="status-indicator" id="persistenceStatus"></div>
+        <span id="persistenceStatusText">Persistence Unknown</span>
+      </div>
+      <div class="status-item">
+        <span id="messageCount">0 messaggi salvati</span>
+      </div>
+    </div>
+    
+    <!-- Test Instructions -->
+    <div class="info-box">
+      <h3>📋 Test Procedure:</h3>
+      <ol>
+        <li><strong>Verifica caricamento widget</strong> - Deve apparire senza errori 401/500</li>
+        <li><strong>Apri widget</strong> e scrivi alcuni messaggi</li>
+        <li><strong>Chiudi widget</strong> - Verifica badge con numero messaggi</li>
+        <li><strong>Riapri widget</strong> - I messaggi devono essere ripristinati</li>
+        <li><strong>Ricarica pagina</strong> - La conversazione deve persistere</li>
+        <li><strong>Testa "Nuova conversazione"</strong> - Deve pulire tutto</li>
+      </ol>
+    </div>
+    
+    <!-- Controls -->
+    <div class="test-section">
+      <h3>🎛️ Controlli Widget</h3>
+      <div class="test-grid">
+        <button onclick="toggleWidget()" class="btn-primary">🤖 Apri/Chiudi Widget</button>
+        <button onclick="resetWidget()" class="btn-secondary">🔄 Reset Widget</button>
+        <button onclick="simulateReload()" class="btn-secondary">↻ Simula Reload</button>
+        <button onclick="clearStorage()" class="btn-danger">🗑️ Pulisci Storage</button>
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h3>💾 Storage Inspector</h3>
+      <div class="test-grid">
+        <button onclick="inspectStorage()" class="btn-success">🔍 Ispeziona Storage</button>
+        <button onclick="createTestData()" class="btn-secondary">📝 Crea Test Data</button>
+        <button onclick="exportStorage()" class="btn-secondary">📤 Export Storage</button>
+        <button onclick="showWidgetState()" class="btn-secondary">📊 Stato Widget</button>
+      </div>
+      <div class="storage-info" id="storageInfo">
+        Clicca "Ispeziona Storage" per vedere i dati...
+      </div>
+    </div>
+    
+    <!-- Console Output -->
+    <div class="test-section">
+      <h3>🖥️ Console Output</h3>
+      <button onclick="clearConsole()" class="btn-secondary" style="margin-bottom: 10px;">🧹 Clear Console</button>
+      <div class="console" id="console">
+        <div class="success">[Loading] Test inizializzato...</div>
+      </div>
+    </div>
+    
+    <!-- Test Results -->
+    <div class="test-section">
+      <h3>🧪 Test Results</h3>
+      <div id="testResults">
+        <em>Nessun test eseguito ancora...</em>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Status tracking
+    let widgetLoaded = false;
+    let persistenceActive = false;
+    let testResults = [];
+    
+    // Console logging
+    function log(message, type = 'info') {
+      const console = document.getElementById('console');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'success';
+      console.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+      console.scrollTop = console.scrollHeight;
+    }
+    
+    // Status updates
+    function updateWidgetStatus(status, text) {
+      const indicator = document.getElementById('widgetStatus');
+      const statusText = document.getElementById('widgetStatusText');
+      indicator.className = `status-indicator ${status}`;
+      statusText.textContent = text;
+    }
+    
+    function updatePersistenceStatus(status, text) {
+      const indicator = document.getElementById('persistenceStatus');
+      const statusText = document.getElementById('persistenceStatusText');
+      indicator.className = `status-indicator ${status}`;
+      statusText.textContent = text;
+    }
+    
+    function updateMessageCount() {
+      const stored = localStorage.getItem('chatbot_widget_conversation_history');
+      let count = 0;
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          if (Array.isArray(data)) {
+            count = data.length;
+          } else if (data.conversation) {
+            count = data.conversation.length;
+          }
+        } catch (e) {}
+      }
+      document.getElementById('messageCount').textContent = `${count} messaggi salvati`;
+      
+      if (count > 0) {
+        updatePersistenceStatus('ready', 'Persistence Active');
+        persistenceActive = true;
+      } else {
+        updatePersistenceStatus('loading', 'No Data');
+        persistenceActive = false;
+      }
+    }
+    
+    // Widget controls
+    function toggleWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.toggle();
+        log('Widget toggled');
+      } else {
+        log('Widget not loaded yet', 'error');
+      }
+    }
+    
+    function resetWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.reset();
+        log('Widget reset');
+        setTimeout(updateMessageCount, 100);
+      } else {
+        log('Widget not loaded yet', 'error');
+      }
+    }
+    
+    function simulateReload() {
+      log('Simulating page reload...');
+      // Clear current widget state
+      if (window.chatbotWidget) {
+        window.chatbotWidget.close();
+      }
+      // Wait a moment, then check persistence
+      setTimeout(() => {
+        updateMessageCount();
+        log('Reload simulation complete - check if data persisted');
+      }, 500);
+    }
+    
+    function clearStorage() {
+      if (confirm('Cancellare tutti i dati del widget?')) {
+        const keys = Object.keys(localStorage).filter(k => k.includes('chatbot'));
+        keys.forEach(key => localStorage.removeItem(key));
+        log('Storage cleared');
+        updateMessageCount();
+        inspectStorage();
+      }
+    }
+    
+    // Storage functions
+    function inspectStorage() {
+      const keys = Object.keys(localStorage).filter(k => k.includes('chatbot'));
+      let html = '<strong>LocalStorage Keys:</strong><br><br>';
+      
+      if (keys.length === 0) {
+        html += '<em>No chatbot data found</em>';
+      } else {
+        keys.forEach(key => {
+          const value = localStorage.getItem(key);
+          html += `<strong>${key}:</strong><br>`;
+          try {
+            const parsed = JSON.parse(value);
+            if (typeof parsed === 'object') {
+              html += `<pre style="font-size: 11px; margin: 5px 0; max-height: 100px; overflow-y: auto;">${JSON.stringify(parsed, null, 2)}</pre>`;
+            } else {
+              html += `<code>${value}</code>`;
+            }
+          } catch (e) {
+            html += `<code>${value}</code>`;
+          }
+          html += '<br>';
+        });
+      }
+      
+      document.getElementById('storageInfo').innerHTML = html;
+      updateMessageCount();
+      log('Storage inspected');
+    }
+    
+    function createTestData() {
+      const testData = [
+        {
+          id: 'test_1',
+          role: 'user',
+          content: 'Ciao! Questo è un messaggio di test per la persistenza.',
+          timestamp: new Date(Date.now() - 60000).toISOString()
+        },
+        {
+          id: 'test_2',
+          role: 'assistant',
+          content: 'Ciao! Messaggio di risposta test. La persistenza sta funzionando! 🎉',
+          timestamp: new Date(Date.now() - 30000).toISOString()
+        }
+      ];
+      
+      localStorage.setItem('chatbot_widget_conversation_history', JSON.stringify(testData));
+      log('Test data created');
+      inspectStorage();
+    }
+    
+    function exportStorage() {
+      const data = {};
+      Object.keys(localStorage).filter(k => k.includes('chatbot')).forEach(key => {
+        data[key] = localStorage.getItem(key);
+      });
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chatbot-storage-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      log('Storage exported');
+    }
+    
+    function showWidgetState() {
+      if (window.chatbotWidget && window.chatbotWidget.state) {
+        const state = window.chatbotWidget.state;
+        const info = {
+          conversation_length: state.conversation?.length || 0,
+          has_stored: state.hasStoredConversation?.() || false,
+          metadata: state.conversationMetadata || {},
+          is_open: state.isOpen || false
+        };
+        
+        let html = '<strong>Widget State:</strong><br><pre style="font-size: 12px;">';
+        html += JSON.stringify(info, null, 2);
+        html += '</pre>';
+        
+        document.getElementById('storageInfo').innerHTML = html;
+        log('Widget state displayed');
+      } else {
+        log('Widget not accessible', 'error');
+      }
+    }
+    
+    function clearConsole() {
+      document.getElementById('console').innerHTML = '<div class="success">[Cleared] Console cleared</div>';
+    }
+    
+    // Auto-testing
+    function runPersistenceTest() {
+      log('🧪 Running persistence test...');
+      
+      // Test 1: Check localStorage
+      const hasLocalStorage = typeof(Storage) !== "undefined";
+      testResults.push({ test: 'localStorage Support', result: hasLocalStorage });
+      
+      // Test 2: Check widget loading
+      testResults.push({ test: 'Widget Loaded', result: widgetLoaded });
+      
+      // Test 3: Check persistence data
+      testResults.push({ test: 'Persistence Active', result: persistenceActive });
+      
+      // Update results display
+      let html = '<h4>Test Results:</h4>';
+      testResults.forEach(test => {
+        const icon = test.result ? '✅' : '❌';
+        const className = test.result ? 'success' : 'error';
+        html += `<div class="${className}">${icon} ${test.test}: ${test.result ? 'PASS' : 'FAIL'}</div>`;
+      });
+      
+      document.getElementById('testResults').innerHTML = html;
+      log('Test completed');
+    }
+    
+    // Widget configuration with persistence-friendly settings
+    window.chatbotConfig = {
+      apiKey: 'demo_api_key_123',
+      tenantId: 'demo',
+      theme: 'default',
+      position: 'bottom-right',
+      welcomeMessage: 'Ciao! 👋 Test della persistenza delle conversazioni. Scrivi qualcosa!',
+      debug: true,
+      // Disable server features to avoid errors
+      enableQuickActions: false,
+      enableThemeAPI: false,
+      enableAnalytics: true
+    };
+    
+    // Event listeners
+    window.addEventListener('chatbot:embed:loaded', function(event) {
+      widgetLoaded = true;
+      updateWidgetStatus('ready', 'Widget Ready');
+      log('✅ Widget loaded successfully');
+      updateMessageCount();
+      setTimeout(runPersistenceTest, 1000);
+    });
+    
+    window.addEventListener('chatbot:embed:error', function(event) {
+      updateWidgetStatus('error', 'Widget Error');
+      log('❌ Widget load error: ' + event.detail, 'error');
+    });
+    
+    window.addEventListener('chatbot:widget:opened', function() {
+      log('🔓 Widget opened');
+      setTimeout(updateMessageCount, 500);
+    });
+    
+    window.addEventListener('chatbot:widget:closed', function() {
+      log('🔒 Widget closed');
+      setTimeout(updateMessageCount, 100);
+    });
+    
+    window.addEventListener('chatbot:message:sent', function(event) {
+      log('📤 Message sent: ' + event.detail.content.substring(0, 30) + '...');
+      setTimeout(updateMessageCount, 100);
+    });
+    
+    window.addEventListener('chatbot:message:received', function(event) {
+      log('📥 Message received: ' + event.detail.content.substring(0, 30) + '...');
+      setTimeout(updateMessageCount, 100);
+    });
+    
+    // Initialize
+    updateWidgetStatus('loading', 'Loading Widget...');
+    updatePersistenceStatus('loading', 'Checking...');
+    setTimeout(() => {
+      updateMessageCount();
+      inspectStorage();
+    }, 1000);
+    
+    log('🚀 Test page initialized');
+  </script>
+
+  <!-- Load Widget -->
+  <script src="./embed/chatbot-embed.js" async></script>
+</body>
+</html>

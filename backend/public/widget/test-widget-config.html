@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Widget Configuration</title>
+  <style>
+    body { 
+      font-family: system-ui, sans-serif; 
+      padding: 20px; 
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .config-section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 15px 0;
+    }
+    .config-display {
+      background: #1a1a1a;
+      color: #00ff00;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin: 10px 0;
+    }
+    button {
+      padding: 12px 20px;
+      margin: 8px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover { background: #0056b3; }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+    .warning { color: #ffc107; }
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .test-result.pass { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .test-result.fail { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Test Widget Configuration</h1>
+    <p>Verifica che la configurazione del widget venga caricata correttamente dal backend</p>
+    
+    <div class="config-section">
+      <h3>🏗️ Configurazione Test</h3>
+      <p>Configurazione che simula quella del backend (embed_config)</p>
+      <button onclick="showConfiguration()">📋 Mostra Configurazione</button>
+      <button onclick="testConfigValues()">🧪 Test Valori</button>
+      <button onclick="testPersistence()">💾 Test Persistenza</button>
+      <div class="config-display" id="configDisplay">
+        Clicca "Mostra Configurazione" per vedere i valori...
+      </div>
+    </div>
+    
+    <div class="config-section">
+      <h3>🤖 Widget Status</h3>
+      <button onclick="toggleWidget()">🔄 Apri/Chiudi Widget</button>
+      <button onclick="testWelcomeMessage()">💬 Test Welcome Message</button>
+      <button onclick="inspectWidget()">🔍 Ispeziona Widget Instance</button>
+      <div id="testResults">
+        <em>Nessun test eseguito ancora...</em>
+      </div>
+    </div>
+    
+    <div class="config-section">
+      <h3>📝 Console Output</h3>
+      <button onclick="clearConsole()">🧹 Clear Console</button>
+      <div class="config-display" id="console">
+        <div class="success">[Loading] Console inizializzata...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Simulated backend configuration (like embed_config from WidgetConfig model)
+    window.chatbotConfig = {
+      apiKey: 'test_api_key_123',
+      tenantId: 8,  // Your tenant ID from the URL
+      theme: 'corporate',
+      position: 'bottom-right',
+      autoOpen: false,
+      enableConversationContext: true,
+      enableAnalytics: true,
+      model: 'gpt-4o-mini',
+      temperature: 0.7,
+      maxTokens: 1500,
+      // 🔄 CONVERSATION PERSISTENCE: Always enabled for better UX
+      enableConversationPersistence: true,
+      // Server-dependent features
+      enableQuickActions: false,  // Disabled for testing
+      enableThemeAPI: false,      // Disabled for testing
+      // Widget branding from backend
+      welcomeMessage: 'Ciao! Sono l\'assistente virtuale configurato dal backend. Come posso aiutarti?',
+      widgetName: 'Assistente Test',
+      debug: true
+    };
+    
+    // Console capture
+    function log(message, type = 'info') {
+      const console = document.getElementById('console');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'success';
+      console.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+      console.scrollTop = console.scrollHeight;
+    }
+    
+    function showConfiguration() {
+      const display = document.getElementById('configDisplay');
+      let html = '<strong>🔧 Window.chatbotConfig:</strong><br><br>';
+      html += `<pre style="white-space: pre-wrap; font-size: 12px;">${JSON.stringify(window.chatbotConfig, null, 2)}</pre>`;
+      
+      if (window.chatbotWidget && window.chatbotWidget.options) {
+        html += '<br><strong>🤖 Widget.options (dopo inizializzazione):</strong><br><br>';
+        html += `<pre style="white-space: pre-wrap; font-size: 12px;">${JSON.stringify(window.chatbotWidget.options, null, 2)}</pre>`;
+      } else {
+        html += '<br><em>Widget non ancora inizializzato</em>';
+      }
+      
+      display.innerHTML = html;
+      log('Configuration displayed');
+    }
+    
+    function testConfigValues() {
+      let html = '<h4>🧪 Test Results:</h4>';
+      let allPassed = true;
+      
+      // Test 1: Welcome message
+      const hasWelcomeMessage = window.chatbotConfig.welcomeMessage;
+      if (hasWelcomeMessage) {
+        html += '<div class="test-result pass">✅ welcomeMessage: Present</div>';
+      } else {
+        html += '<div class="test-result fail">❌ welcomeMessage: Missing</div>';
+        allPassed = false;
+      }
+      
+      // Test 2: Widget instance
+      if (window.chatbotWidget) {
+        html += '<div class="test-result pass">✅ Widget Instance: Created</div>';
+        
+        // Test 3: Widget options
+        if (window.chatbotWidget.options && window.chatbotWidget.options.welcomeMessage) {
+          html += '<div class="test-result pass">✅ Widget.options.welcomeMessage: ' + window.chatbotWidget.options.welcomeMessage.substring(0, 50) + '...</div>';
+        } else {
+          html += '<div class="test-result fail">❌ Widget.options.welcomeMessage: Missing</div>';
+          allPassed = false;
+        }
+        
+        // Test 4: Tenant ID
+        if (window.chatbotWidget.options.tenantId === 8) {
+          html += '<div class="test-result pass">✅ tenantId: Correct (8)</div>';
+        } else {
+          html += '<div class="test-result fail">❌ tenantId: ' + window.chatbotWidget.options.tenantId + ' (expected 8)</div>';
+          allPassed = false;
+        }
+        
+        // Test 5: Theme
+        if (window.chatbotWidget.options.theme === 'corporate') {
+          html += '<div class="test-result pass">✅ theme: Correct (corporate)</div>';
+        } else {
+          html += '<div class="test-result fail">❌ theme: ' + window.chatbotWidget.options.theme + ' (expected corporate)</div>';
+          allPassed = false;
+        }
+        
+      } else {
+        html += '<div class="test-result fail">❌ Widget Instance: Not created</div>';
+        allPassed = false;
+      }
+      
+      // Test 6: Persistence enabled
+      if (window.chatbotConfig.enableConversationPersistence) {
+        html += '<div class="test-result pass">✅ Conversation Persistence: Enabled</div>';
+      } else {
+        html += '<div class="test-result fail">❌ Conversation Persistence: Disabled</div>';
+        allPassed = false;
+      }
+      
+      html += '<br><strong>Overall Result: ' + (allPassed ? '✅ ALL TESTS PASSED' : '❌ SOME TESTS FAILED') + '</strong>';
+      
+      document.getElementById('testResults').innerHTML = html;
+      log('Configuration tests completed: ' + (allPassed ? 'PASSED' : 'FAILED'));
+    }
+    
+    function testPersistence() {
+      // Create test conversation data
+      const testData = [
+        {
+          id: 'test_1',
+          role: 'user',
+          content: 'Test persistenza configurazione',
+          timestamp: new Date().toISOString()
+        }
+      ];
+      
+      localStorage.setItem('chatbot_widget_conversation_history', JSON.stringify(testData));
+      log('Test persistence data created');
+      
+      if (window.chatbotWidget && window.chatbotWidget.state) {
+        // Force reload conversation
+        window.chatbotWidget.state.loadFromStorage();
+        const hasConversation = window.chatbotWidget.state.hasStoredConversation();
+        log('Persistence test: ' + (hasConversation ? 'WORKING' : 'FAILED'));
+      }
+    }
+    
+    function toggleWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.toggle();
+        log('Widget toggled');
+      } else {
+        log('Widget not available', 'error');
+      }
+    }
+    
+    function testWelcomeMessage() {
+      if (window.chatbotWidget) {
+        // Clear storage first
+        localStorage.removeItem('chatbot_widget_conversation_history');
+        
+        // Close and reopen widget to trigger welcome message
+        window.chatbotWidget.close();
+        setTimeout(() => {
+          window.chatbotWidget.open();
+          log('Widget reopened - welcome message should appear');
+        }, 500);
+      } else {
+        log('Widget not available', 'error');
+      }
+    }
+    
+    function inspectWidget() {
+      if (window.chatbotWidget) {
+        const inspection = {
+          options: Object.keys(window.chatbotWidget.options || {}),
+          state: window.chatbotWidget.state ? {
+            conversation_length: window.chatbotWidget.state.conversation?.length || 0,
+            has_stored: window.chatbotWidget.state.hasStoredConversation?.() || false
+          } : 'Not available',
+          container: !!window.chatbotWidget.container,
+          sessionId: window.chatbotWidget.sessionId || 'Not set'
+        };
+        
+        const display = document.getElementById('configDisplay');
+        display.innerHTML = '<strong>🔍 Widget Inspection:</strong><br><br><pre style="font-size: 12px;">' + 
+          JSON.stringify(inspection, null, 2) + '</pre>';
+        
+        log('Widget inspected');
+      } else {
+        log('Widget not available for inspection', 'error');
+      }
+    }
+    
+    function clearConsole() {
+      document.getElementById('console').innerHTML = '<div class="success">[Cleared] Console cleared</div>';
+    }
+    
+    // Event listeners
+    window.addEventListener('chatbot:embed:loaded', function(event) {
+      log('✅ Widget embed loaded successfully');
+      setTimeout(testConfigValues, 1000);
+    });
+    
+    window.addEventListener('chatbot:embed:error', function(event) {
+      log('❌ Widget embed error: ' + event.detail, 'error');
+    });
+    
+    window.addEventListener('chatbot:widget:opened', function() {
+      log('🔓 Widget opened');
+    });
+    
+    window.addEventListener('chatbot:widget:closed', function() {
+      log('🔒 Widget closed');
+    });
+    
+    log('🚀 Test page initialized');
+    log('📋 Backend config loaded: tenantId=' + window.chatbotConfig.tenantId + ', theme=' + window.chatbotConfig.theme);
+  </script>
+
+  <!-- Load Widget -->
+  <script src="./embed/chatbot-embed.js" async></script>
+</body>
+</html>

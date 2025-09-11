@@ -55,6 +55,11 @@ class ScraperAdminController extends Controller
             'interval_minutes' => ['nullable', 'integer', 'min:5', 'max:10080'],
             'skip_known_urls' => ['nullable', 'boolean'],
             'recrawl_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            'download_linked_documents' => ['nullable', 'boolean'],
+            'linked_extensions' => ['nullable', 'string'],
+            'linked_max_size_mb' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'linked_same_domain_only' => ['nullable', 'boolean'],
+            'linked_target_kb_id' => ['nullable', 'integer', 'exists:knowledge_bases,id'],
         ]);
 
         $payload = [
@@ -77,6 +82,13 @@ class ScraperAdminController extends Controller
             'interval_minutes' => isset($data['interval_minutes']) && $data['interval_minutes'] !== '' ? (int) $data['interval_minutes'] : null,
             'skip_known_urls' => $request->boolean('skip_known_urls'),  // ✅ Fix checkbox
             'recrawl_days' => isset($data['recrawl_days']) && $data['recrawl_days'] !== '' ? (int) $data['recrawl_days'] : null,
+            'download_linked_documents' => $request->boolean('download_linked_documents'),
+            'linked_extensions' => array_values(array_filter(array_map('trim', explode(',', $data['linked_extensions'] ?? '')))),
+            'linked_max_size_mb' => (int) ($data['linked_max_size_mb'] ?? 10),
+            'linked_same_domain_only' => $request->boolean('linked_same_domain_only'),
+            'linked_target_kb_id' => isset($data['linked_target_kb_id']) && $data['linked_target_kb_id'] !== ''
+                ? (int) $data['linked_target_kb_id']
+                : null,
         ];
 
         if (!empty($data['id'])) {
@@ -223,6 +235,52 @@ class ScraperAdminController extends Controller
                 'message' => 'Errore durante lo scraping: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function downloadLinked(Tenant $tenant, WebScraperService $scraper)
+    {
+        $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
+        if (!$config) {
+            return back()->with('error', 'Configurazione scraper non trovata');
+        }
+        if (!$config->download_linked_documents) {
+            return back()->with('error', 'Scaricamento documenti collegati disabilitato nella configurazione');
+        }
+
+        $docs = \App\Models\Document::where('tenant_id', $tenant->id)
+            ->where('source', 'web_scraper')
+            ->whereNotNull('path')
+            ->get();
+
+        $linksCount = 0; $processedDocs = 0;
+        foreach ($docs as $d) {
+            try {
+                $text = \Storage::disk('public')->exists($d->path)
+                    ? \Storage::disk('public')->get($d->path)
+                    : '';
+                if ($text === '') { continue; }
+
+                preg_match_all('/\[[^\]]+\]\(([^\)]+)\)/', $text, $m);
+                $links = array_map('trim', $m[1] ?? []);
+                if ($links !== []) {
+                    $this->invokeDownloadLinked($scraper, $links, $tenant, $config, $d->source_url ?? '');
+                    $linksCount += count($links);
+                    $processedDocs++;
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('linked_docs.retro_download_error', ['doc_id' => $d->id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        return back()->with('ok', "Analizzati {$processedDocs} documenti; link processati: {$linksCount}");
+    }
+
+    private function invokeDownloadLinked(WebScraperService $scraper, array $links, Tenant $tenant, ScraperConfig $config, string $pageUrl): void
+    {
+        $ref = new \ReflectionClass($scraper);
+        $method = $ref->getMethod('downloadLinkedDocuments');
+        $method->setAccessible(true);
+        $method->invoke($scraper, $links, $tenant, $config, $pageUrl);
     }
 }
 

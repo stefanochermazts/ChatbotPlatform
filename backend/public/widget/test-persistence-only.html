@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Persistence Only - No Server Calls</title>
+  <style>
+    body { 
+      font-family: system-ui, sans-serif; 
+      padding: 20px; 
+      background: #f5f5f5;
+      line-height: 1.6;
+    }
+    .test-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .console-output {
+      background: #1a1a1a;
+      color: #00ff00;
+      padding: 20px;
+      border-radius: 8px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      margin: 20px 0;
+    }
+    .storage-display {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 15px 0;
+      border: 1px solid #e9ecef;
+      font-size: 14px;
+    }
+    button {
+      padding: 12px 24px;
+      margin: 8px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover { background: #0056b3; }
+    button.secondary { background: #6c757d; }
+    button.danger { background: #dc3545; }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+    .warning { color: #ffc107; }
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .test-result.pass { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .test-result.fail { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>🧪 Test Conversation Persistence - Isolato</h1>
+    <p>Test della persistenza delle conversazioni senza chiamate al server</p>
+    
+    <div class="storage-display" id="storageDisplay">
+      <strong>💾 LocalStorage Status:</strong> Loading...
+    </div>
+    
+    <div>
+      <h3>🔧 Controlli Storage</h3>
+      <button onclick="showStorage()">📦 Mostra Storage</button>
+      <button onclick="createTestData()">📝 Crea Dati Test</button>
+      <button onclick="testLoadFromStorage()">🔄 Test Caricamento</button>
+      <button onclick="clearStorage()" class="danger">🗑️ Pulisci Storage</button>
+    </div>
+    
+    <div>
+      <h3>🧪 Test Logica</h3>
+      <button onclick="testLegacyFormat()">📜 Test Formato Legacy</button>
+      <button onclick="testNewFormat()">🆕 Test Formato Nuovo</button>
+      <button onclick="testCleanupLogic()">🧹 Test Pulizia Automatica</button>
+      <button onclick="runAllTests()">🚀 Esegui Tutti i Test</button>
+    </div>
+    
+    <div class="console-output" id="console">
+      <div class="success">🚀 Test console inizializzata...</div>
+    </div>
+    
+    <div id="testResults"></div>
+  </div>
+
+  <script>
+    // Simplified CONFIG for testing
+    const CONFIG = {
+      storagePrefix: 'chatbot_widget_',
+      conversationKey: 'conversation_history'
+    };
+    
+    // Test console
+    function log(message, type = 'info') {
+      const console = document.getElementById('console');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'success';
+      console.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+      console.scrollTop = console.scrollHeight;
+    }
+    
+    // Mock ChatbotState class to test persistence logic
+    class ChatbotState {
+      constructor() {
+        this.conversation = [];
+        this.conversationMetadata = {
+          createdAt: null,
+          lastMessageAt: null,
+          messageCount: 0,
+          version: '1.1.0'
+        };
+        this.loadFromStorage();
+      }
+      
+      loadFromStorage() {
+        try {
+          const stored = localStorage.getItem(CONFIG.storagePrefix + CONFIG.conversationKey);
+          log('🔍 Checking localStorage for key: ' + CONFIG.storagePrefix + CONFIG.conversationKey);
+          log('🔍 Raw stored data: ' + (stored ? stored.substring(0, 100) + '...' : 'null'));
+          
+          if (stored) {
+            const data = JSON.parse(stored);
+            log('🔍 Parsed data type: ' + (Array.isArray(data) ? 'array' : typeof data));
+            
+            if (Array.isArray(data)) {
+              log('📦 Loading legacy format with ' + data.length + ' messages');
+              this.conversation = data;
+              this.conversationMetadata = {
+                createdAt: data.length > 0 ? (data[0].timestamp || new Date().toISOString()) : null,
+                lastMessageAt: data.length > 0 ? (data[data.length - 1].timestamp || new Date().toISOString()) : null,
+                messageCount: data.length,
+                version: '1.0.0'
+              };
+            } else if (data && data.conversation && data.metadata) {
+              log('📦 Loading new format with ' + data.conversation.length + ' messages');
+              this.conversation = data.conversation;
+              this.conversationMetadata = { ...this.conversationMetadata, ...data.metadata };
+            } else {
+              log('🚨 Unknown data format', 'warn');
+            }
+          }
+          
+          log('💾 Final loaded state: ' + this.conversation.length + ' messages, hasConversation: ' + this.hasStoredConversation());
+          
+        } catch (error) {
+          log('❌ Could not load conversation from storage: ' + error.message, 'error');
+          this.conversation = [];
+          this.conversationMetadata = {
+            createdAt: null,
+            lastMessageAt: null,
+            messageCount: 0,
+            version: '1.1.0'
+          };
+        }
+      }
+      
+      hasStoredConversation() {
+        return this.conversation.length > 0;
+      }
+      
+      saveToStorage() {
+        try {
+          this.conversationMetadata.messageCount = this.conversation.length;
+          if (this.conversation.length > 0) {
+            if (!this.conversationMetadata.createdAt) {
+              this.conversationMetadata.createdAt = this.conversation[0].timestamp;
+            }
+            this.conversationMetadata.lastMessageAt = this.conversation[this.conversation.length - 1].timestamp;
+          }
+          
+          const dataToSave = {
+            conversation: this.conversation.slice(-50),
+            metadata: this.conversationMetadata,
+            savedAt: new Date().toISOString()
+          };
+          
+          localStorage.setItem(
+            CONFIG.storagePrefix + CONFIG.conversationKey,
+            JSON.stringify(dataToSave)
+          );
+          
+          log('💾 Conversation saved: ' + this.conversationMetadata.messageCount + ' messages');
+          return true;
+        } catch (error) {
+          log('❌ Could not save conversation: ' + error.message, 'error');
+          return false;
+        }
+      }
+    }
+    
+    // Test functions
+    function showStorage() {
+      const keys = Object.keys(localStorage).filter(k => k.includes('chatbot'));
+      let html = '<strong>💾 LocalStorage Keys:</strong><br><br>';
+      
+      if (keys.length === 0) {
+        html += '<em>No chatbot-related keys found</em>';
+      } else {
+        keys.forEach(key => {
+          const value = localStorage.getItem(key);
+          html += `<strong>${key}:</strong><br>`;
+          try {
+            const parsed = JSON.parse(value);
+            html += `<pre style="font-size: 12px; background: #f8f9fa; padding: 8px; border-radius: 4px; margin: 5px 0;">${JSON.stringify(parsed, null, 2)}</pre>`;
+          } catch (e) {
+            html += `<code>${value}</code>`;
+          }
+          html += '<br>';
+        });
+      }
+      
+      document.getElementById('storageDisplay').innerHTML = html;
+      log('📦 Storage displayed');
+    }
+    
+    function createTestData() {
+      const testConversation = [
+        {
+          id: 'test_1',
+          role: 'user',
+          content: 'Ciao! Questo è un messaggio di test.',
+          timestamp: new Date(Date.now() - 120000).toISOString()
+        },
+        {
+          id: 'test_2',
+          role: 'assistant',
+          content: 'Ciao! Questo è un messaggio di risposta di test.',
+          timestamp: new Date(Date.now() - 60000).toISOString()
+        }
+      ];
+      
+      localStorage.setItem(CONFIG.storagePrefix + CONFIG.conversationKey, JSON.stringify(testConversation));
+      log('📝 Test data created (legacy format)');
+      showStorage();
+    }
+    
+    function testLoadFromStorage() {
+      log('🔄 Testing loadFromStorage()...');
+      const state = new ChatbotState();
+      
+      const results = document.getElementById('testResults');
+      let html = '<h3>🧪 Test Results:</h3>';
+      
+      // Test 1: Has conversation
+      if (state.hasStoredConversation()) {
+        html += '<div class="test-result pass">✅ hasStoredConversation() = true</div>';
+      } else {
+        html += '<div class="test-result fail">❌ hasStoredConversation() = false</div>';
+      }
+      
+      // Test 2: Conversation length
+      if (state.conversation.length > 0) {
+        html += `<div class="test-result pass">✅ Loaded ${state.conversation.length} messages</div>`;
+      } else {
+        html += '<div class="test-result fail">❌ No messages loaded</div>';
+      }
+      
+      // Test 3: Metadata
+      if (state.conversationMetadata.messageCount > 0) {
+        html += `<div class="test-result pass">✅ Metadata count: ${state.conversationMetadata.messageCount}</div>`;
+      } else {
+        html += '<div class="test-result fail">❌ Metadata count is 0</div>';
+      }
+      
+      results.innerHTML = html;
+      log('✅ Load test completed');
+    }
+    
+    function testLegacyFormat() {
+      log('📜 Testing legacy format...');
+      const legacyData = [
+        { id: '1', role: 'user', content: 'Test 1', timestamp: new Date().toISOString() },
+        { id: '2', role: 'assistant', content: 'Response 1', timestamp: new Date().toISOString() }
+      ];
+      
+      localStorage.setItem(CONFIG.storagePrefix + CONFIG.conversationKey, JSON.stringify(legacyData));
+      testLoadFromStorage();
+    }
+    
+    function testNewFormat() {
+      log('🆕 Testing new format...');
+      const newData = {
+        conversation: [
+          { id: '1', role: 'user', content: 'New Test 1', timestamp: new Date().toISOString() },
+          { id: '2', role: 'assistant', content: 'New Response 1', timestamp: new Date().toISOString() }
+        ],
+        metadata: {
+          createdAt: new Date().toISOString(),
+          lastMessageAt: new Date().toISOString(),
+          messageCount: 2,
+          version: '1.1.0'
+        },
+        savedAt: new Date().toISOString()
+      };
+      
+      localStorage.setItem(CONFIG.storagePrefix + CONFIG.conversationKey, JSON.stringify(newData));
+      testLoadFromStorage();
+    }
+    
+    function testCleanupLogic() {
+      log('🧹 Testing cleanup logic...');
+      // Test with old data (8 days ago)
+      const oldData = {
+        conversation: [
+          { id: '1', role: 'user', content: 'Old message', timestamp: new Date(Date.now() - 8*24*60*60*1000).toISOString() }
+        ],
+        metadata: {
+          lastMessageAt: new Date(Date.now() - 8*24*60*60*1000).toISOString(),
+          messageCount: 1,
+          version: '1.1.0'
+        }
+      };
+      
+      localStorage.setItem(CONFIG.storagePrefix + CONFIG.conversationKey, JSON.stringify(oldData));
+      const state = new ChatbotState();
+      
+      if (state.conversation.length === 0) {
+        log('✅ Old conversation cleaned up successfully');
+      } else {
+        log('❌ Old conversation not cleaned up', 'error');
+      }
+    }
+    
+    function runAllTests() {
+      log('🚀 Running all tests...');
+      
+      // Test 1: Legacy format
+      testLegacyFormat();
+      setTimeout(() => {
+        // Test 2: New format
+        testNewFormat();
+        setTimeout(() => {
+          // Test 3: Cleanup
+          testCleanupLogic();
+          log('🏁 All tests completed');
+        }, 500);
+      }, 500);
+    }
+    
+    function clearStorage() {
+      const keys = Object.keys(localStorage).filter(k => k.includes('chatbot'));
+      keys.forEach(key => localStorage.removeItem(key));
+      log('🗑️ Storage cleared');
+      showStorage();
+      document.getElementById('testResults').innerHTML = '';
+    }
+    
+    // Initialize
+    showStorage();
+    log('🚀 Test page initialized');
+  </script>
+</body>
+</html>

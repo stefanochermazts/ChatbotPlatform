@@ -12,17 +12,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('tenants', function (Blueprint $table) {
-            $table->json('whatsapp_config')->nullable()->after('widget_config');
+            if (!Schema::hasColumn('tenants', 'whatsapp_config')) {
+                $table->json('whatsapp_config')->nullable()->after('widget_config');
+            }
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('tenants', function (Blueprint $table) {
-            $table->dropColumn('whatsapp_config');
+            if (Schema::hasColumn('tenants', 'whatsapp_config')) {
+                $table->dropColumn('whatsapp_config');
+            }
         });
     }
-};
+    };

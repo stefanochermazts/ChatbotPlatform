@@ -15,14 +15,6 @@
       </select>
     </label>
     <label class="block">
-      <span class="text-sm">Top K (chunks)</span>
-      <input type="number" name="top_k" min="1" max="50" value="{{ old('top_k', 20) }}" class="w-full border rounded px-3 py-2" />
-    </label>
-    <label class="block">
-      <span class="text-sm">MMR λ (0-1)</span>
-      <input type="number" name="mmr_lambda" step="0.05" min="0" max="1" value="{{ old('mmr_lambda', 0.3) }}" class="w-full border rounded px-3 py-2" />
-    </label>
-    <label class="block">
       <span class="text-sm">Max output tokens</span>
       <input type="number" name="max_output_tokens" min="32" max="8192" value="{{ old('max_output_tokens', config('openai.max_output_tokens', 700)) }}" class="w-full border rounded px-3 py-2" />
     </label>
@@ -78,6 +70,35 @@
 
 @if(isset($result))
   <div class="mt-6 grid gap-4">
+    @if(!empty($result['trace']))
+    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-xs">
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 font-semibold">LLM DEBUG</span>
+        <div>Modello: <span class="font-mono">{{ config('openai.chat_model') }}</span></div>
+        @if(!empty($result['trace']['rag_config']))
+          <div class="ml-4">Reranker: <span class="font-mono">{{ $result['trace']['rag_config']['reranker_driver'] ?? 'n/a' }}</span></div>
+        @endif
+      </div>
+      @if(!empty($result['trace']['llm_messages']))
+      <div class="mt-2">
+        <div class="font-medium mb-1">Payload Chat (messages):</div>
+        <pre class="bg-white border rounded p-2 max-h-48 overflow-auto">{{ json_encode($result['trace']['llm_messages'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+      </div>
+      @endif
+      @if(!empty($result['answer']))
+      <div class="mt-2">
+        <div class="font-medium mb-1">Answer preview:</div>
+        <pre class="bg-white border rounded p-2 max-h-40 overflow-auto">{{ $result['answer'] }}</pre>
+      </div>
+      @endif
+      @if(!empty($result['trace']['llm_raw_response']))
+      <div class="mt-2">
+        <div class="font-medium mb-1">Raw response (debug):</div>
+        <pre class="bg-white border rounded p-2 max-h-64 overflow-auto">{{ json_encode($result['trace']['llm_raw_response'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+      </div>
+      @endif
+    </div>
+    @endif
     <div class="bg-white border rounded p-4">
       <h2 class="font-semibold mb-2">Citazioni & Snippet</h2>
       @if(isset($result['trace']['selected_kb']['kb_name']))

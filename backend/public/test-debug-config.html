@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Config - Real Backend Data</title>
+  <style>
+    body { 
+      font-family: system-ui, sans-serif; 
+      padding: 20px; 
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .config-display {
+      background: #1a1a1a;
+      color: #00ff00;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin: 10px 0;
+      white-space: pre-wrap;
+    }
+    button {
+      padding: 12px 20px;
+      margin: 8px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover { background: #0056b3; }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+    .warning { color: #ffc107; }
+    .test-section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 15px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Debug Real Backend Config - Tenant 8</h1>
+    <p>Test con la configurazione esatta del backend (Blade @json simulation)</p>
+    
+    <div class="test-section">
+      <h3>📋 Backend Configuration (Simulated)</h3>
+      <p>Questa è la configurazione che dovrebbe venire da <code>@json($config->embed_config)</code></p>
+      <button onclick="showBackendConfig()">📊 Show Backend Config</button>
+      <button onclick="testWidgetInit()">🚀 Test Widget Init</button>
+      <div class="config-display" id="backendConfig">
+        Click "Show Backend Config" to see the data...
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h3>🤖 Widget Instance Debug</h3>
+      <button onclick="inspectWidget()">🔍 Inspect Widget</button>
+      <button onclick="testWelcomeMessage()">💬 Test Welcome Message</button>
+      <button onclick="toggleWidget()">🔄 Toggle Widget</button>
+      <div class="config-display" id="widgetDebug">
+        Widget not initialized yet...
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h3>📝 Real-time Logs</h3>
+      <button onclick="clearLogs()">🧹 Clear Logs</button>
+      <div class="config-display" id="logs">
+        <span class="success">[Init] Debug page loaded...</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // COMPLETE configuration from backend with layout and behavior
+    window.chatbotConfig = {
+      "apiKey": "sk-EQUQIVcOi5FXdLkOnKMDyEP2CRZxDuRtx55x7xqMMqmbi2Qm",
+      "tenantId": 8,
+      "theme": "default",
+      "position": "bottom-right",
+      "autoOpen": false,
+      "layout": {
+        "widget": {
+          "width": "640px",
+          "height": "640px",
+          "borderRadius": "2rem"
+        },
+        "button": {
+          "size": "60px"
+        }
+      },
+      "behavior": {
+        "showHeader": true,
+        "showAvatar": true,
+        "showCloseButton": true,
+        "enableAnimations": true,
+        "enableDarkMode": true
+      },
+      "branding": {
+        "logoUrl": null,
+        "faviconUrl": null,
+        "fontFamily": "'Inter', sans-serif",
+        "customColors": {
+          "primary": {
+            "500": "#3b82f6",
+            "600": "#2563eb",
+            "700": "#1d4ed8",
+            "50": "#eff6ff"
+          }
+        }
+      },
+      "enableConversationContext": true,
+      "enableAnalytics": true,
+      "model": "gpt-4o-mini",
+      "temperature": "0.30",
+      "maxTokens": 1000,
+      "enableConversationPersistence": true,
+      "enableQuickActions": true,
+      "enableThemeAPI": true,
+      "welcomeMessage": "Ciao! Sono l'assistente virtuale di SOW Banca Ifis. Come posso aiutarti oggi?",
+      "widgetName": "Assistente SOW Banca Ifis",
+      "allowedDomains": [],
+      "gdprCompliant": true,
+      "customCSS": null,
+      "debug": true
+    };
+    
+    function log(message, type = 'info') {
+      const logsDiv = document.getElementById('logs');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'success';
+      logsDiv.innerHTML += `\n<span class="${className}">[${timestamp}] ${message}</span>`;
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+    
+    function showBackendConfig() {
+      const display = document.getElementById('backendConfig');
+      display.textContent = JSON.stringify(window.chatbotConfig, null, 2);
+      log('Backend config displayed');
+    }
+    
+    function testWidgetInit() {
+      log('Testing widget initialization...');
+      
+      // Test 1: Check if config is loaded
+      if (window.chatbotConfig) {
+        log('✅ window.chatbotConfig is present');
+        log(`✅ welcomeMessage: "${window.chatbotConfig.welcomeMessage}"`);
+        log(`✅ widgetName: "${window.chatbotConfig.widgetName}"`);
+        log(`✅ theme: "${window.chatbotConfig.theme}"`);
+      } else {
+        log('❌ window.chatbotConfig is missing', 'error');
+      }
+      
+      // Test 2: Check widget instance
+      if (window.chatbotWidget) {
+        log('✅ ChatbotWidget instance exists');
+        if (window.chatbotWidget.options) {
+          log(`✅ Widget options loaded with ${Object.keys(window.chatbotWidget.options).length} properties`);
+          if (window.chatbotWidget.options.welcomeMessage) {
+            log(`✅ Widget.options.welcomeMessage: "${window.chatbotWidget.options.welcomeMessage}"`);
+          } else {
+            log('❌ Widget.options.welcomeMessage is missing', 'error');
+          }
+        } else {
+          log('❌ Widget.options is missing', 'error');
+        }
+      } else {
+        log('❌ ChatbotWidget instance not found', 'error');
+      }
+    }
+    
+    function inspectWidget() {
+      if (window.chatbotWidget) {
+        const inspection = {
+          hasOptions: !!window.chatbotWidget.options,
+          optionsKeys: window.chatbotWidget.options ? Object.keys(window.chatbotWidget.options) : [],
+          welcomeMessage: window.chatbotWidget.options?.welcomeMessage || 'NOT SET',
+          widgetName: window.chatbotWidget.options?.widgetName || 'NOT SET',
+          theme: window.chatbotWidget.options?.theme || 'NOT SET',
+          hasState: !!window.chatbotWidget.state,
+          isInitialized: window.chatbotWidget.isInitialized || false,
+          sessionId: window.chatbotWidget.sessionId || 'NOT SET'
+        };
+        
+        document.getElementById('widgetDebug').textContent = JSON.stringify(inspection, null, 2);
+        log('Widget inspected');
+      } else {
+        document.getElementById('widgetDebug').textContent = 'Widget instance not found';
+        log('Widget not available for inspection', 'error');
+      }
+    }
+    
+    function testWelcomeMessage() {
+      if (window.chatbotWidget) {
+        // Clear localStorage to force welcome message
+        localStorage.removeItem('chatbot_widget_conversation_history');
+        log('Cleared localStorage');
+        
+        // Force state reload
+        if (window.chatbotWidget.state) {
+          window.chatbotWidget.state.loadFromStorage();
+          log('State reloaded');
+        }
+        
+        // Close and reopen widget
+        window.chatbotWidget.close();
+        setTimeout(() => {
+          window.chatbotWidget.open();
+          log('Widget reopened - should show welcome message');
+        }, 500);
+      } else {
+        log('Widget not available', 'error');
+      }
+    }
+    
+    function toggleWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.toggle();
+        log('Widget toggled');
+      } else {
+        log('Widget not available', 'error');
+      }
+    }
+    
+    function clearLogs() {
+      document.getElementById('logs').innerHTML = '<span class="success">[Cleared] Logs cleared</span>';
+    }
+    
+    // Event listeners
+    window.addEventListener('chatbot:embed:loaded', function(event) {
+      log('✅ EMBED LOADED EVENT');
+      setTimeout(testWidgetInit, 1000);
+    });
+    
+    window.addEventListener('chatbot:embed:error', function(event) {
+      log('❌ EMBED ERROR: ' + event.detail, 'error');
+    });
+    
+    window.addEventListener('chatbot:widget:opened', function() {
+      log('🔓 Widget opened');
+    });
+    
+    window.addEventListener('chatbot:widget:closed', function() {
+      log('🔒 Widget closed');
+    });
+    
+    window.addEventListener('chatbot:message:sent', function(event) {
+      log('📤 Message sent: ' + event.detail.content.substring(0, 30) + '...');
+    });
+    
+    window.addEventListener('chatbot:message:received', function(event) {
+      log('📥 Message received: ' + event.detail.content.substring(0, 30) + '...');
+    });
+    
+    // Initialize
+    log('🚀 Page initialized');
+    log('📊 Config loaded: ' + (window.chatbotConfig ? 'YES' : 'NO'));
+    log('💬 welcomeMessage: ' + (window.chatbotConfig?.welcomeMessage ? 'YES' : 'NO'));
+    
+    setTimeout(showBackendConfig, 1000);
+  </script>
+
+  <!-- Load Widget -->
+  <script src="widget/embed/chatbot-embed.js" async></script>
+</body>
+</html>

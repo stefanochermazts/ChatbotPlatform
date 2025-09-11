@@ -86,6 +86,12 @@
       this.config = {};
       this.retryCount = 0;
       this.lastError = null;
+      this.conversationMetadata = {
+        createdAt: null,
+        lastMessageAt: null,
+        messageCount: 0,
+        version: '1.1.0'
+      };
       
       // Load persisted state
       this.loadFromStorage();
@@ -93,22 +99,70 @@
 
     loadFromStorage() {
       try {
+        // Load conversation
         const stored = localStorage.getItem(CONFIG.storagePrefix + CONFIG.conversationKey);
+        
         if (stored) {
-          this.conversation = JSON.parse(stored);
+          const data = JSON.parse(stored);
+          
+          // Support legacy format (array) and new format (object)
+          if (Array.isArray(data)) {
+            this.conversation = data;
+            this.conversationMetadata = {
+              createdAt: data.length > 0 ? (data[0].timestamp || new Date().toISOString()) : null,
+              lastMessageAt: data.length > 0 ? (data[data.length - 1].timestamp || new Date().toISOString()) : null,
+              messageCount: data.length,
+              version: '1.0.0' // Legacy
+            };
+          } else if (data && data.conversation && data.metadata) {
+            this.conversation = data.conversation;
+            this.conversationMetadata = { ...this.conversationMetadata, ...data.metadata };
+          }
         }
+        
+        // Clean old conversations (older than 7 days)
+        this.cleanOldConversations();
+        
+        if (this.conversation.length > 0) {
+          console.log('💾 Loaded conversation from storage:', this.conversation.length, 'messages');
+        }
+        
       } catch (error) {
         console.warn('Could not load conversation from storage:', error);
         this.conversation = [];
+        this.conversationMetadata = {
+          createdAt: null,
+          lastMessageAt: null,
+          messageCount: 0,
+          version: '1.1.0'
+        };
       }
     }
 
     saveToStorage() {
       try {
+        // Update metadata
+        this.conversationMetadata.messageCount = this.conversation.length;
+        if (this.conversation.length > 0) {
+          if (!this.conversationMetadata.createdAt) {
+            this.conversationMetadata.createdAt = this.conversation[0].timestamp;
+          }
+          this.conversationMetadata.lastMessageAt = this.conversation[this.conversation.length - 1].timestamp;
+        }
+        
+        // Save in new format with metadata
+        const dataToSave = {
+          conversation: this.conversation.slice(-50), // Keep last 50 messages (increased limit)
+          metadata: this.conversationMetadata,
+          savedAt: new Date().toISOString()
+        };
+        
         localStorage.setItem(
           CONFIG.storagePrefix + CONFIG.conversationKey,
-          JSON.stringify(this.conversation.slice(-20)) // Keep last 20 messages
+          JSON.stringify(dataToSave)
         );
+        
+        console.log('💾 Conversation saved to storage:', this.conversationMetadata.messageCount, 'messages');
       } catch (error) {
         console.warn('Could not save conversation to storage:', error);
       }
@@ -133,7 +187,49 @@
       this.isTyping = false;
       this.retryCount = 0;
       this.lastError = null;
+      this.conversationMetadata = {
+        createdAt: null,
+        lastMessageAt: null,
+        messageCount: 0,
+        version: '1.1.0'
+      };
       this.saveToStorage();
+    }
+
+    cleanOldConversations() {
+      if (!this.conversationMetadata.lastMessageAt) return;
+      
+      const lastMessage = new Date(this.conversationMetadata.lastMessageAt);
+      const now = new Date();
+      const daysDiff = (now - lastMessage) / (1000 * 60 * 60 * 24);
+      
+      // Auto-clear conversations older than 7 days
+      if (daysDiff > 7) {
+        console.log('🧹 Clearing old conversation (', Math.round(daysDiff), 'days old)');
+        this.reset();
+      }
+    }
+
+    hasStoredConversation() {
+      return this.conversation.length > 0;
+    }
+
+    getConversationAge() {
+      if (!this.conversationMetadata.lastMessageAt) return null;
+      
+      const lastMessage = new Date(this.conversationMetadata.lastMessageAt);
+      const now = new Date();
+      const diffMs = now - lastMessage;
+      
+      // Return human-readable age
+      const minutes = Math.floor(diffMs / (1000 * 60));
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+      
+      if (days > 0) return `${days} giorno${days > 1 ? 'i' : ''} fa`;
+      if (hours > 0) return `${hours} ora${hours > 1 ? 'e' : ''} fa`;
+      if (minutes > 0) return `${minutes} minuto${minutes > 1 ? 'i' : ''} fa`;
+      return 'Ora';
     }
   }
 
@@ -434,14 +530,15 @@
   // =================================================================
 
   class ChatbotUI {
-    constructor(state, eventEmitter) {
+    constructor(state, eventEmitter, options = {}) {
       this.state = state;
       this.events = eventEmitter;
+      this.options = options;
       this.elements = {};
       this.templates = {};
       this.isInitialized = false;
       
-      this.init();
+      // Don't init in constructor - wait for DOM elements to be ready
     }
 
     init() {
@@ -450,10 +547,16 @@
       this.setupEventListeners();
       this.setupAccessibility();
       this.markAsLoaded();
+      
+      // Update toggle button with conversation indicator
+      this.updateToggleButton();
+      
       this.isInitialized = true;
     }
 
     cacheElements() {
+      console.log('[ChatbotUI] Caching elements...');
+      
       this.elements = {
         widget: document.getElementById('chatbot-widget'),
         toggleBtn: document.getElementById('chatbot-toggle-btn'),
@@ -466,6 +569,15 @@
         charCount: document.getElementById('chatbot-char-count'),
         status: document.getElementById('chatbot-status')
       };
+      
+      // Debug log for missing elements
+      Object.keys(this.elements).forEach(key => {
+        if (!this.elements[key]) {
+          console.warn(`[ChatbotUI] Element not found: ${key} (#chatbot-${key.replace(/([A-Z])/g, '-$1').toLowerCase()})`);
+        }
+      });
+      
+      console.log('[ChatbotUI] Elements cached:', Object.keys(this.elements).filter(k => this.elements[k]).length, 'found');
     }
 
     cacheTemplates() {
@@ -602,6 +714,12 @@
       this.elements.widget?.classList.add('is-open');
       this.elements.toggleBtn?.setAttribute('aria-expanded', 'true');
       
+      // 🔄 RESTORE CONVERSATION: Load and display stored messages
+      this.restoreConversation();
+      
+      // Show conversation controls if there's stored conversation
+      this.updateConversationControls();
+      
       // Focus management
       setTimeout(() => {
         this.updateFocusTrap();
@@ -636,6 +754,310 @@
       this.events.emit(CONFIG.events.WIDGET_CLOSED);
     }
 
+    // 🔧 CONFIGURATION APPLICATION
+    applyConfiguration() {
+      console.log('🔧 Applying widget configuration...', this.options);
+      
+      // Apply layout configuration
+      this.applyLayoutConfiguration();
+      
+      // Apply behavior configuration  
+      this.applyBehaviorConfiguration();
+      
+      // Apply branding configuration
+      this.applyBrandingConfiguration();
+      
+      console.log('✅ Widget configuration applied');
+    }
+    
+    applyLayoutConfiguration() {
+      if (!this.options.layout) return;
+      
+      const widget = document.getElementById('chatbot-widget');
+      const toggleBtn = document.getElementById('chatbot-toggle-btn');
+      
+      if (widget && this.options.layout.widget) {
+        const { width, height, borderRadius } = this.options.layout.widget;
+        widget.style.setProperty('--chatbot-widget-width', width);
+        widget.style.setProperty('--chatbot-widget-height', height);
+        widget.style.setProperty('--chatbot-widget-border-radius', borderRadius);
+      }
+      
+      if (toggleBtn && this.options.layout.button) {
+        const { size } = this.options.layout.button;
+        toggleBtn.style.setProperty('--chatbot-button-size', size);
+      }
+    }
+    
+    applyBehaviorConfiguration() {
+      if (!this.options.behavior) return;
+      
+      const widget = document.getElementById('chatbot-widget');
+      if (!widget) return;
+      
+      const { showHeader, showAvatar, showCloseButton, enableAnimations, enableDarkMode } = this.options.behavior;
+      
+      // Apply behavior classes
+      widget.classList.toggle('hide-header', !showHeader);
+      widget.classList.toggle('hide-avatar', !showAvatar);
+      widget.classList.toggle('hide-close-button', !showCloseButton);
+      widget.classList.toggle('disable-animations', !enableAnimations);
+      widget.classList.toggle('dark-mode', enableDarkMode);
+    }
+    
+    applyBrandingConfiguration() {
+      if (!this.options.branding) return;
+      
+      const { fontFamily, customColors, logoUrl } = this.options.branding;
+      
+      // Apply font family
+      if (fontFamily) {
+        document.documentElement.style.setProperty('--chatbot-font-family', fontFamily);
+      }
+      
+      // Apply custom colors
+      if (customColors && customColors.primary) {
+        Object.entries(customColors.primary).forEach(([shade, color]) => {
+          document.documentElement.style.setProperty(`--chatbot-primary-${shade}`, color);
+        });
+      }
+      
+      // Apply logo
+      if (logoUrl) {
+        const logo = document.querySelector('.chatbot-header-logo');
+        if (logo) {
+          logo.src = logoUrl;
+          logo.style.display = 'block';
+        }
+      }
+    }
+
+    // 🔄 CONVERSATION RESTORATION & MANAGEMENT
+    restoreConversation() {      
+      console.log('🔄 Checking conversation restoration...', {
+        hasStored: this.state.hasStoredConversation(),
+        conversationLength: this.state.conversation.length,
+        messageCount: this.state.conversationMetadata?.messageCount || 0
+      });
+      
+      if (!this.state.hasStoredConversation()) {
+        console.log('🔄 No stored conversation, showing welcome message');
+        this.showWelcomeMessage();
+        return;
+      }
+
+      console.log('🔄 Restoring conversation...', this.state.conversation.length, 'messages');
+      
+      // Clear current messages
+      if (this.elements.messages) {
+        this.elements.messages.innerHTML = '';
+      }
+      
+      // Show restoration indicator
+      this.showConversationRestoreIndicator();
+      
+      // Restore messages with a small delay for better UX
+      setTimeout(() => {
+        this.state.conversation.forEach((message) => {
+          if (message.role === 'user') {
+            this.displayUserMessage(message.content, message.timestamp);
+          } else if (message.role === 'assistant') {
+            this.displayBotMessage(message.content, message.citations || [], message.timestamp);
+          }
+        });
+        
+        // Scroll to bottom and remove restore indicator
+        setTimeout(() => {
+          this.scrollToBottom();
+          this.hideConversationRestoreIndicator();
+          console.log('✅ Conversation restored');
+        }, 100);
+        
+      }, 300);
+    }
+
+    showWelcomeMessage() {
+      // Only show welcome message if no stored conversation exists
+      if (this.state.hasStoredConversation()) {
+        console.log('[ChatbotUI] Stored conversation exists, skipping welcome message');
+        return;
+      }
+      
+      const welcomeMessage = this.options?.welcomeMessage || 'Ciao! Come posso aiutarti?';
+      console.log('[ChatbotUI] Showing welcome message:', welcomeMessage);
+      
+      if (welcomeMessage) {
+        setTimeout(() => {
+          this.addBotMessage(welcomeMessage);
+        }, 500);
+      }
+    }
+
+    showConversationRestoreIndicator() {
+      const age = this.state.getConversationAge();
+      const messageCount = this.state.conversationMetadata.messageCount;
+      
+      const indicator = document.createElement('div');
+      indicator.className = 'chatbot-restore-indicator';
+      indicator.innerHTML = `
+        <div class="chatbot-restore-content">
+          <div class="chatbot-restore-icon">🔄</div>
+          <div class="chatbot-restore-text">
+            Ripristinando conversazione<br>
+            <small>${messageCount} messaggi • ${age}</small>
+          </div>
+        </div>
+      `;
+      
+      if (this.elements.messages) {
+        this.elements.messages.appendChild(indicator);
+      }
+    }
+
+    hideConversationRestoreIndicator() {
+      const indicator = document.querySelector('.chatbot-restore-indicator');
+      if (indicator) {
+        indicator.remove();
+      }
+    }
+
+    updateConversationControls() {
+      // Update widget header with conversation info and controls
+      this.updateWidgetHeader();
+      
+      // Update toggle button with indicator
+      this.updateToggleButton();
+    }
+
+    updateWidgetHeader() {
+      const header = this.elements.widget?.querySelector('.chatbot-header');
+      if (!header) return;
+      
+      // Remove existing conversation controls
+      const existingControls = header.querySelector('.chatbot-conversation-controls');
+      if (existingControls) {
+        existingControls.remove();
+      }
+      
+      if (this.state.hasStoredConversation()) {
+        const age = this.state.getConversationAge();
+        const messageCount = this.state.conversationMetadata.messageCount;
+        
+        const controls = document.createElement('div');
+        controls.className = 'chatbot-conversation-controls';
+        controls.innerHTML = `
+          <div class="chatbot-conversation-info">
+            <span class="chatbot-conversation-indicator">💬</span>
+            <span class="chatbot-conversation-meta">${messageCount} messaggi • ${age}</span>
+          </div>
+          <button type="button" class="chatbot-new-conversation-btn" title="Inizia nuova conversazione">
+            <span class="chatbot-btn-icon">🆕</span>
+            <span class="chatbot-btn-text">Nuova</span>
+          </button>
+        `;
+        
+        // Add event listener for new conversation button
+        const newConvBtn = controls.querySelector('.chatbot-new-conversation-btn');
+        newConvBtn?.addEventListener('click', () => this.startNewConversation());
+        
+        header.appendChild(controls);
+      }
+    }
+
+    updateToggleButton() {
+      if (!this.elements.toggleBtn) {
+        return;
+      }
+      
+      // Remove existing indicator
+      const existingIndicator = this.elements.toggleBtn.querySelector('.chatbot-conversation-badge');
+      if (existingIndicator) {
+        existingIndicator.remove();
+      }
+      
+      if (this.state.hasStoredConversation()) {
+        const badge = document.createElement('span');
+        badge.className = 'chatbot-conversation-badge';
+        badge.textContent = this.state.conversationMetadata.messageCount;
+        badge.title = `${this.state.conversationMetadata.messageCount} messaggi salvati`;
+        this.elements.toggleBtn.appendChild(badge);
+      }
+    }
+
+    startNewConversation() {
+      if (confirm('Vuoi iniziare una nuova conversazione? La conversazione attuale verrà salvata.')) {
+        console.log('🆕 Starting new conversation');
+        
+        // Clear current conversation
+        this.state.reset();
+        
+        // Clear UI
+        if (this.elements.messages) {
+          this.elements.messages.innerHTML = '';
+        }
+        
+        // Update controls
+        this.updateConversationControls();
+        
+        // Show welcome message
+        this.showWelcomeMessage();
+        
+        // Analytics
+        if (window.chatbotAnalytics) {
+          window.chatbotAnalytics.track('new_conversation_started');
+        }
+      }
+    }
+
+    // Enhanced message display methods with timestamps
+    displayUserMessage(content, timestamp = null) {
+      const messageEl = this.createMessageElement('user', content);
+      if (!messageEl) return;
+      
+      // Add timestamp if provided
+      if (timestamp) {
+        const timeEl = messageEl.querySelector('time');
+        if (timeEl) {
+          const date = new Date(timestamp);
+          timeEl.textContent = date.toLocaleTimeString('it-IT', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          });
+          timeEl.dateTime = date.toISOString();
+        }
+      }
+      
+      this.appendMessage(messageEl);
+      return messageEl;
+    }
+
+    displayBotMessage(content, citations = [], timestamp = null) {
+      const messageEl = this.createMessageElement('bot', content, citations);
+      if (!messageEl) return;
+      
+      // Add timestamp if provided
+      if (timestamp) {
+        const timeEl = messageEl.querySelector('time');
+        if (timeEl) {
+          const date = new Date(timestamp);
+          timeEl.textContent = date.toLocaleTimeString('it-IT', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          });
+          timeEl.dateTime = date.toISOString();
+        }
+      }
+      
+      this.appendMessage(messageEl);
+      
+      // Setup citation handlers
+      if (window.chatbotWidget?.citations && citations && citations.length > 0) {
+        this.setupCitationHandlers(messageEl);
+      }
+      
+      return messageEl;
+    }
+
     // Message rendering
     addUserMessage(content) {
       const messageEl = this.createMessageElement('user', content);
@@ -655,6 +1077,8 @@
     }
 
     addBotMessage(content, citations = []) {
+      console.log('🤖 addBotMessage called with:', content.substring(0, 50) + '...');
+      
       const messageEl = this.createMessageElement('bot', content, citations);
       if (!messageEl) {
         console.error('Failed to create bot message element');
@@ -814,7 +1238,14 @@
     appendMessage(messageEl) {
       if (!messageEl) return;
       
+      const messageCount = this.elements.messages?.children.length || 0;
+      console.log('📝 appendMessage: Adding message to container with', messageCount, 'existing messages');
+      
       this.elements.messages?.appendChild(messageEl);
+      
+      const newCount = this.elements.messages?.children.length || 0;
+      console.log('📝 appendMessage: Container now has', newCount, 'messages');
+      
       this.scrollToBottom();
     }
 
@@ -1323,6 +1754,7 @@
       });
       
       this.options = {
+        // Core configuration
         apiKey: null,
         tenantId: null,
         baseURL: '',
@@ -1333,8 +1765,41 @@
         enableDynamicForms: true,
         autoOpen: false,
         theme: 'default',
+        
+        // Layout defaults
+        layout: {
+          widget: {
+            width: '400px',
+            height: '600px',
+            borderRadius: '12px'
+          },
+          button: {
+            size: '60px'
+          }
+        },
+        
+        // Behavior defaults
+        behavior: {
+          showHeader: true,
+          showAvatar: true,
+          showCloseButton: true,
+          enableAnimations: true,
+          enableDarkMode: false
+        },
+        
+        // Branding defaults
+        branding: {
+          logoUrl: null,
+          faviconUrl: null,
+          fontFamily: "'Inter', sans-serif",
+          customColors: null
+        },
+        
+        // Form handling
         formCheckCooldown: 5000, // 5 secondi tra check form
         maxFormChecks: 10, // Max 10 check per sessione
+        
+        // Merge with provided options (this will override defaults)
         ...options
       };
 
@@ -1359,6 +1824,9 @@
 
       this.state = new ChatbotState();
       
+      // Apply widget configuration to DOM
+      this.applyConfiguration();
+      
       // Initialize form renderer if enabled and available
       this.formRenderer = null;
       if (this.options.enableDynamicForms && window.ChatbotFormRenderer) {
@@ -1367,7 +1835,7 @@
         window.chatbotFormRenderer = this.formRenderer;
       }
       this.events = new EventEmitter();
-      this.ui = new ChatbotUI(this.state, this.events);
+      this.ui = new ChatbotUI(this.state, this.events, this.options);
       this.api = new ChatbotAPI(this.options.apiKey, this.options.baseURL);
       this.analytics = new Analytics(this.options.apiKey, this.options.tenantId, this.options.baseURL);
       
@@ -1418,6 +1886,14 @@
 
     init() {
       this.setupEventHandlers();
+      
+      // 🎨 Initialize UI FIRST - so elements are available for configuration
+      if (this.ui && !this.ui.isInitialized) {
+        console.log('[ChatbotWidget] Initializing UI...');
+        this.ui.init();
+      }
+      
+      // Apply configuration AFTER UI is initialized
       this.applyConfiguration();
       
       // Attach managers to widget container if available
@@ -1476,6 +1952,14 @@
     }
 
     applyConfiguration() {
+      // Only apply configuration if UI is initialized
+      if (!this.ui || !this.ui.elements || !this.ui.isInitialized) {
+        console.log('[ChatbotWidget] UI not ready for configuration, skipping...');
+        return;
+      }
+      
+      console.log('[ChatbotWidget] Applying configuration...');
+      
       // Apply tenant configuration
       if (this.options.tenantId) {
         this.ui.elements.widget?.setAttribute('data-tenant', this.options.tenantId);
@@ -1483,6 +1967,11 @@
       
       if (this.options.theme) {
         this.ui.elements.widget?.setAttribute('data-theme', this.options.theme);
+      }
+      
+      // Apply advanced configuration through UI
+      if (this.ui && typeof this.ui.applyConfiguration === 'function') {
+        this.ui.applyConfiguration();
       }
     }
 
@@ -1655,7 +2144,7 @@
 
     reset() {
       this.state.reset();
-      if (this.ui.elements.messages) {
+      if (this.ui && this.ui.elements && this.ui.elements.messages) {
         // Keep welcome message, remove others
         const messages = this.ui.elements.messages.children;
         for (let i = messages.length - 1; i > 0; i--) {

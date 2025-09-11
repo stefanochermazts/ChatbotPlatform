@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Conversation Persistence - Chatbot Widget</title>
+  
+  <!-- Demo page styles -->
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    
+    .test-container {
+      background: white;
+      border-radius: 16px;
+      padding: 3rem;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+      margin-bottom: 2rem;
+    }
+    
+    h1 {
+      color: #2d3748;
+      text-align: center;
+      margin-bottom: 2rem;
+      font-size: 2.5rem;
+    }
+    
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin: 2rem 0;
+    }
+    
+    .test-card {
+      background: #f7fafc;
+      padding: 2rem;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+    }
+    
+    .test-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #2d3748;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .test-description {
+      color: #4a5568;
+      margin-bottom: 1.5rem;
+      font-size: 0.95rem;
+    }
+    
+    .test-button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .test-button:hover {
+      background: #5a67d8;
+      transform: translateY(-1px);
+    }
+    
+    .test-button.secondary {
+      background: #718096;
+    }
+    
+    .test-button.secondary:hover {
+      background: #4a5568;
+    }
+    
+    .test-button.danger {
+      background: #e53e3e;
+    }
+    
+    .test-button.danger:hover {
+      background: #c53030;
+    }
+    
+    .test-output {
+      background: #1a202c;
+      color: #e2e8f0;
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.875rem;
+      margin-top: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    
+    .status-loading {
+      background: #fed7d7;
+      color: #c53030;
+    }
+    
+    .status-ready {
+      background: #c6f6d5;
+      color: #2f855a;
+    }
+    
+    .instructions {
+      background: #ebf8ff;
+      border: 1px solid #bee3f8;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .instructions h3 {
+      margin-top: 0;
+      color: #2c5282;
+    }
+    
+    .instructions ol {
+      color: #2d3748;
+    }
+    
+    .debug-info {
+      background: #fffaf0;
+      border: 1px solid #fbb6ce;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>🔄 Test Conversation Persistence</h1>
+    
+    <div class="instructions">
+      <h3>📋 Come testare la persistenza delle conversazioni:</h3>
+      <ol>
+        <li><strong>Apri il widget</strong> e fai alcune domande</li>
+        <li><strong>Chiudi il widget</strong> - noterai il badge con il numero di messaggi</li>
+        <li><strong>Riapri il widget</strong> - la conversazione dovrebbe essere ripristinata</li>
+        <li><strong>Ricarica la pagina</strong> - la conversazione deve persistere</li>
+        <li><strong>Testa "Nuova conversazione"</strong> - dovrebbe pulire tutto</li>
+        <li><strong>Ispeziona localStorage</strong> - cerca "chatbot_widget_conversation_history"</li>
+      </ol>
+    </div>
+    
+    <!-- Status Widget -->
+    <div class="test-card">
+      <div class="test-title">📊 Status Widget</div>
+      <div id="widgetStatus" class="status-badge status-loading">⏳ Caricamento...</div>
+      <div class="test-description">Mostra lo stato attuale del widget e della persistenza</div>
+      <div id="persistenceInfo" class="debug-info" style="display: none;">
+        <strong>📁 Info Persistenza:</strong><br>
+        <span id="storageDetails">Nessun dato trovato</span>
+      </div>
+    </div>
+    
+    <!-- Test Grid -->
+    <div class="test-grid">
+      <!-- Storage Controls -->
+      <div class="test-card">
+        <div class="test-title">💾 Controlli Storage</div>
+        <div class="test-description">Gestisci e ispeziona la persistenza delle conversazioni nel localStorage</div>
+        
+        <button onclick="inspectStorage()" class="test-button">🔍 Ispeziona Storage</button>
+        <button onclick="clearStorage()" class="test-button danger">🗑️ Cancella Storage</button>
+        <button onclick="loadTestConversation()" class="test-button secondary">📝 Carica Test Data</button>
+        
+        <div id="storageOutput" class="test-output" style="display: none;"></div>
+      </div>
+      
+      <!-- Widget Controls -->
+      <div class="test-card">
+        <div class="test-title">🤖 Controlli Widget</div>
+        <div class="test-description">Interagisci direttamente con il widget per testare le funzionalità</div>
+        
+        <button onclick="toggleWidget()" class="test-button">💬 Apri/Chiudi Widget</button>
+        <button onclick="resetWidget()" class="test-button secondary">🔄 Reset Widget</button>
+        <button onclick="sendTestMessage()" class="test-button secondary">💌 Invia Messaggio Test</button>
+        
+        <div id="widgetOutput" class="test-output" style="display: none;"></div>
+      </div>
+      
+      <!-- Persistence Tests -->
+      <div class="test-card">
+        <div class="test-title">🧪 Test Automatici</div>
+        <div class="test-description">Esegui test automatici per verificare la funzionalità di persistenza</div>
+        
+        <button onclick="runPersistenceTest()" class="test-button">🔬 Test Persistenza</button>
+        <button onclick="runRestoreTest()" class="test-button secondary">🔄 Test Ripristino</button>
+        <button onclick="runCleanupTest()" class="test-button secondary">🧹 Test Pulizia</button>
+        
+        <div id="testOutput" class="test-output" style="display: none;"></div>
+      </div>
+      
+      <!-- Analytics -->
+      <div class="test-card">
+        <div class="test-title">📈 Analytics & Debug</div>
+        <div class="test-description">Monitoraggio eventi e debug del sistema</div>
+        
+        <button onclick="enableDebugMode()" class="test-button">🐛 Debug Mode</button>
+        <button onclick="showEventLog()" class="test-button secondary">📝 Event Log</button>
+        <button onclick="exportLogs()" class="test-button secondary">📤 Export Logs</button>
+        
+        <div id="debugOutput" class="test-output" style="display: none;"></div>
+      </div>
+    </div>
+    
+    <!-- Test Message -->
+    <div class="test-card">
+      <div class="test-title">💡 Note di Sviluppo</div>
+      <div class="test-description">
+        <strong>Funzionalità implementate:</strong><br>
+        ✅ Persistenza automatica in localStorage<br>
+        ✅ Ripristino conversazioni all'apertura<br>
+        ✅ Badge con contatore messaggi<br>
+        ✅ Pulsante "Nuova conversazione"<br>
+        ✅ Timestamps sui messaggi<br>
+        ✅ Pulizia automatica (>7 giorni)<br>
+        ✅ Metadati conversazione (data, conteggio)<br>
+        ✅ Supporto formato legacy e nuovo<br>
+        
+        <div class="debug-info" style="margin-top: 1rem;">
+          <strong>🔧 Storage Keys:</strong><br>
+          • <code>chatbot_widget_conversation_history</code> - Conversazioni<br>
+          • <code>chatbot_widget_user_preferences</code> - Preferenze utente<br>
+          • <code>chatbot_widget_session_id</code> - ID sessione<br>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Widget Configuration -->
+  <script>
+    // Demo configuration
+    window.chatbotConfig = {
+      apiKey: 'demo_api_key_123',
+      tenantId: 'demo',
+      theme: 'default',
+      position: 'bottom-right',
+      welcomeMessage: 'Ciao! 👋 Questo è un test della persistenza delle conversazioni. Prova a fare alcune domande!',
+      debug: true,
+      // Disable server-dependent features for testing
+      enableQuickActions: false,
+      enableThemeAPI: false,
+      enableAnalytics: true // Keep analytics for testing events
+    };
+    
+    // Global state
+    let debugMode = false;
+    let eventLog = [];
+    let testResults = [];
+    
+    // =================================================================
+    // 🔧 UTILITY FUNCTIONS
+    // =================================================================
+    
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logEntry = { timestamp, message, type };
+      eventLog.push(logEntry);
+      
+      if (debugMode) {
+        console.log(`[${timestamp}] ${message}`);
+      }
+      
+      // Update status if important
+      if (type === 'error') {
+        updateStatus(`❌ ${message}`, 'error');
+      } else if (type === 'success') {
+        updateStatus(`✅ ${message}`, 'success');
+      }
+    }
+    
+    function updateStatus(message, type = 'info') {
+      const status = document.getElementById('widgetStatus');
+      status.textContent = message;
+      status.className = `status-badge status-${type === 'error' ? 'loading' : 'ready'}`;
+    }
+    
+    function showOutput(outputId, content) {
+      const output = document.getElementById(outputId);
+      output.style.display = 'block';
+      output.innerHTML = content;
+    }
+    
+    // =================================================================
+    // 💾 STORAGE FUNCTIONS
+    // =================================================================
+    
+    function inspectStorage() {
+      const keys = ['chatbot_widget_conversation_history', 'chatbot_widget_user_preferences', 'chatbot_widget_session_id'];
+      let output = '<strong>📁 LocalStorage Inspection:</strong><br><br>';
+      
+      keys.forEach(key => {
+        const value = localStorage.getItem(key);
+        if (value) {
+          try {
+            const parsed = JSON.parse(value);
+            output += `<strong>${key}:</strong><br>`;
+            output += `<pre style="background: #2d3748; padding: 0.5rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto;">${JSON.stringify(parsed, null, 2)}</pre><br>`;
+          } catch (e) {
+            output += `<strong>${key}:</strong> ${value}<br><br>`;
+          }
+        } else {
+          output += `<strong>${key}:</strong> <em style="color: #718096;">Non trovato</em><br><br>`;
+        }
+      });
+      
+      showOutput('storageOutput', output);
+      updatePersistenceInfo();
+      log('Storage ispezionato', 'info');
+    }
+    
+    function clearStorage() {
+      if (confirm('Vuoi cancellare tutti i dati del widget dal localStorage?')) {
+        const keys = ['chatbot_widget_conversation_history', 'chatbot_widget_user_preferences', 'chatbot_widget_session_id'];
+        keys.forEach(key => localStorage.removeItem(key));
+        
+        showOutput('storageOutput', '<strong>🗑️ Storage cancellato!</strong><br>Ricarica la pagina per vedere l\'effetto.');
+        updatePersistenceInfo();
+        log('Storage cancellato', 'success');
+      }
+    }
+    
+    function loadTestConversation() {
+      const testData = {
+        conversation: [
+          {
+            id: 'test_1',
+            role: 'user',
+            content: 'Ciao! Questa è una conversazione di test.',
+            timestamp: new Date(Date.now() - 60000).toISOString()
+          },
+          {
+            id: 'test_2',
+            role: 'assistant',
+            content: 'Ciao! Benvenuto nel test della persistenza delle conversazioni. 😊',
+            timestamp: new Date(Date.now() - 30000).toISOString()
+          }
+        ],
+        metadata: {
+          createdAt: new Date(Date.now() - 120000).toISOString(),
+          lastMessageAt: new Date(Date.now() - 30000).toISOString(),
+          messageCount: 2,
+          version: '1.1.0'
+        },
+        savedAt: new Date().toISOString()
+      };
+      
+      localStorage.setItem('chatbot_widget_conversation_history', JSON.stringify(testData));
+      showOutput('storageOutput', '<strong>📝 Test data caricato!</strong><br>Apri il widget per vedere la conversazione ripristinata.');
+      updatePersistenceInfo();
+      log('Test data caricato', 'success');
+    }
+    
+    function updatePersistenceInfo() {
+      const infoDiv = document.getElementById('persistenceInfo');
+      const detailsSpan = document.getElementById('storageDetails');
+      
+      const stored = localStorage.getItem('chatbot_widget_conversation_history');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          let details = '';
+          
+          if (data.conversation && data.metadata) {
+            details = `📊 ${data.metadata.messageCount} messaggi | 📅 Ultima: ${new Date(data.metadata.lastMessageAt).toLocaleString()} | 📦 Versione: ${data.metadata.version}`;
+          } else if (Array.isArray(data)) {
+            details = `📊 ${data.length} messaggi (formato legacy)`;
+          } else {
+            details = 'Formato sconosciuto';
+          }
+          
+          detailsSpan.textContent = details;
+          infoDiv.style.display = 'block';
+        } catch (e) {
+          detailsSpan.textContent = 'Errore parsing dati';
+          infoDiv.style.display = 'block';
+        }
+      } else {
+        infoDiv.style.display = 'none';
+      }
+    }
+    
+    // =================================================================
+    // 🤖 WIDGET FUNCTIONS
+    // =================================================================
+    
+    function toggleWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.toggle();
+        log('Widget toggled', 'info');
+      } else {
+        log('Widget non ancora caricato', 'error');
+      }
+    }
+    
+    function resetWidget() {
+      if (window.chatbotWidget) {
+        window.chatbotWidget.reset();
+        log('Widget resettato', 'success');
+        updatePersistenceInfo();
+      } else {
+        log('Widget non ancora caricato', 'error');
+      }
+    }
+    
+    function sendTestMessage() {
+      if (window.chatbotWidget) {
+        // Simula l'invio di un messaggio
+        const message = 'Test message: ' + new Date().toLocaleTimeString();
+        window.chatbotWidget.sendMessage(message);
+        log(`Messaggio inviato: ${message}`, 'info');
+      } else {
+        log('Widget non ancora caricato', 'error');
+      }
+    }
+    
+    // =================================================================
+    // 🧪 TEST FUNCTIONS
+    // =================================================================
+    
+    function runPersistenceTest() {
+      let output = '<strong>🔬 Test Persistenza:</strong><br><br>';
+      let passed = 0;
+      let total = 0;
+      
+      // Test 1: localStorage disponibile
+      total++;
+      if (typeof(Storage) !== "undefined") {
+        output += '✅ localStorage disponibile<br>';
+        passed++;
+      } else {
+        output += '❌ localStorage non disponibile<br>';
+      }
+      
+      // Test 2: Chiavi storage
+      total++;
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('chatbot_widget_'));
+      if (keys.length > 0) {
+        output += `✅ Trovate ${keys.length} chiavi widget<br>`;
+        passed++;
+      } else {
+        output += '⚠️ Nessuna chiave widget trovata<br>';
+      }
+      
+      // Test 3: Formato dati
+      total++;
+      const stored = localStorage.getItem('chatbot_widget_conversation_history');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          if (data.conversation && data.metadata) {
+            output += '✅ Formato dati valido (v1.1.0)<br>';
+            passed++;
+          } else if (Array.isArray(data)) {
+            output += '⚠️ Formato legacy rilevato<br>';
+          } else {
+            output += '❌ Formato dati non valido<br>';
+          }
+        } catch (e) {
+          output += '❌ Errore parsing JSON<br>';
+        }
+      } else {
+        output += '⚠️ Nessun dato di conversazione trovato<br>';
+      }
+      
+      output += `<br><strong>Risultato: ${passed}/${total} test passati</strong>`;
+      showOutput('testOutput', output);
+      log(`Test persistenza: ${passed}/${total}`, passed === total ? 'success' : 'error');
+    }
+    
+    function runRestoreTest() {
+      let output = '<strong>🔄 Test Ripristino:</strong><br><br>';
+      
+      // Simula ciclo di ripristino
+      output += '1. Creazione dati test...<br>';
+      loadTestConversation();
+      
+      output += '2. Simulazione ricarica pagina...<br>';
+      setTimeout(() => {
+        output += '3. Verifica ripristino dati...<br>';
+        updatePersistenceInfo();
+        output += '✅ Test ripristino completato<br>';
+        showOutput('testOutput', output);
+        log('Test ripristino completato', 'success');
+      }, 1000);
+      
+      showOutput('testOutput', output);
+    }
+    
+    function runCleanupTest() {
+      let output = '<strong>🧹 Test Pulizia:</strong><br><br>';
+      
+      // Test data vecchi
+      const oldData = {
+        conversation: [{ id: 'old', role: 'user', content: 'Old message', timestamp: new Date(Date.now() - 8*24*60*60*1000).toISOString() }],
+        metadata: {
+          lastMessageAt: new Date(Date.now() - 8*24*60*60*1000).toISOString(),
+          messageCount: 1,
+          version: '1.1.0'
+        }
+      };
+      
+      localStorage.setItem('chatbot_widget_conversation_history', JSON.stringify(oldData));
+      output += '1. Creati dati di 8 giorni fa...<br>';
+      output += '2. La prossima apertura widget dovrebbe pulire automaticamente<br>';
+      output += '✅ Test pulizia preparato<br>';
+      
+      showOutput('testOutput', output);
+      log('Test pulizia preparato', 'info');
+    }
+    
+    // =================================================================
+    // 📈 DEBUG FUNCTIONS
+    // =================================================================
+    
+    function enableDebugMode() {
+      debugMode = !debugMode;
+      const btn = event.target;
+      btn.textContent = debugMode ? '🐛 Debug: ON' : '🐛 Debug Mode';
+      btn.style.background = debugMode ? '#38a169' : '#667eea';
+      
+      log(`Debug mode ${debugMode ? 'abilitato' : 'disabilitato'}`, 'info');
+    }
+    
+    function showEventLog() {
+      let output = '<strong>📝 Event Log:</strong><br><br>';
+      
+      if (eventLog.length === 0) {
+        output += '<em style="color: #718096;">Nessun evento registrato</em>';
+      } else {
+        eventLog.slice(-20).forEach(entry => {
+          const color = entry.type === 'error' ? '#e53e3e' : entry.type === 'success' ? '#38a169' : '#4a5568';
+          output += `<span style="color: ${color};">[${entry.timestamp}] ${entry.message}</span><br>`;
+        });
+      }
+      
+      showOutput('debugOutput', output);
+    }
+    
+    function exportLogs() {
+      const data = {
+        timestamp: new Date().toISOString(),
+        eventLog: eventLog,
+        localStorage: {
+          conversation: localStorage.getItem('chatbot_widget_conversation_history'),
+          preferences: localStorage.getItem('chatbot_widget_user_preferences'),
+          session: localStorage.getItem('chatbot_widget_session_id')
+        },
+        testResults: testResults
+      };
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chatbot-debug-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      log('Debug logs esportati', 'success');
+    }
+    
+    // =================================================================
+    // 🎧 EVENT LISTENERS
+    // =================================================================
+    
+    window.addEventListener('chatbot:embed:loaded', function(event) {
+      updateStatus('✅ Widget Caricato', 'ready');
+      updatePersistenceInfo();
+      log('Widget embed caricato', 'success');
+    });
+    
+    window.addEventListener('chatbot:embed:error', function(event) {
+      updateStatus('❌ Errore Caricamento', 'error');
+      log(`Errore embed: ${event.detail}`, 'error');
+    });
+    
+    window.addEventListener('chatbot:widget:opened', function() {
+      log('Widget aperto', 'info');
+      setTimeout(updatePersistenceInfo, 500); // Update after restoration
+    });
+    
+    window.addEventListener('chatbot:widget:closed', function() {
+      log('Widget chiuso', 'info');
+      setTimeout(updatePersistenceInfo, 100); // Update after save
+    });
+    
+    window.addEventListener('chatbot:message:sent', function(event) {
+      log(`Messaggio inviato: ${event.detail.content}`, 'info');
+      setTimeout(updatePersistenceInfo, 100);
+    });
+    
+    window.addEventListener('chatbot:message:received', function(event) {
+      log(`Messaggio ricevuto: ${event.detail.content.substring(0, 50)}...`, 'info');
+      setTimeout(updatePersistenceInfo, 100);
+    });
+    
+    // =================================================================
+    // 🚀 INITIALIZATION
+    // =================================================================
+    
+    // Auto-update persistence info every 5 seconds
+    setInterval(updatePersistenceInfo, 5000);
+    
+    // Initial load
+    setTimeout(() => {
+      updatePersistenceInfo();
+      inspectStorage();
+    }, 1000);
+    
+    // Initial status
+    updateStatus('🟡 Caricamento Widget...', 'loading');
+    log('Test page inizializzata', 'info');
+  </script>
+
+  <!-- Load Widget -->
+  <script src="./embed/chatbot-embed.js" async></script>
+</body>
+</html>

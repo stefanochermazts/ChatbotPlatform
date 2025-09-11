@@ -151,6 +151,7 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::delete('/tenants/{tenant}/scraper/{scraperConfig}', [ScraperAdminController::class, 'destroy'])->name('scraper.destroy');
     Route::post('/tenants/{tenant}/scraper/run', [ScraperAdminController::class, 'run'])->name('scraper.run');
     Route::post('/tenants/{tenant}/scraper/run-sync', [ScraperAdminController::class, 'runSync'])->name('scraper.run-sync');
+    Route::post('/tenants/{tenant}/scraper/download-linked', [ScraperAdminController::class, 'downloadLinked'])->name('scraper.download-linked');
 
     // RAG tester
     Route::get('/rag', [RagTestController::class, 'index'])->name('rag.index');

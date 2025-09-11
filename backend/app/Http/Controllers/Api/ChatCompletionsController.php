@@ -104,8 +104,19 @@ class ChatCompletionsController extends Controller
         // Costruisci payload partendo dai messaggi forniti, ma inserendo system prompt e context come nel tester
         $payload = $validated;
 
-        // Forza il modello del tester
-        $payload['model'] = 'gpt-4o-mini';
+        // Converti parametri numerici da stringhe a numeri
+        if (isset($payload['temperature'])) {
+            $payload['temperature'] = (float) $payload['temperature'];
+        }
+        if (isset($payload['max_tokens'])) {
+            $payload['max_tokens'] = (int) $payload['max_tokens'];
+        }
+        if (isset($payload['max_completion_tokens'])) {
+            $payload['max_completion_tokens'] = (int) $payload['max_completion_tokens'];
+        }
+
+        // Modello da config (.env OPENAI_CHAT_MODEL)
+        $payload['model'] = (string) config('openai.chat_model', 'gpt-4o-mini');
 
         // Inserisci system prompt: custom del tenant oppure default come nel tester
         $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
@@ -163,7 +174,13 @@ class ChatCompletionsController extends Controller
             $currentContent = (string) ($result['choices'][0]['message']['content'] ?? '');
             // Aggiungi il link solo se la risposta non è un fallback
             if ($currentContent !== (string) config('rag.answer.fallback_message')) {
-                $result['choices'][0]['message']['content'] = $currentContent . "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
+                // 🔧 SMART DEDUPLICATION: Evita link duplicati se già presente nella risposta
+                $normalizedUrl = trim($bestSourceUrl);
+                $isDuplicate = strpos($currentContent, $normalizedUrl) !== false;
+                
+                if (!$isDuplicate) {
+                    $result['choices'][0]['message']['content'] = $currentContent . "\n\n🔗 **Fonte principale**: " . $normalizedUrl;
+                }
             }
         }
 

@@ -268,6 +268,62 @@
       </div>
     </div>
   </div>
+
+  <!-- 📎 Documenti collegati -->
+  <div class="border-t pt-6">
+    <h3 class="font-semibold text-gray-800 mb-4">📎 Documenti collegati</h3>
+    
+    <div class="space-y-4">
+      <label class="inline-flex items-start gap-3 p-3 border rounded hover:bg-gray-50">
+        <input type="checkbox" name="download_linked_documents" value="1" {{ old('download_linked_documents', $config->download_linked_documents ?? false) ? 'checked' : '' }} class="mt-1" />
+        <div class="text-sm">
+          <div class="font-medium">📁 Abilita scaricamento documenti collegati</div>
+          <div class="text-gray-600 text-xs mt-1">
+            Scarica automaticamente documenti (PDF, Word, Excel) linkati nelle pagine.<br>
+            <strong>Utile per:</strong> Allegati normativi, moduli, documenti tecnici
+          </div>
+        </div>
+      </label>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700">📄 Estensioni consentite</span>
+          <input name="linked_extensions" value="{{ old('linked_extensions', implode(',', $config->linked_extensions ?? ['pdf', 'doc', 'docx', 'xls', 'xlsx'])) }}" class="w-full border rounded px-3 py-2" placeholder="pdf,doc,docx,xls,xlsx" />
+          <div class="text-xs text-gray-600 mt-1">Estensioni separate da virgola</div>
+        </label>
+
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700">📏 Dimensione massima (MB)</span>
+          <input type="number" name="linked_max_size_mb" value="{{ old('linked_max_size_mb', $config->linked_max_size_mb ?? 10) }}" min="1" max="100" class="w-full border rounded px-3 py-2" />
+          <div class="text-xs text-gray-600 mt-1">Documenti più grandi verranno ignorati</div>
+        </label>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <label class="inline-flex items-start gap-3 p-3 border rounded hover:bg-gray-50">
+          <input type="checkbox" name="linked_same_domain_only" value="1" {{ old('linked_same_domain_only', $config->linked_same_domain_only ?? true) ? 'checked' : '' }} class="mt-1" />
+          <div class="text-sm">
+            <div class="font-medium">🔒 Solo stesso dominio</div>
+            <div class="text-gray-600 text-xs mt-1">
+              Scarica solo documenti dallo stesso dominio del sito principale
+            </div>
+          </div>
+        </label>
+
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700">📚 Knowledge Base per documenti collegati</span>
+          <select name="linked_target_kb_id" class="w-full border rounded px-3 py-2">
+            <option value="">Stessa KB dello scraper</option>
+            @foreach($kbOptions as $kb)
+              <option value="{{ $kb->id }}" @selected(old('linked_target_kb_id', $config->linked_target_kb_id ?? null) == $kb->id)>{{ $kb->name }}</option>
+            @endforeach
+          </select>
+          <div class="text-xs text-gray-600 mt-1">KB di destinazione per i documenti scaricati</div>
+        </label>
+      </div>
+    </div>
+  </div>
+
   <!-- Pulsante Salva -->
   <div class="border-t pt-6">
     <div class="flex gap-3">
@@ -381,6 +437,26 @@
       </div>
     </div>
   </div>
+
+  @if($config->download_linked_documents)
+  <div class="mt-4 p-4 bg-purple-50 border border-purple-200 rounded">
+    <h4 class="font-medium text-purple-800 mb-2">📎 Documenti Collegati</h4>
+    <div class="space-y-3">
+      <div class="text-xs text-purple-700">
+        <div>Se hai già scrapato pagine e vuoi scaricare i documenti collegati retroattivamente:</div>
+      </div>
+      <form method="post" action="{{ route('admin.scraper.download-linked', $tenant) }}" class="block">
+        @csrf
+        <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 font-medium">
+          📎 Scarica documenti collegati (retro)
+        </button>
+      </form>
+      <div class="text-xs text-purple-600">
+        Analizza le pagine già scrapate e scarica i documenti PDF/Office linkati.
+      </div>
+    </div>
+  </div>
+  @endif
 </div>
 @else
 <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mt-8">

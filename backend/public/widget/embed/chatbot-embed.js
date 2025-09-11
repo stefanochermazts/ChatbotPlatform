@@ -48,7 +48,8 @@
                 '/widget/css/chatbot-error-handling.css',
                 '/widget/css/chatbot-quick-actions.css',
                 '/widget/css/chatbot-fallback-states.css',
-                '/widget/css/chatbot-forms.css'
+                '/widget/css/chatbot-forms.css',
+                '/widget/css/chatbot-conversation-persistence.css'
             ],
             js: [
                 '/widget/js/chatbot-accessibility.js',
@@ -96,20 +97,28 @@
         js: []
       };
       
-      this.init();
+      // Don't auto-init in constructor, let the caller decide when to init
     }
 
     init() {
+      console.log('[ChatbotEmbed] init() called');
+      
       // Don't load if already loaded or loading
       if (this.isLoaded || this.isLoading) {
+        console.log('[ChatbotEmbed] Already loaded or loading, skipping');
         return;
       }
       
+      console.log('[ChatbotEmbed] Starting initialization...');
+      
       // Check browser compatibility
       if (!this.checkCompatibility()) {
+        console.warn('[ChatbotEmbed] Browser compatibility check failed');
         this.showFallback();
         return;
       }
+      
+      console.log('[ChatbotEmbed] Browser compatible, loading widget...');
       
       // Start loading process
       this.loadWidget();
@@ -408,17 +417,7 @@
           </header>
           
           <main id="chatbot-messages" class="chatbot-messages" role="log" aria-live="polite">
-            <div class="chatbot-message bot">
-              <div class="chatbot-message-avatar">🤖</div>
-              <div class="chatbot-message-content">
-                <div class="chatbot-message-bubble">
-                  Ciao! 👋 Sono il tuo assistente virtuale. Come posso aiutarti oggi?
-                </div>
-                <div class="chatbot-message-time">
-                  <time datetime="${new Date().toISOString()}">${new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})}</time>
-                </div>
-              </div>
-            </div>
+            <!-- Messages will be added dynamically by JavaScript -->
           </main>
           
           <footer class="chatbot-input-container">
@@ -539,12 +538,28 @@
       // Initialize widget with configuration
       if (window.ChatbotWidget) {
         this.widget = new window.ChatbotWidget({
+          // Core configuration
           apiKey: this.config.apiKey,
           tenantId: this.config.tenantId,
           baseURL: this.config.baseURL,
           theme: this.config.theme,
           autoOpen: this.config.autoOpen,
-          enableConversationContext: this.config.enableConversationContext
+          enableConversationContext: this.config.enableConversationContext,
+          // 🔄 CONVERSATION PERSISTENCE: Pass all new config options
+          enableConversationPersistence: this.config.enableConversationPersistence,
+          enableQuickActions: this.config.enableQuickActions,
+          enableThemeAPI: this.config.enableThemeAPI,
+          // Widget branding and behavior
+          welcomeMessage: this.config.welcomeMessage,
+          widgetName: this.config.widgetName,
+          // API configuration
+          model: this.config.model,
+          temperature: this.config.temperature,
+          maxTokens: this.config.maxTokens,
+          // Analytics and features
+          enableAnalytics: this.config.enableAnalytics,
+          // Pass through any other config options
+          ...this.config
         });
         
         this.setupWidgetEvents();

@@ -1075,6 +1075,16 @@ class WebScraperService
                 $filteredLines[] = $line;
                 continue;
             }
+
+            // Preserva linee che contengono contatti (telefono/email) anche se brevi
+            // Telefoni: supporta prefisso tel:, separatori punto/spazio/trattino, fissi e mobili
+            $isPhoneLine = (bool) preg_match('/(?i)(?:^|\s)tel[:\.]?\s*\+?\d|(?<!\d)(?:\+39\s*)?(?:0\d{1,3}|3\d{2})[\.\s\-]?\d{2,4}[\.\s\-]?\d{3,4}(?!\d)/u', $trimmedLine);
+            // Email semplice
+            $isEmailLine = (bool) preg_match('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', $trimmedLine);
+            if ($isPhoneLine || $isEmailLine) {
+                $filteredLines[] = $line;
+                continue;
+            }
             
             // Salta linee troppo corte
             if (strlen($trimmedLine) < 10) continue;
@@ -1397,11 +1407,16 @@ class WebScraperService
             'size' => strlen($markdownContent),
             'ingestion_status' => 'pending',
             'source' => 'web_scraper',
-            'metadata' => !empty($metadata) ? $metadata : null
+            'metadata' => !empty($metadata) ? $metadata : null,
         ]);
 
         // Avvia job di ingestion
         IngestUploadedDocumentJob::dispatch($document->id);
+        
+        // 📎 Scarica documenti collegati se abilitato
+        if ($config && $config->download_linked_documents) {
+            $this->downloadLinkedDocuments($markdownContent, $tenant, $config, $result['url']);
+        }
         
         \Log::info("Nuovo documento creato", [
             'url' => $result['url'],
@@ -1465,6 +1480,11 @@ class WebScraperService
 
         // Avvia re-ingestion
         IngestUploadedDocumentJob::dispatch($existingDocument->id);
+        
+        // 📎 Scarica documenti collegati se abilitato
+        if ($config && $config->download_linked_documents) {
+            $this->downloadLinkedDocuments($markdownContent, $existingDocument->tenant, $config, $result['url']);
+        }
         
         \Log::info("Documento aggiornato", [
             'url' => $result['url'],
@@ -1750,4 +1770,198 @@ class WebScraperService
         
         return $chunks;
     }
+
+    /**
+     * 📎 Scarica documenti collegati (PDF, Office, etc.) linkati nel contenuto
+     * @param string|array $content Contenuto markdown o array di link
+     */
+    private function downloadLinkedDocuments($content, Tenant $tenant, ScraperConfig $config, string $pageUrl): void
+    {
+        try {
+            // Supporta sia contenuto markdown che array di link
+            if (is_array($content)) {
+                $links = array_unique(array_map('trim', $content));
+            } else {
+                // Estrai link dal markdown
+                preg_match_all('/\[[^\]]+\]\(([^\)]+)\)/', $content, $matches);
+                $links = array_unique(array_map('trim', $matches[1] ?? []));
+            }
+            
+            if (empty($links)) {
+                \Log::debug("📎 Nessun link trovato nel contenuto", ['page_url' => $pageUrl]);
+                return;
+            }
+
+            \Log::info("📎 Analizzando link per documenti collegati", [
+                'page_url' => $pageUrl,
+                'total_links' => count($links),
+                'config' => [
+                    'extensions' => $config->linked_extensions,
+                    'max_size_mb' => $config->linked_max_size_mb,
+                    'same_domain_only' => $config->linked_same_domain_only
+                ]
+            ]);
+
+            $downloaded = 0;
+            $skipped = 0;
+
+            foreach ($links as $link) {
+                // Converti link relativi in assoluti
+                $absoluteUrl = $this->resolveUrl($link, $pageUrl);
+                if (!$absoluteUrl) {
+                    $skipped++;
+                    continue;
+                }
+                
+                // Filtra per estensione
+                $extension = strtolower(pathinfo(parse_url($absoluteUrl, PHP_URL_PATH), PATHINFO_EXTENSION));
+                if (!in_array($extension, $config->linked_extensions ?? [])) {
+                    $skipped++;
+                    continue;
+                }
+
+                // Filtra per dominio se necessario
+                if ($config->linked_same_domain_only) {
+                    $pageDomain = parse_url($pageUrl, PHP_URL_HOST);
+                    $linkDomain = parse_url($absoluteUrl, PHP_URL_HOST);
+                    if ($pageDomain !== $linkDomain) {
+                        $skipped++;
+                        \Log::debug("📎 Skip link cross-domain", [
+                            'link' => $absoluteUrl,
+                            'page_domain' => $pageDomain,
+                            'link_domain' => $linkDomain
+                        ]);
+                        continue;
+                    }
+                }
+
+                // Verifica se già scaricato
+                $existingDoc = Document::where('tenant_id', $tenant->id)
+                    ->where('source_url', $absoluteUrl)
+                    ->first();
+                if ($existingDoc) {
+                    $skipped++;
+                    \Log::debug("📎 Documento già esistente", ['url' => $absoluteUrl, 'doc_id' => $existingDoc->id]);
+                    continue;
+                }
+
+                // Scarica e salva
+                if ($this->downloadAndSaveDocument($absoluteUrl, $tenant, $config)) {
+                    $downloaded++;
+                } else {
+                    $skipped++;
+                }
+            }
+
+            \Log::info("📎 Download documenti collegati completato", [
+                'page_url' => $pageUrl,
+                'downloaded' => $downloaded,
+                'skipped' => $skipped,
+                'total_processed' => count($links)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("📎 Errore durante download documenti collegati", [
+                'page_url' => $pageUrl,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Scarica e salva un singolo documento collegato
+     */
+    private function downloadAndSaveDocument(string $url, Tenant $tenant, ScraperConfig $config): bool
+    {
+        try {
+            // Fetch del documento
+            $response = Http::timeout(30)
+                ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; WebScraper/1.0)'])
+                ->get($url);
+
+            if (!$response->successful()) {
+                \Log::warning("📎 HTTP error downloading document", ['url' => $url, 'status' => $response->status()]);
+                return false;
+            }
+
+            $content = $response->body();
+            $sizeBytes = strlen($content);
+            $sizeMB = $sizeBytes / (1024 * 1024);
+
+            // Verifica dimensione
+            if ($sizeMB > ($config->linked_max_size_mb ?? 10)) {
+                \Log::warning("📎 Documento troppo grande", [
+                    'url' => $url,
+                    'size_mb' => round($sizeMB, 2),
+                    'max_allowed' => $config->linked_max_size_mb
+                ]);
+                return false;
+            }
+
+            // Determina KB target
+            $targetKbId = $config->linked_target_kb_id ?? $config->target_knowledge_base_id;
+            if (!$targetKbId) {
+                $targetKbId = \App\Models\KnowledgeBase::where('tenant_id', $tenant->id)
+                    ->where('is_default', true)
+                    ->value('id');
+            }
+
+            // Genera nome file unico
+            $filename = basename(parse_url($url, PHP_URL_PATH));
+            if (empty($filename) || !str_contains($filename, '.')) {
+                $extension = pathinfo($url, PATHINFO_EXTENSION);
+                $filename = 'document_' . time() . '.' . $extension;
+            }
+
+            $path = "linked_docs/{$tenant->id}/" . $filename;
+            $counter = 1;
+            while (Storage::disk('public')->exists($path)) {
+                $nameWithoutExt = pathinfo($filename, PATHINFO_FILENAME);
+                $ext = pathinfo($filename, PATHINFO_EXTENSION);
+                $path = "linked_docs/{$tenant->id}/{$nameWithoutExt}_{$counter}.{$ext}";
+                $counter++;
+            }
+
+            // Salva file
+            Storage::disk('public')->put($path, $content);
+
+            // Crea record documento
+            $document = Document::create([
+                'tenant_id' => $tenant->id,
+                'knowledge_base_id' => $targetKbId,
+                'title' => pathinfo($filename, PATHINFO_FILENAME),
+                'path' => $path,
+                'source_url' => $url,
+                'content_hash' => hash('sha256', $content),
+                'size' => $sizeBytes,
+                'ingestion_status' => 'pending',
+                'source' => 'web_scraper_linked',
+                'metadata' => [
+                    'linked_from_scraper' => true,
+                    'original_extension' => pathinfo($filename, PATHINFO_EXTENSION),
+                    'downloaded_at' => now()->toISOString()
+                ]
+            ]);
+
+            // Avvia ingestion
+            IngestUploadedDocumentJob::dispatch($document->id);
+
+            \Log::info("📎 Documento collegato scaricato e salvato", [
+                'url' => $url,
+                'document_id' => $document->id,
+                'path' => $path,
+                'size_mb' => round($sizeMB, 2)
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            \Log::error("📎 Errore scaricamento documento", [
+                'url' => $url,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
 }

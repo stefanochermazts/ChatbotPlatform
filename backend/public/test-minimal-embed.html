@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Minimal Embed</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; }
+    .log { background: #000; color: #0f0; padding: 10px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>🔬 Test Minimal Embed</h1>
+  <div class="log" id="log"></div>
+
+  <script>
+    function log(msg) {
+      document.getElementById('log').innerHTML += new Date().toLocaleTimeString() + ': ' + msg + '\n';
+      console.log(msg);
+    }
+    
+    log('🚀 Page loaded');
+    
+    // Minimal config
+    window.chatbotConfig = {
+      apiKey: 'test',
+      tenantId: 1,
+      debug: true
+    };
+    
+    log('📋 Config set');
+    
+    // Test script loading
+    window.addEventListener('error', function(e) {
+      log('❌ GLOBAL ERROR: ' + e.error + ' in ' + e.filename + ':' + e.lineno);
+    });
+    
+    // Override console methods to capture everything
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      // Use direct DOM update to avoid infinite loop
+      document.getElementById('log').innerHTML += new Date().toLocaleTimeString() + ': LOG: ' + args.join(' ') + '\n';
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      // Use direct DOM update to avoid infinite loop
+      document.getElementById('log').innerHTML += new Date().toLocaleTimeString() + ': ERROR: ' + args.join(' ') + '\n';
+    };
+    
+    log('📜 About to load embed script...');
+  </script>
+
+  <!-- Load the embed script -->
+  <script>
+    // Load script manually with error handling
+    const script = document.createElement('script');
+    script.src = './widget/embed/chatbot-embed.js';
+    script.async = true;
+    
+    script.onload = function() {
+      log('✅ Script loaded successfully');
+    };
+    
+    script.onerror = function(e) {
+      log('❌ Script failed to load: ' + e);
+    };
+    
+    document.head.appendChild(script);
+    log('📥 Script tag added');
+  </script>
+</body>
+</html>

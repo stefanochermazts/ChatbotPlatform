@@ -189,7 +189,7 @@
       
       <div class="info-card">
         <div class="info-label">Modello API</div>
-        <div class="info-value">{{ $config->api_model }}</div>
+        <div class="info-value">{{ config('openai.chat_model', $config->api_model) }}</div>
       </div>
       
       <div class="info-card">
@@ -251,15 +251,25 @@
     // Set the real API key for this tenant
     @if($apiKey)
       window.chatbotConfig.apiKey = '{{ $apiKey }}';
+      // With real API key, enable server features but be cautious
+      window.chatbotConfig.enableQuickActions = window.chatbotConfig.enableQuickActions ?? true;
+      window.chatbotConfig.enableThemeAPI = window.chatbotConfig.enableThemeAPI ?? true;
     @else
       window.chatbotConfig.apiKey = 'demo_api_key_123'; // Fallback demo key
       console.warn('⚠️ Nessuna API key trovata per questo tenant. Usando chiave demo.');
+      // Disable server-dependent features for demo mode
+      window.chatbotConfig.enableQuickActions = false;
+      window.chatbotConfig.enableThemeAPI = false;
     @endif
     
     window.chatbotConfig.debug = true;
     
     // Preview specific settings
     window.chatbotConfig.autoOpen = false; // Don't auto-open in preview
+    
+    // Preserve all widget configuration from backend
+    // The embed_config should include: theme, position, enableConversationContext, 
+    // enableAnalytics, model, temperature, maxTokens, etc.
     
     // Preview state
     let widgetLoaded = false;
