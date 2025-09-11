@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\User;
 use App\Models\Tenant;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class CreateTenant extends Command
@@ -173,17 +174,18 @@ class CreateTenant extends Command
     {
         try {
             // Create tenant
-            $tenant = Tenant::create([
+            $tenantData = [
                 'name' => $name,
                 'slug' => $slug,
                 'domain' => $domain,
-                'active' => true,
-                'settings' => [
-                    'max_knowledge_bases' => 10,
-                    'max_documents_per_kb' => 1000,
-                    'max_monthly_queries' => 10000,
-                ],
-            ]);
+            ];
+
+            // Add active field only if column exists
+            if (Schema::hasColumn('tenants', 'active')) {
+                $tenantData['active'] = true;
+            }
+
+            $tenant = Tenant::create($tenantData);
 
             $this->info("✅ Tenant created successfully! (ID: {$tenant->id})");
 
