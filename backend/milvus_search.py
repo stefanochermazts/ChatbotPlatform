@@ -74,17 +74,29 @@ def upsert_vectors(collection_name, tenant_id, document_id, vectors, chunks=None
         connect_milvus()
         collection = Collection(collection_name)
         
-        # Prepara i dati per l'inserimento
-        data = []
+        # Prepara i dati per l'inserimento usando il formato a liste
+        ids = []
+        tenant_ids = []
+        document_ids = []
+        chunk_indices = []
+        vector_data = []
+        
         for i, vector in enumerate(vectors):
             primary_id = (document_id * 100000) + i
-            data.append({
-                "id": primary_id,
-                "tenant_id": tenant_id,
-                "document_id": document_id,
-                "chunk_index": i,
-                "vector": vector
-            })
+            ids.append(primary_id)
+            tenant_ids.append(tenant_id)
+            document_ids.append(document_id)
+            chunk_indices.append(i)
+            vector_data.append(vector)
+        
+        # Formato corretto per Milvus: liste separate per ogni campo
+        data = [
+            ids,           # id (primary key)
+            tenant_ids,    # tenant_id
+            document_ids,  # document_id  
+            chunk_indices, # chunk_index
+            vector_data    # vector
+        ]
         
         # Inserisci i dati
         collection.insert(data)
@@ -92,7 +104,7 @@ def upsert_vectors(collection_name, tenant_id, document_id, vectors, chunks=None
         
         return {
             "success": True,
-            "inserted_count": len(data)
+            "inserted_count": len(ids)
         }
         
     except Exception as e:
