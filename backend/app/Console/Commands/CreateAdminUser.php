@@ -37,7 +37,7 @@ class CreateAdminUser extends Command
 
         // Get user input
         $email = $this->getEmail();
-        $name = $this->getName();
+        $name = $this->getAdminName();
         $password = $this->getPassword();
 
         // Validate inputs
@@ -71,7 +71,7 @@ class CreateAdminUser extends Command
         return trim($email);
     }
 
-    private function getName(): string
+    private function getAdminName(): string
     {
         $name = $this->option('name');
         
