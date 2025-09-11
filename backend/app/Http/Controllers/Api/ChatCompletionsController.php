@@ -174,13 +174,7 @@ class ChatCompletionsController extends Controller
             $currentContent = (string) ($result['choices'][0]['message']['content'] ?? '');
             // Aggiungi il link solo se la risposta non è un fallback
             if ($currentContent !== (string) config('rag.answer.fallback_message')) {
-                // 🔧 SMART DEDUPLICATION: Evita link duplicati se già presente nella risposta
-                $normalizedUrl = trim($bestSourceUrl);
-                $isDuplicate = strpos($currentContent, $normalizedUrl) !== false;
-                
-                if (!$isDuplicate) {
-                    $result['choices'][0]['message']['content'] = $currentContent . "\n\n🔗 **Fonte principale**: " . $normalizedUrl;
-                }
+                $result['choices'][0]['message']['content'] = $currentContent . "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
             }
         }
 

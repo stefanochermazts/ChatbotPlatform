@@ -17,7 +17,6 @@ class Tenant extends Model
         'slug',
         'domain',
         'plan',
-        'active',
         'metadata',
         'languages',
         'default_language',
@@ -32,7 +31,6 @@ class Tenant extends Model
     ];
 
     protected $casts = [
-        'active' => 'boolean',
         'metadata' => 'array',
         'languages' => 'array',
         'whatsapp_config' => 'array',

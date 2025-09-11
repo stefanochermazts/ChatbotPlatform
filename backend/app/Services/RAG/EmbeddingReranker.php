@@ -6,10 +6,7 @@ use App\Services\LLM\OpenAIEmbeddingsService;
 
 class EmbeddingReranker implements RerankerInterface
 {
-    public function __construct(
-        private readonly OpenAIEmbeddingsService $embeddings,
-        private readonly ?EmbeddingBatchService $batchService = null
-    ) {}
+    public function __construct(private readonly OpenAIEmbeddingsService $embeddings) {}
 
     public function rerank(string $query, array $candidates, int $topN): array
     {
@@ -19,28 +16,12 @@ class EmbeddingReranker implements RerankerInterface
         $enhancedQuery = $this->enhanceQuery($query);
         
         // 2. Generate embeddings with batching optimization
-        if ($this->batchService) {
-            // Use batch service if available
-            $this->batchService->addToBatch([$enhancedQuery], 'reranker_query');
-            $qEmb = $this->batchService->getEmbedding($enhancedQuery);
-        } else {
-            // Fallback to direct call
-            $qEmb = $this->embeddings->embedTexts([$enhancedQuery])[0] ?? null;
-        }
-        
+        $qEmb = $this->embeddings->embedTexts([$enhancedQuery])[0] ?? null;
         if ($qEmb === null) return array_slice($candidates, 0, $topN);
 
         // 3. Optimize text extraction and preprocessing
         $texts = array_map(fn($c) => $this->preprocessText((string) $c['text']), $candidates);
-        
-        if ($this->batchService) {
-            // Use batch service for candidate embeddings
-            $this->batchService->addToBatch($texts, 'reranker_candidates');
-            $embs = $this->batchService->getEmbeddings($texts);
-        } else {
-            // Fallback to direct call
-            $embs = $this->embeddings->embedTexts($texts);
-        }
+        $embs = $this->embeddings->embedTexts($texts);
 
         // 4. Advanced scoring with multiple metrics
         $scores = [];

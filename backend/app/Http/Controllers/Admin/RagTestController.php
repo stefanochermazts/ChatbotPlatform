@@ -204,13 +204,7 @@ class RagTestController extends Controller
             // 🆕 Aggiungi source_url del documento con confidenza più alta se disponibile
             $bestSourceUrl = $this->getBestSourceUrl($citations);
             if (!empty(trim($bestSourceUrl)) && count($citations) > 0 && $answer !== '') {
-                // 🔧 SMART DEDUPLICATION: Evita link duplicati se già presente nella risposta
-                $normalizedUrl = trim($bestSourceUrl);
-                $isDuplicate = strpos($answer, $normalizedUrl) !== false;
-                
-                if (!$isDuplicate) {
-                    $answer .= "\n\n🔗 **Fonte principale**: " . $normalizedUrl;
-                }
+                $answer .= "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
             }
             
             if (is_array($trace)) {

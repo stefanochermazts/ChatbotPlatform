@@ -53,12 +53,12 @@ return [
 
     // Retrieval ibrido e ranking
     'hybrid' => [
-        'vector_top_k' => (int) env('RAG_VECTOR_TOP_K', 200), // 🔧 AUMENTATO per non perdere chunk
-        'bm25_top_k'   => (int) env('RAG_BM25_TOP_K', 200), // 🔧 AUMENTATO per BM25
+        'vector_top_k' => (int) env('RAG_VECTOR_TOP_K', 100), // 🔧 MASSIMO per recuperare tutti i chunk
+        'bm25_top_k'   => (int) env('RAG_BM25_TOP_K', 150), // 🔧 MASSIMO per BM25
         'rrf_k'        => (int) env('RAG_RRF_K', 60),
         'mmr_lambda'   => (float) env('RAG_MMR_LAMBDA', 0.1), // 🔧 Ridotto per più diversità
-        'mmr_take'     => (int) env('RAG_MMR_TAKE', 100), // 🔧 AUMENTATO per recuperare più chunk
-        'neighbor_radius' => (int) env('RAG_NEIGHBOR_RADIUS', 10), // 🔧 AUMENTATO per più contesto
+        'mmr_take'     => (int) env('RAG_MMR_TAKE', 50), // 🔧 MASSIMO per tutti i risultati
+        'neighbor_radius' => (int) env('RAG_NEIGHBOR_RADIUS', 5), // 🔧 Aumentato per più contesto
     ],
 
     // Multi-query expansion (parafrasi della query utente)
@@ -82,7 +82,7 @@ return [
     'reranker' => [
         // Driver: embedding | cohere | llm
         'driver' => env('RAG_RERANK_DRIVER', 'embedding'), // 🔧 Embedding per velocità (widget), llm per accuratezza (admin)
-        'top_n'  => (int) env('RAG_RERANK_TOP_N', 100), // 🔧 AUMENTATO per non perdere chunk importanti
+        'top_n'  => (int) env('RAG_RERANK_TOP_N', 50), // 🔧 Ridotto per velocità (era 100)
 
         // Cohere
         'cohere' => [
@@ -94,11 +94,11 @@ return [
 
     // Context builder: packing token-aware con compressione e dedup
     'context' => [
-        'enabled' => filter_var(env('RAG_CTX_ENABLED', false), FILTER_VALIDATE_BOOLEAN), // 🚨 DISABILITATA per preservare numeri telefono
+        'enabled' => filter_var(env('RAG_CTX_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         // Limite approssimato lato server (caratteri) per prevenire request troppo grandi
-        'max_chars' => (int) env('RAG_CTX_MAX_CHARS', 15000), // 🔧 Aumentato per contenuti completi
-        'compress_if_over_chars' => (int) env('RAG_CTX_COMPRESS_IF_OVER', 5000), // 🔧 Soglia molto alta
-        'compress_target_chars' => (int) env('RAG_CTX_COMPRESS_TARGET', 2000), // 🔧 Target più grande
+        'max_chars' => (int) env('RAG_CTX_MAX_CHARS', 12000), // 🔧 Raddoppiato per più contenuto
+        'compress_if_over_chars' => (int) env('RAG_CTX_COMPRESS_IF_OVER', 1400), // 🔧 Raddoppiato
+        'compress_target_chars' => (int) env('RAG_CTX_COMPRESS_TARGET', 700), // 🔧 Raddoppiato
         'model' => env('RAG_CTX_MODEL', 'gpt-4o-mini'),
         'temperature' => (float) env('RAG_CTX_TEMPERATURE', 0.1),
     ],
