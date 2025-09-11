@@ -34,16 +34,21 @@ def backup_collection_data(collection_name):
         collection = Collection(collection_name)
         collection.load()
         
+        # Rileva automaticamente i campi dallo schema
+        schema = collection.schema
+        field_names = [field.name for field in schema.fields]
+        print(f"Detected fields in schema: {field_names}", file=sys.stderr)
+        
         # Backup in batch per rispettare limite Milvus di 16384 records per query
         all_results = []
         batch_size = 10000  # Sicuro sotto il limite di 16384
         offset = 0
         
         while True:
-            # Query batch di dati
+            # Query batch di dati usando tutti i campi rilevati
             batch_results = collection.query(
                 expr="id >= 0",
-                output_fields=["id", "tenant_id", "document_id", "chunk_index", "vector"],
+                output_fields=field_names,  # Usa i campi reali dello schema
                 limit=batch_size,
                 offset=offset
             )
@@ -162,34 +167,36 @@ def restore_collection_data(collection_name, backup_file):
         if not records:
             return {"success": True, "message": "No data to restore"}
         
-        ids = []
-        tenant_ids = []
-        document_ids = []
-        chunk_indices = []
-        vectors = []
+        # Rileva i campi dal primo record
+        sample_record = records[0]
+        field_names = list(sample_record.keys())
+        print(f"Restoring fields: {field_names}", file=sys.stderr)
+        
+        # Crea liste per ogni campo
+        field_data = {field: [] for field in field_names}
         
         for record in records:
-            ids.append(record["id"])
-            tenant_ids.append(record["tenant_id"])
-            document_ids.append(record["document_id"])
-            chunk_indices.append(record["chunk_index"])
-            vectors.append(record["vector"])
+            for field in field_names:
+                field_data[field].append(record[field])
+        
+        # Converti in lista ordinata per Milvus (deve corrispondere all'ordine dello schema)
+        data_lists = [field_data[field] for field in field_names]
         
         # Inserisci in batch (max 1000 per volta)
         batch_size = 1000
         total_inserted = 0
+        total_records = len(records)
         
-        for i in range(0, len(ids), batch_size):
-            batch_data = [
-                ids[i:i+batch_size],
-                tenant_ids[i:i+batch_size],
-                document_ids[i:i+batch_size],
-                chunk_indices[i:i+batch_size],
-                vectors[i:i+batch_size]
-            ]
+        for i in range(0, total_records, batch_size):
+            # Prepara batch data per ogni campo
+            batch_data = []
+            for field in field_names:
+                batch_data.append(field_data[field][i:i+batch_size])
             
             collection.insert(batch_data)
-            total_inserted += len(batch_data[0])
+            batch_size_actual = len(batch_data[0])
+            total_inserted += batch_size_actual
+            print(f"Restored {total_inserted}/{total_records} records", file=sys.stderr)
         
         collection.flush()
         
