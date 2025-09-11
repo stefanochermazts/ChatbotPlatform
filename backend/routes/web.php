@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DocumentAdminController;
 use App\Http\Controllers\Admin\RagTestController;
 use App\Http\Controllers\Admin\ScraperAdminController;
+use App\Http\Controllers\Admin\ScraperProgressController;
 use App\Http\Controllers\Admin\TenantAdminController;
 use App\Http\Controllers\Admin\TenantFormController;
 use App\Http\Controllers\Admin\FormSubmissionController;
@@ -77,6 +78,14 @@ Route::middleware(['auth.user'])->group(function () {
 // Route::post('/admin/logout', [AdminAuthController::class, 'logout'])->name('admin.logout');
 
 Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('admin.')->group(function () {
+    // Progress API endpoints
+    Route::prefix('scraper-progress')->name('scraper-progress.')->group(function () {
+        Route::get('/current/{tenant}', [ScraperProgressController::class, 'current'])->name('current');
+        Route::get('/history/{tenant}', [ScraperProgressController::class, 'history'])->name('history');
+        Route::get('/session/{sessionId}', [ScraperProgressController::class, 'session'])->name('session');
+        Route::post('/cancel/{sessionId}', [ScraperProgressController::class, 'cancel'])->name('cancel');
+        Route::get('/dashboard/{tenant}', [ScraperProgressController::class, 'dashboard'])->name('dashboard');
+    });
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // User Management

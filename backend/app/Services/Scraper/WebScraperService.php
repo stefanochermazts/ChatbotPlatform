@@ -4,6 +4,7 @@ namespace App\Services\Scraper;
 
 use App\Models\Document;
 use App\Models\ScraperConfig;
+use App\Models\ScraperProgress;
 use App\Models\Tenant;
 use App\Jobs\IngestUploadedDocumentJob;
 use App\Services\Scraper\ContentQualityAnalyzer;
@@ -19,6 +20,8 @@ class WebScraperService
     private array $results = [];
     private array $stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
     private ContentQualityAnalyzer $qualityAnalyzer;
+    private ?ScraperProgress $progress = null;
+    private array $urlsQueue = [];
 
     public function __construct()
     {
@@ -36,9 +39,13 @@ class WebScraperService
             return ['error' => 'Nessuna configurazione scraper trovata o seed URLs vuoti'];
         }
 
+        // Inizializza progress tracking
+        $this->initializeProgress($tenantId, $scraperConfigId);
+        
         $this->visitedUrls = [];
         $this->results = [];
         $this->stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
+        $this->urlsQueue = [];
 
         // Scraping da sitemap se presente
         if (!empty($config->sitemap_urls)) {
@@ -1966,6 +1973,81 @@ class WebScraperService
             ]);
             return false;
         }
+    }
+
+    /**
+     * Inizializza il tracking del progress
+     */
+    private function initializeProgress(int $tenantId, ?int $scraperConfigId): void
+    {
+        $sessionId = Str::uuid()->toString();
+        
+        $this->progress = ScraperProgress::create([
+            'tenant_id' => $tenantId,
+            'scraper_config_id' => $scraperConfigId,
+            'session_id' => $sessionId,
+            'status' => 'running',
+            'started_at' => now(),
+        ]);
+        
+        \Log::info("🚀 Scraping progress inizializzato", [
+            'session_id' => $sessionId,
+            'tenant_id' => $tenantId,
+            'scraper_config_id' => $scraperConfigId
+        ]);
+    }
+
+    /**
+     * Aggiorna il progress durante lo scraping
+     */
+    private function updateProgress(array $updates): void
+    {
+        if (!$this->progress) return;
+        
+        try {
+            $this->progress->update($updates);
+            
+            // Log ogni 10 pagine scrapate
+            if (isset($updates['pages_scraped']) && $this->progress->pages_scraped % 10 === 0) {
+                \Log::info("📊 Progress update", [
+                    'session_id' => $this->progress->session_id,
+                    'pages_scraped' => $this->progress->pages_scraped,
+                    'pages_found' => $this->progress->pages_found,
+                    'documents_created' => $this->progress->documents_created,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::warning("Errore aggiornamento progress", [
+                'session_id' => $this->progress?->session_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Finalizza il progress al completamento
+     */
+    private function finalizeProgress(string $status = 'completed', ?string $error = null): void
+    {
+        if (!$this->progress) return;
+        
+        $updates = [
+            'status' => $status,
+            'completed_at' => now(),
+        ];
+        
+        if ($error) {
+            $updates['last_error'] = $error;
+        }
+        
+        $this->progress->update($updates);
+        
+        \Log::info("✅ Scraping completato", [
+            'session_id' => $this->progress->session_id,
+            'status' => $status,
+            'duration_seconds' => $this->progress->started_at->diffInSeconds(now()),
+            'final_stats' => $this->progress->getSummary()
+        ]);
     }
 
 }
