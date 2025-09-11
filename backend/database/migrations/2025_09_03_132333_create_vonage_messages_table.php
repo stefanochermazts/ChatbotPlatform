@@ -28,7 +28,7 @@ return new class extends Migration
             // Indici per performance
             $table->index(['tenant_id', 'created_at']);
             $table->index(['tenant_id', 'channel']);
-            $table->index(['message_id']);
+            // message_id già indicizzato con ->index() alla riga 17
         });
     }
 
