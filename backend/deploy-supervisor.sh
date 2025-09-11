@@ -65,7 +65,7 @@ log_info "Creazione configurazione Supervisor..."
 sudo tee $SUPERVISOR_CONFIG > /dev/null <<EOF
 [program:chatbot-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php $PROJECT_PATH/artisan queue:work --sleep=3 --tries=3 --max-time=3600 --queue=default,ingestion,embeddings,indexing,evaluation
+command=php $PROJECT_PATH/artisan queue:work --sleep=3 --tries=3 --max-time=3600 --queue=default,ingestion,embeddings,indexing,evaluation,email,scraping
 directory=$PROJECT_PATH
 autostart=true
 autorestart=true

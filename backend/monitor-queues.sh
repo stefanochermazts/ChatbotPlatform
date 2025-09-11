@@ -22,7 +22,7 @@ cd /home/crowdmai/public_html/backend
 
 # Job in attesa per queue
 echo "Jobs in attesa:"
-php artisan queue:monitor default ingestion embeddings indexing evaluation
+php artisan queue:monitor default ingestion embeddings indexing evaluation email scraping
 
 echo ""
 echo -e "${BLUE}❌ FAILED JOBS${NC}"
