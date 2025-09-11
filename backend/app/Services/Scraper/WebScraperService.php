@@ -122,7 +122,7 @@ class WebScraperService
     private function scrapeSitemap(string $sitemapUrl, ScraperConfig $config, Tenant $tenant): void
     {
         try {
-            $response = Http::timeout(30)->get($sitemapUrl);
+            $response = Http::timeout($config->timeout ?? 60)->get($sitemapUrl);
             if (!$response->successful()) return;
 
             $xml = simplexml_load_string($response->body());
@@ -141,7 +141,10 @@ class WebScraperService
 
     private function fetchUrl(string $url, ScraperConfig $config): ?string
     {
-        $httpBuilder = Http::timeout(30)
+        // Timeout configurabile con fallback a 60 secondi
+        $timeout = $config->timeout ?? 60;
+        
+        $httpBuilder = Http::timeout($timeout)
             ->withUserAgent('ChatbotPlatform/1.0 (+https://example.com/bot)')
             ->withHeaders($config->auth_headers ?? []);
 
@@ -1875,7 +1878,8 @@ class WebScraperService
     {
         try {
             // Fetch del documento
-            $response = Http::timeout(30)
+            $timeout = $config->timeout ?? 60;
+            $response = Http::timeout($timeout)
                 ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; WebScraper/1.0)'])
                 ->get($url);
 

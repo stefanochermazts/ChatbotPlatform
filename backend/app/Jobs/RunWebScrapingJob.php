@@ -16,6 +16,10 @@ class RunWebScrapingJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, HandlesFailureGracefully;
 
+    public $tries = 3;
+    public $timeout = 3600; // 1 ora per scraping complessi
+    public $backoff = [300, 600, 1200]; // 5min, 10min, 20min retry delays
+
     public function __construct(
         private readonly int $tenantId,
         private readonly ?int $scraperConfigId = null,
