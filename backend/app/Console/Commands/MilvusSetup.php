@@ -211,6 +211,13 @@ class MilvusSetup extends Command
     private function createHealthCheckScript(): string
     {
         $config = config('rag.vector.milvus');
+        
+        // Assicurati che la directory esista
+        $storageDir = storage_path('app');
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0755, true);
+        }
+        
         $scriptPath = storage_path('app/milvus_health_check.py');
 
         $script = <<<PYTHON
@@ -264,6 +271,13 @@ PYTHON;
     private function createCollectionScript(): string
     {
         $config = config('rag.vector.milvus');
+        
+        // Assicurati che la directory esista
+        $storageDir = storage_path('app');
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0755, true);
+        }
+        
         $scriptPath = storage_path('app/milvus_create_collection.py');
 
         $embeddingDim = config('rag.embedding_dim');
@@ -347,6 +361,13 @@ PYTHON;
     private function createResetScript(): string
     {
         $config = config('rag.vector.milvus');
+        
+        // Assicurati che la directory esista
+        $storageDir = storage_path('app');
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0755, true);
+        }
+        
         $scriptPath = storage_path('app/milvus_reset_collection.py');
 
         $script = <<<PYTHON
