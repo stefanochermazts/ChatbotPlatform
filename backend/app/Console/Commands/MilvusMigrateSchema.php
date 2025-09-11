@@ -73,16 +73,25 @@ class MilvusMigrateSchema extends Command
 
         // Separa stderr (progress) da stdout (JSON result)
         $lines = explode("\n", trim($output));
-        $jsonLine = array_pop($lines); // L'ultima riga dovrebbe essere JSON
         
-        // Mostra progress da stderr
+        // Trova dove inizia il JSON (dalla prima riga che contiene {)
+        $jsonLines = [];
+        $jsonStarted = false;
+        
         foreach ($lines as $line) {
-            if (!empty(trim($line)) && !str_contains($line, '{')) {
+            if (str_contains($line, '{')) {
+                $jsonStarted = true;
+            }
+            
+            if ($jsonStarted) {
+                $jsonLines[] = $line;
+            } else if (!empty(trim($line))) {
                 $this->line("  📊 {$line}");
             }
         }
-
-        $result = json_decode($jsonLine, true);
+        
+        $jsonString = implode("\n", $jsonLines);
+        $result = json_decode($jsonString, true);
         
         if (!$result) {
             $this->error("❌ Invalid JSON response from Python script:");
