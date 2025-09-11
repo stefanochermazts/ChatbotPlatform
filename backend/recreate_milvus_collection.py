@@ -34,12 +34,32 @@ def backup_collection_data(collection_name):
         collection = Collection(collection_name)
         collection.load()
         
-        # Query tutti i dati (max 100k records per safety)
-        results = collection.query(
-            expr="id >= 0",
-            output_fields=["id", "tenant_id", "document_id", "chunk_index", "vector"],
-            limit=100000
-        )
+        # Backup in batch per rispettare limite Milvus di 16384 records per query
+        all_results = []
+        batch_size = 10000  # Sicuro sotto il limite di 16384
+        offset = 0
+        
+        while True:
+            # Query batch di dati
+            batch_results = collection.query(
+                expr="id >= 0",
+                output_fields=["id", "tenant_id", "document_id", "chunk_index", "vector"],
+                limit=batch_size,
+                offset=offset
+            )
+            
+            if not batch_results:
+                break
+                
+            all_results.extend(batch_results)
+            print(f"Backed up {len(all_results)} records so far...", file=sys.stderr)
+            offset += len(batch_results)
+            
+            # Se abbiamo ottenuto meno records del batch_size, abbiamo finito
+            if len(batch_results) < batch_size:
+                break
+        
+        results = all_results
         
         backup_data = {
             "collection_name": collection_name,

@@ -71,10 +71,22 @@ class MilvusMigrateSchema extends Command
             return 1;
         }
 
-        $result = json_decode($output, true);
+        // Separa stderr (progress) da stdout (JSON result)
+        $lines = explode("\n", trim($output));
+        $jsonLine = array_pop($lines); // L'ultima riga dovrebbe essere JSON
+        
+        // Mostra progress da stderr
+        foreach ($lines as $line) {
+            if (!empty(trim($line)) && !str_contains($line, '{')) {
+                $this->line("  📊 {$line}");
+            }
+        }
+
+        $result = json_decode($jsonLine, true);
         
         if (!$result) {
             $this->error("❌ Invalid JSON response from Python script:");
+            $this->line("Raw output:");
             $this->line($output);
             return 1;
         }
