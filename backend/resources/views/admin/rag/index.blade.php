@@ -153,13 +153,23 @@
               @if(!empty($c['snippet']))
                 <div class="space-y-2">
                   <div>
-                    <div class="text-xs font-medium text-gray-600 mb-1">📝 Snippet (estratto breve):</div>
-                    <blockquote class="p-2 bg-gray-50 border rounded text-sm">{{ $c['snippet'] }}</blockquote>
+                    <div class="text-xs font-medium text-gray-600 mb-1">📝 Snippet (con chunk vicini):</div>
+                    <blockquote class="p-2 bg-gray-50 border rounded text-sm rag-tester-pre">{{ $c['snippet'] }}</blockquote>
+                    @php
+                      // Cerca telefoni nel snippet
+                      preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $c['snippet'], $phoneMatches);
+                      $phones = array_unique($phoneMatches[0]);
+                    @endphp
+                    @if(!empty($phones))
+                      <div class="mt-1 text-xs bg-green-50 border border-green-200 rounded p-2">
+                        📞 <strong>Telefoni trovati:</strong> {{ implode(', ', $phones) }}
+                      </div>
+                    @endif
                   </div>
                   @if(!empty($c['chunk_text']) && $c['chunk_text'] !== $c['snippet'])
                     <div>
-                      <div class="text-xs font-medium text-blue-600 mb-1">📄 Chunk completo:</div>
-                      <blockquote class="p-3 bg-blue-50 border border-blue-200 rounded text-sm max-h-60 overflow-y-auto">{{ $c['chunk_text'] }}</blockquote>
+                      <div class="text-xs font-medium text-blue-600 mb-1">📄 Chunk originale (singolo):</div>
+                      <blockquote class="p-3 bg-blue-50 border border-blue-200 rounded text-sm max-h-60 overflow-y-auto rag-tester-pre">{{ $c['chunk_text'] }}</blockquote>
                     </div>
                   @endif
                 </div>

@@ -372,10 +372,21 @@ class KbSearchService
         $topN = (int) ($this->tenantConfig->getRerankerConfig($tenantId)['top_n'] ?? 30);
         $candidates = [];
         foreach (array_slice($fused, 0, $topN) as $h) {
+            $docId = (int) $h['document_id'];
+            $chunkIndex = (int) $h['chunk_index'];
+            
+            // 🆕 Applica neighbor_radius anche al reranking
+            $text = $this->text->getChunkSnippet($docId, $chunkIndex, 512) ?? '';
+            for ($d = -$neighbor; $d <= $neighbor; $d++) {
+                if ($d === 0) continue;
+                $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 200);
+                if ($neighborText) $text .= "\n" . $neighborText;
+            }
+            
             $candidates[] = [
-                'document_id' => (int) $h['document_id'],
-                'chunk_index' => (int) $h['chunk_index'],
-                'text' => $this->text->getChunkSnippet((int)$h['document_id'], (int)$h['chunk_index'], 512) ?? '',
+                'document_id' => $docId,
+                'chunk_index' => $chunkIndex,
+                'text' => $text,
                 'score' => (float) $h['score'],
             ];
         }
