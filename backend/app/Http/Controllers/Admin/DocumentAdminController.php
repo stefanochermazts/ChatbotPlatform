@@ -310,16 +310,20 @@ class DocumentAdminController extends Controller
         }
 
         // 3) BACKUP: Job asincrono per sicurezza (se cancellazione sincrona fallisce)
-        DeleteVectorsJobFixed::fromDocumentIds($documentIds)->dispatch();
+        if (!empty($documentIds)) {
+            DeleteVectorsJobFixed::fromDocumentIds($documentIds)->dispatch();
+        }
 
         // 4) Cancella dati strutturati e file
-        \DB::table('document_chunks')->whereIn('document_id', $documentIds)->delete();
+        if (!empty($documentIds)) {
+            \DB::table('document_chunks')->whereIn('document_id', $documentIds)->delete();
+            Document::whereIn('id', $documentIds)->delete();
+        }
         foreach ($docs as $d) {
             if ($d->path && Storage::disk('public')->exists($d->path)) {
                 Storage::disk('public')->delete($d->path);
             }
         }
-        Document::whereIn('id', $documentIds)->delete();
 
         return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Documenti della KB selezionata eliminati');
     }
