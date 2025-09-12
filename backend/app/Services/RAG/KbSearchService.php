@@ -400,7 +400,8 @@ class KbSearchService
         };
         
         // Cache key include driver e neighbor_radius per evitare conflitti
-        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN},{$neighbor}";
+        // 🔧 TEMP: Aggiungi timestamp per forzare cache refresh
+        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN},{$neighbor}:" . floor(time() / 60);
         
         // Per LLM reranking, aggiungi timestamp alla cache key per evitare cache troppo aggressive
         if ($driver === 'llm') {
