@@ -139,6 +139,16 @@ class RagTestController extends Controller
             
             $retrieval = $kb->retrieve($tenantId, $finalQuery, true);
             
+            // 🔍 DEBUG: Aggiungi sempre al trace
+            if (!isset($retrieval['debug'])) {
+                $retrieval['debug'] = [];
+            }
+            $retrieval['debug']['rag_tester_debug'] = [
+                'neighbor_radius' => $hybridConfig['neighbor_radius'] ?? 'not_set',
+                'kb_service_class' => get_class($kb),
+                'query_used' => $finalQuery
+            ];
+            
             // Aggiungi debug conversazione al trace
             if ($conversationContext) {
                 $retrieval['debug']['conversation'] = $conversationContext;
@@ -153,6 +163,15 @@ class RagTestController extends Controller
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
         $trace = $retrieval['debug'] ?? null;
+        
+        // 🔍 DEBUG: Analizza citazioni per telefoni
+        \Log::error('RAG Tester Citations Debug', [
+            'tenant_id' => $tenantId,
+            'query' => $finalQuery,
+            'citations_count' => count($citations),
+            'first_citation_snippet_preview' => isset($citations[0]) ? substr($citations[0]['snippet'] ?? '', 0, 200) : 'no_citations',
+            'phones_in_first_snippet' => isset($citations[0]) ? (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $citations[0]['snippet'] ?? '', $matches) ? $matches[0] : []) : []
+        ]);
         $answer = null;
         if ((bool) ($data['with_answer'] ?? false)) {
             $contextText = '';
