@@ -3,6 +3,18 @@
 @section('content')
 <h1 class="text-xl font-semibold mb-4">Documenti – {{ $tenant->name }}</h1>
 
+@if(session('success'))
+<div class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+  {{ session('success') }}
+</div>
+@endif
+
+@if(session('error'))
+<div class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+  {{ session('error') }}
+</div>
+@endif
+
 <form method="get" action="" class="mb-4 flex flex-wrap items-center gap-2">
   <label class="text-sm">Filtra per KB:</label>
   <select name="kb_id" class="border rounded px-2 py-1 text-sm" onchange="this.form.submit()">
@@ -33,6 +45,39 @@
     <a href="{{ route('admin.documents.index', $tenant) }}" class="text-xs text-gray-600 underline">Reset filtri</a>
   @endif
 </form>
+
+<!-- Single URL Scraper -->
+<div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+  <h3 class="text-sm font-semibold text-blue-800 mb-3">🌐 Scraping URL Singolo</h3>
+  <form method="POST" action="{{ route('admin.documents.scrape-single-url', $tenant) }}" class="flex gap-2 items-end">
+    @csrf
+    <div class="flex-1">
+      <label for="url" class="block text-xs text-gray-600 mb-1">URL da scrapare</label>
+      <input type="url" 
+             name="url" 
+             id="url"
+             required
+             placeholder="https://www.esempio.it/pagina-da-scrapare"
+             class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+    </div>
+    <div>
+      <label for="target_kb" class="block text-xs text-gray-600 mb-1">KB Target</label>
+      <select name="target_kb" id="target_kb" class="border rounded px-3 py-2 text-sm">
+        @foreach($kbOptions as $kb)
+          <option value="{{ $kb->id }}" {{ $kb->is_default ? 'selected' : '' }}>
+            {{ $kb->name }}{{ $kb->is_default ? ' (default)' : '' }}
+          </option>
+        @endforeach
+      </select>
+    </div>
+    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 focus:ring-2 focus:ring-blue-500">
+      <span class="text-sm">Scrapa Ora</span>
+    </button>
+  </form>
+  <p class="text-xs text-blue-600 mt-2">
+    ⚡ Bypass tutte le configurazioni scraper - sempre forzato anche se URL già esistente
+  </p>
+</div>
 
 <!-- Uploader (caricamento + embeddings + ingestion) -->
 <div x-data="uploader()" x-init="init()" class="mb-6">

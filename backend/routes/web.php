@@ -136,6 +136,9 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::post('/tenants/{tenant}/documents/upload', [DocumentAdminController::class, 'upload'])
         ->name('documents.upload')
         ->whereNumber('tenant');
+    Route::post('/tenants/{tenant}/documents/scrape-single-url', [DocumentAdminController::class, 'scrapeSingleUrl'])
+        ->name('documents.scrape-single-url')
+        ->whereNumber('tenant');
     // Specifica PRIMA delle rotte con {document} per evitare match errati
     Route::delete('/tenants/{tenant}/documents/by-kb', [DocumentAdminController::class, 'destroyByKb'])
         ->name('documents.destroyByKb')

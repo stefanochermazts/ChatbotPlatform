@@ -329,6 +329,77 @@ class DocumentAdminController extends Controller
     }
 
     /**
+     * 🌐 NUOVA FUNZIONALITÀ: Scraping di URL singolo (sempre forzato)
+     */
+    public function scrapeSingleUrl(Request $request, Tenant $tenant)
+    {
+        $data = $request->validate([
+            'url' => 'required|url|max:500',
+            'target_kb' => 'required|integer|exists:knowledge_bases,id'
+        ]);
+
+        $url = $data['url'];
+        $targetKbId = (int) $data['target_kb'];
+
+        try {
+            // Verifica che la KB appartenga al tenant
+            $kb = \App\Models\KnowledgeBase::where('id', $targetKbId)
+                ->where('tenant_id', $tenant->id)
+                ->firstOrFail();
+
+            \Log::info("🌐 [SINGLE-URL-SCRAPE] Iniziato scraping manuale", [
+                'tenant_id' => $tenant->id,
+                'url' => $url,
+                'target_kb_id' => $targetKbId,
+                'force' => true
+            ]);
+
+            // Usa WebScraperService direttamente con force=true
+            $scraperService = app(\App\Services\Scraper\WebScraperService::class);
+            $result = $scraperService->scrapeSingleUrl($tenant->id, $url, true, $targetKbId); // force=true
+
+            if ($result && $result['success']) {
+                $documentId = $result['document_id'];
+                $action = $result['action']; // 'created' o 'updated'
+                
+                \Log::info("✅ [SINGLE-URL-SCRAPE] Completato con successo", [
+                    'document_id' => $documentId,
+                    'action' => $action,
+                    'url' => $url
+                ]);
+
+                $message = $action === 'created' 
+                    ? "✅ Nuovo documento creato e aggiunto alla coda di ingestion"
+                    : "🔄 Documento esistente aggiornato e re-ingestion avviata";
+
+                return redirect()->route('admin.documents.index', $tenant)
+                    ->with('success', $message . " (ID: {$documentId})");
+            } else {
+                $error = $result['error'] ?? 'Scraping fallito senza dettagli';
+                
+                \Log::warning("❌ [SINGLE-URL-SCRAPE] Fallito", [
+                    'url' => $url,
+                    'error' => $error
+                ]);
+
+                return redirect()->route('admin.documents.index', $tenant)
+                    ->with('error', "❌ Scraping fallito: {$error}");
+            }
+
+        } catch (\Exception $e) {
+            \Log::error("💥 [SINGLE-URL-SCRAPE] Eccezione", [
+                'url' => $url,
+                'tenant_id' => $tenant->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return redirect()->route('admin.documents.index', $tenant)
+                ->with('error', "💥 Errore durante scraping: " . $e->getMessage());
+        }
+    }
+
+    /**
      * 🔄 NUOVA FUNZIONALITÀ: Re-scraping di un singolo documento
      */
     public function rescrape(\Illuminate\Http\Request $request, Document $document)
