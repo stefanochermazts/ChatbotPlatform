@@ -359,27 +359,40 @@ class DocumentAdminController extends Controller
             $result = $scraperService->scrapeSingleUrl($tenant->id, $url, true, $targetKbId); // force=true
 
             if ($result && $result['success']) {
-                $documentId = $result['document_id'];
-                $action = $result['action']; // 'created' o 'updated'
+                $savedCount = $result['saved_count'] ?? 0;
+                $stats = $result['stats'] ?? [];
+                
+                // Determina azione basandosi sulle stats
+                $action = 'unknown';
+                $actionMessage = '';
+                
+                if (($stats['new'] ?? 0) > 0) {
+                    $action = 'created';
+                    $actionMessage = "✅ Nuovo documento creato e aggiunto alla coda di ingestion";
+                } elseif (($stats['updated'] ?? 0) > 0) {
+                    $action = 'updated';  
+                    $actionMessage = "🔄 Documento esistente aggiornato e re-ingestion avviata";
+                } else {
+                    $action = 'processed';
+                    $actionMessage = "📄 Documento processato";
+                }
                 
                 \Log::info("✅ [SINGLE-URL-SCRAPE] Completato con successo", [
-                    'document_id' => $documentId,
+                    'saved_count' => $savedCount,
                     'action' => $action,
+                    'stats' => $stats,
                     'url' => $url
                 ]);
 
-                $message = $action === 'created' 
-                    ? "✅ Nuovo documento creato e aggiunto alla coda di ingestion"
-                    : "🔄 Documento esistente aggiornato e re-ingestion avviata";
-
                 return redirect()->route('admin.documents.index', $tenant)
-                    ->with('success', $message . " (ID: {$documentId})");
+                    ->with('success', $actionMessage . " (Documenti processati: {$savedCount})");
             } else {
-                $error = $result['error'] ?? 'Scraping fallito senza dettagli';
+                $error = $result['message'] ?? $result['error'] ?? 'Scraping fallito senza dettagli';
                 
                 \Log::warning("❌ [SINGLE-URL-SCRAPE] Fallito", [
                     'url' => $url,
-                    'error' => $error
+                    'error' => $error,
+                    'result' => $result
                 ]);
 
                 return redirect()->route('admin.documents.index', $tenant)
