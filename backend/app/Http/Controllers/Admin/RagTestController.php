@@ -150,8 +150,8 @@ class RagTestController extends Controller
                 $contextParts = [];
                 foreach ($citations as $c) {
                     $title = $c['title'] ?? ('Doc '.$c['id']);
-                    // Usa chunk_text (contenuto completo) se disponibile, altrimenti snippet
-                    $content = trim((string) ($c['chunk_text'] ?? $c['snippet'] ?? ''));
+                    // Usa snippet (con chunk vicini) invece di chunk_text (singolo chunk)
+                    $content = trim((string) ($c['snippet'] ?? $c['chunk_text'] ?? ''));
                     $extra = '';
                     if (!empty($c['phone'])) {
                         $extra = "\nTelefono: ".$c['phone'];

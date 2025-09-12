@@ -184,9 +184,74 @@ try {
             echo "❌ PROBLEMA: Nessuna citazione trovata!\n";
         }
         
+        // 6. TEST CHIAMATA LLM COMPLETA
+        echo "\n6️⃣ TEST CHIAMATA LLM\n";
+        echo "-------------------\n";
+        
+        if (!empty($result['citations'])) {
+            // Costruisci il contesto come fa il RAG Tester
+            $contextParts = [];
+            foreach ($result['citations'] as $citation) {
+                $title = $citation['title'] ?? ('Doc ' . $citation['id']);
+                $snippet = $citation['snippet'] ?? '';
+                if (!empty($snippet)) {
+                    $contextParts[] = "**{$title}**:\n{$snippet}";
+                }
+            }
+            $contextText = implode("\n\n---\n\n", $contextParts);
+            
+            echo "📄 Contesto costruito: " . strlen($contextText) . " caratteri\n";
+            
+            // Cerca telefoni nel contesto finale
+            if (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $contextText, $phoneMatches)) {
+                echo "📞 Telefoni nel contesto LLM: " . implode(', ', array_unique($phoneMatches[0])) . "\n";
+            } else {
+                echo "❌ PROBLEMA: Nessun telefono nel contesto LLM!\n";
+            }
+            
+            // Effettua chiamata LLM
+            try {
+                $chatService = app(\App\Services\LLM\OpenAIChatService::class);
+                
+                $messages = [
+                    ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". Riporta sempre le fonti (titoli) usate.'],
+                    ['role' => 'user', 'content' => "Domanda: {$query}\n\nContesto:\n{$contextText}"]
+                ];
+                
+                $payload = [
+                    'model' => config('openai.chat_model', 'gpt-4o-mini'),
+                    'messages' => $messages,
+                    'max_tokens' => 700,
+                ];
+                
+                $startLlm = microtime(true);
+                $rawResponse = $chatService->chatCompletions($payload);
+                $endLlm = microtime(true);
+                
+                $answer = $rawResponse['choices'][0]['message']['content'] ?? '';
+                
+                echo "⏱️ Tempo LLM: " . round(($endLlm - $startLlm) * 1000, 2) . "ms\n";
+                echo "📝 Risposta LLM:\n" . str_repeat('-', 40) . "\n";
+                echo $answer . "\n";
+                echo str_repeat('-', 40) . "\n";
+                
+                // Cerca telefoni nella risposta
+                if (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $answer, $answerPhones)) {
+                    echo "✅ Telefoni nella risposta: " . implode(', ', array_unique($answerPhones[0])) . "\n";
+                } else {
+                    echo "❌ Nessun telefono nella risposta finale!\n";
+                }
+                
+            } catch (\Exception $e) {
+                echo "❌ Errore chiamata LLM: " . $e->getMessage() . "\n";
+            }
+        } else {
+            echo "⚠️ Saltato: nessuna citazione disponibile\n";
+        }
+        
         // Debug info se disponibile
         if (!empty($result['debug'])) {
-            echo "🔧 Debug Info:\n";
+            echo "\n🔧 Debug Info:\n";
             echo json_encode($result['debug'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
         }
         
@@ -201,6 +266,8 @@ try {
     echo "2. Se Milvus offline: riavviare servizio Milvus\n";
     echo "3. Se nessuna citazione: verificare configurazione embeddings OpenAI\n";
     echo "4. Se citazioni senza telefoni: verificare parsing documenti\n";
+    echo "5. Se telefoni nel contesto ma non nella risposta: problema prompt LLM\n";
+    echo "6. Se RAG Tester diverso da diagnostic: controllare cleanup del contesto\n";
 
 } catch (\Exception $e) {
     echo "❌ ERRORE FATALE: " . $e->getMessage() . "\n";
