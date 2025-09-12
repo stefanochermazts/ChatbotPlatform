@@ -379,7 +379,7 @@ class KbSearchService
             $text = $this->text->getChunkSnippet($docId, $chunkIndex, 512) ?? '';
             for ($d = -$neighbor; $d <= $neighbor; $d++) {
                 if ($d === 0) continue;
-                $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 200);
+                $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 500);
                 if ($neighborText) $text .= "\n" . $neighborText;
             }
             
@@ -457,7 +457,7 @@ class KbSearchService
             $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 400) ?? '';
             for ($d = -$neighbor; $d <= $neighbor; $d++) {
                 if ($d === 0) continue;
-                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 200);
+                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 500);
                 if ($s2) $snippet .= "\n".$s2;
             }
 
