@@ -130,7 +130,7 @@ class RagTestController extends Controller
             // 🔍 DEBUG: Log configurazione prima del retrieve
             $ragConfig = app(\App\Services\RAG\TenantRagConfigService::class);
             $hybridConfig = $ragConfig->getHybridConfig($tenantId);
-            \Log::info('RAG Tester Hybrid Config', [
+            \Log::error('RAG Tester Hybrid Config', [
                 'tenant_id' => $tenantId,
                 'neighbor_radius' => $hybridConfig['neighbor_radius'] ?? 'not_set',
                 'query' => $finalQuery,
@@ -226,6 +226,13 @@ class RagTestController extends Controller
                     'custom_context_template' => $tenant->custom_context_template ?? null,
                     'using_custom_system' => !empty($tenant->custom_system_prompt),
                     'using_custom_context' => !empty($tenant->custom_context_template),
+                ];
+                
+                // 🔍 DEBUG: Aggiungi configurazione hybrid al trace
+                $trace['rag_tester_debug'] = [
+                    'neighbor_radius' => $hybridConfig['neighbor_radius'] ?? 'not_set',
+                    'kb_service_class' => get_class($kb),
+                    'query_used' => $finalQuery
                 ];
             }
         }
