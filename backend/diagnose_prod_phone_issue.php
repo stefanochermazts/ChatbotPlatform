@@ -45,6 +45,12 @@ try {
     echo "🌍 Multi-KB Search: " . ($tenant->multi_kb_search ? 'ABILITATO' : 'DISABILITATO') . "\n";
     echo "🎯 KB Default: " . ($tenant->default_knowledge_base_id ?? 'Nessuna') . "\n";
     
+    // 🆕 Configurazione RAG
+    $tenantRagConfig = new \App\Services\RAG\TenantRagConfigService();
+    $hybridConfig = $tenantRagConfig->getHybridConfig($tenantId);
+    $neighborRadius = $hybridConfig['neighbor_radius'] ?? 'non impostato (default: 1)';
+    echo "🔧 Neighbor Radius: {$neighborRadius}\n";
+    
     // Knowledge Bases
     $kbs = \App\Models\KnowledgeBase::where('tenant_id', $tenantId)->get(['id', 'name']);
     echo "📚 Knowledge Bases ({$kbs->count()}):\n";
@@ -159,12 +165,20 @@ try {
                 echo "     Score: " . round($cit['score'] ?? 0, 3) . "\n";
                 echo "     Titolo: " . substr($cit['title'] ?? 'N/A', 0, 60) . "\n";
                 
-                // Cerca telefoni nel testo della citazione
-                $citText = $cit['text'] ?? '';
-                if (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $citText, $phoneMatches)) {
-                    echo "     📞 Telefoni estratti: " . implode(', ', array_unique($phoneMatches[0])) . "\n";
+                // Cerca telefoni nel snippet (testo con chunk vicini)
+                $snippet = $cit['snippet'] ?? '';
+                if (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $snippet, $phoneMatches)) {
+                    echo "     📞 Telefoni nel snippet: " . implode(', ', array_unique($phoneMatches[0])) . "\n";
                 }
-                echo "     Snippet: " . substr(strip_tags($citText), 0, 100) . "...\n\n";
+                
+                // Cerca telefoni nel chunk_text (singolo chunk)
+                $chunkText = $cit['chunk_text'] ?? '';
+                if (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $chunkText, $phoneMatches2)) {
+                    echo "     📞 Telefoni nel chunk_text: " . implode(', ', array_unique($phoneMatches2[0])) . "\n";
+                }
+                
+                echo "     Snippet: " . substr(strip_tags($snippet), 0, 100) . "...\n";
+                echo "     Snippet Length: " . strlen($snippet) . " chars\n\n";
             }
         } else {
             echo "❌ PROBLEMA: Nessuna citazione trovata!\n";
