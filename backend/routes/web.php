@@ -169,6 +169,10 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::get('/rag', [RagTestController::class, 'index'])->name('rag.index');
     Route::post('/rag/run', [RagTestController::class, 'run'])->name('rag.run');
 
+    // Super Admin Utilities (solo per admin)
+    Route::get('/utilities', [App\Http\Controllers\Admin\SuperAdminUtilitiesController::class, 'index'])->name('utilities.index');
+    Route::post('/utilities/execute', [App\Http\Controllers\Admin\SuperAdminUtilitiesController::class, 'executeCommand'])->name('utilities.execute');
+
     // Widget Configuration
     Route::get('/widget-config', [WidgetConfigController::class, 'index'])->name('widget-config.index');
     Route::get('/tenants/{tenant}/widget-config', [WidgetConfigController::class, 'show'])->name('widget-config.show');

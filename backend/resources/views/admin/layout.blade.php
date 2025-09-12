@@ -27,6 +27,9 @@
         <a class="hover:text-blue-600" href="{{ route('admin.whatsapp-config.index') }}">📱 WhatsApp</a>
         <a class="hover:text-blue-600" href="{{ route('admin.widget-analytics.index') }}">Analytics</a>
         <a class="hover:text-blue-600" href="{{ route('admin.rag.index') }}">RAG Tester</a>
+        @if(auth()->user()->isAdmin())
+          <a class="hover:text-blue-600" href="{{ route('admin.utilities.index') }}">⚡ Utilities</a>
+        @endif
         <form method="post" action="{{ route('logout') }}">
           @csrf
           <button class="text-red-600 hover:underline">Logout</button>
