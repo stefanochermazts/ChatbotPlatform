@@ -82,23 +82,29 @@ class DebugKbSelection extends Command
         
         try {
             $selector = app(KnowledgeBaseSelector::class);
-            $selectedKbId = $selector->selectForQuery($query, $tenantId);
+            $result = $selector->selectForQuery($tenantId, $query);
+            
+            $selectedKbId = $result['knowledge_base_id'] ?? null;
+            $selectedKbName = $result['kb_name'] ?? 'Unknown';
+            $reason = $result['reason'] ?? 'unknown';
             
             if ($selectedKbId) {
-                $selectedKb = KnowledgeBase::find($selectedKbId);
-                $this->info("✅ KB Selezionata: {$selectedKb->name} (ID: {$selectedKbId})");
+                $this->info("✅ KB Selezionata: {$selectedKbName} (ID: {$selectedKbId})");
+                $this->info("🔍 Motivo selezione: {$reason}");
                 
                 // Verifica documenti nella KB selezionata
                 $docsInSelectedKb = Document::where('knowledge_base_id', $selectedKbId)->count();
                 $this->info("📄 Documenti nella KB selezionata: {$docsInSelectedKb}");
                 
                 if ($docsInSelectedKb === 0) {
-                    $this->warn('⚠️  PROBLEMA: KB selezionata è VUOTA!');
+                    $this->error('🚨 PROBLEMA CRITICO: KB selezionata è VUOTA!');
+                    $this->warn('   Questo spiega perché RAG Tester non trova nulla.');
                 }
             } else {
-                $this->warn('⚠️  Nessuna KB selezionata (fallback a default?)');
+                $this->warn('⚠️  Nessuna KB selezionata');
+                $this->info("🔍 Motivo: {$reason}");
                 
-                // Trova KB default
+                // Trova KB default come fallback
                 $defaultKb = KnowledgeBase::where('tenant_id', $tenantId)
                     ->where('is_default', true)
                     ->first();
@@ -107,11 +113,16 @@ class DebugKbSelection extends Command
                     $this->info("🔄 Fallback a KB Default: {$defaultKb->name} (ID: {$defaultKb->id})");
                     $docsInDefault = Document::where('knowledge_base_id', $defaultKb->id)->count();
                     $this->info("📄 Documenti nella KB default: {$docsInDefault}");
+                    
+                    if ($docsInDefault === 0) {
+                        $this->error('🚨 PROBLEMA: Anche la KB default è VUOTA!');
+                    }
                 }
             }
             
         } catch (\Exception $e) {
             $this->error("❌ Errore durante selezione: {$e->getMessage()}");
+            $this->error("Stack: " . $e->getTraceAsString());
         }
 
         $this->newLine();
