@@ -455,7 +455,7 @@ class KbSearchService
             if (isset($seen[$docId])) continue;
             $seen[$docId] = true;
 
-            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 400) ?? '';
+            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 1200) ?? '';
             for ($d = -$neighbor; $d <= $neighbor; $d++) {
                 if ($d === 0) continue;
                 $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 500);
@@ -875,7 +875,7 @@ class KbSearchService
         
         $cits = [];
         foreach ($results as $r) {
-            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 400) ?? '');
+            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 1200) ?? '');
             $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ? LIMIT 1', [$r['document_id'], $tenantId]);
             if (!$doc) { continue; }
             
@@ -1800,7 +1800,7 @@ class KbSearchService
         
         $cits = [];
         foreach ($results as $r) {
-            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 400) ?? '');
+            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 1200) ?? '');
             $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ? LIMIT 1', [$r['document_id'], $tenantId]);
             if (!$doc) { continue; }
             
