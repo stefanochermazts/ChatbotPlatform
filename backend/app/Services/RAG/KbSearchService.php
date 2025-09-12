@@ -399,8 +399,8 @@ class KbSearchService
             default => new EmbeddingReranker($this->embeddings),
         };
         
-        // Cache key include driver per evitare conflitti
-        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN}";
+        // Cache key include driver e neighbor_radius per evitare conflitti
+        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN},{$neighbor}";
         
         // Per LLM reranking, aggiungi timestamp alla cache key per evitare cache troppo aggressive
         if ($driver === 'llm') {
