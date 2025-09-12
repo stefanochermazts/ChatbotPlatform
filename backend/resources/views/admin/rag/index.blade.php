@@ -1,6 +1,29 @@
 @extends('admin.layout')
 
 @section('content')
+<style>
+/* 🎯 CSS per migliorare la leggibilità del RAG Tester */
+.rag-tester-pre {
+  white-space: pre-wrap !important;      /* Permette word wrap mantenendo formattazione */
+  word-wrap: break-word !important;      /* Spezza parole lunghe */
+  overflow-wrap: break-word !important;  /* Fallback per browser più vecchi */
+  word-break: break-word !important;     /* Spezza anche URL lunghi */
+  max-width: 100% !important;           /* Non eccede mai il container */
+}
+
+.rag-tester-textarea {
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  resize: vertical !important;           /* Solo resize verticale */
+}
+
+.rag-json-output {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+  line-height: 1.4 !important;
+  tab-size: 2 !important;
+}
+</style>
 <h1 class="text-xl font-semibold mb-4">RAG Tester</h1>
 <form method="post" action="{{ route('admin.rag.run') }}" class="bg-white border rounded p-4 grid gap-3">
   @csrf
@@ -21,7 +44,7 @@
   </div>
   <label class="block">
     <span class="text-sm">Query</span>
-    <textarea name="query" rows="3" class="w-full border rounded px-3 py-2" required>{{ $query ?? '' }}</textarea>
+    <textarea name="query" rows="3" class="w-full border rounded px-3 py-2 rag-tester-textarea" required>{{ $query ?? '' }}</textarea>
   </label>
   <div class="grid md:grid-cols-2 gap-3">
     <label class="inline-flex items-center gap-2">
@@ -44,7 +67,7 @@
   <div id="conversation-messages" class="hidden">
     <label class="block">
       <span class="text-sm">💬 Messaggi Conversazione (JSON)</span>
-      <textarea name="conversation_messages" rows="4" class="w-full border rounded px-3 py-2 font-mono text-xs" placeholder='[{"role": "user", "content": "Che orari ha la biblioteca?"}, {"role": "assistant", "content": "La biblioteca è aperta..."}, {"role": "user", "content": "E quanto costa il prestito?"}]'>{{ old('conversation_messages', request('conversation_messages')) }}</textarea>
+      <textarea name="conversation_messages" rows="4" class="w-full border rounded px-3 py-2 font-mono text-xs rag-tester-textarea rag-json-output" placeholder='[{"role": "user", "content": "Che orari ha la biblioteca?"}, {"role": "assistant", "content": "La biblioteca è aperta..."}, {"role": "user", "content": "E quanto costa il prestito?"}]'>{{ old('conversation_messages', request('conversation_messages')) }}</textarea>
     </label>
     <div class="text-xs text-gray-600 mt-1">
       📝 Inserisci una conversazione in formato JSON per testare il context enhancement
@@ -82,19 +105,19 @@
       @if(!empty($result['trace']['llm_messages']))
       <div class="mt-2">
         <div class="font-medium mb-1">Payload Chat (messages):</div>
-        <pre class="bg-white border rounded p-2 max-h-48 overflow-auto">{{ json_encode($result['trace']['llm_messages'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+        <pre class="bg-white border rounded p-2 max-h-48 overflow-auto rag-tester-pre rag-json-output">{{ json_encode($result['trace']['llm_messages'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
       </div>
       @endif
       @if(!empty($result['answer']))
       <div class="mt-2">
         <div class="font-medium mb-1">Answer preview:</div>
-        <pre class="bg-white border rounded p-2 max-h-40 overflow-auto">{{ $result['answer'] }}</pre>
+        <pre class="bg-white border rounded p-2 max-h-40 overflow-auto rag-tester-pre">{{ $result['answer'] }}</pre>
       </div>
       @endif
       @if(!empty($result['trace']['llm_raw_response']))
       <div class="mt-2">
         <div class="font-medium mb-1">Raw response (debug):</div>
-        <pre class="bg-white border rounded p-2 max-h-64 overflow-auto">{{ json_encode($result['trace']['llm_raw_response'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+        <pre class="bg-white border rounded p-2 max-h-64 overflow-auto rag-tester-pre rag-json-output">{{ json_encode($result['trace']['llm_raw_response'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
       </div>
       @endif
     </div>
@@ -324,7 +347,7 @@ Fonti:
 
           <div>
             <h3 class="font-medium">Queries</h3>
-            <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['queries'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['queries'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
           
           @if(!empty($result['trace']['hyde']))
@@ -504,11 +527,11 @@ Fonti:
           
           <div>
             <h3 class="font-medium">Milvus health</h3>
-            <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['milvus'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['milvus'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
           <div class="md:col-span-2">
             <h3 class="font-medium">Per query (top hits)</h3>
-            <pre class="bg-gray-50 border rounded p-2 max-h-80 overflow-auto">{{ json_encode($result['trace']['per_query'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 max-h-80 overflow-auto rag-tester-pre rag-json-output">{{ json_encode($result['trace']['per_query'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
           @if(!empty($result['trace']['tenant_prompts']))
           <div class="md:col-span-2 mb-4">
@@ -548,20 +571,20 @@ Fonti:
           @if(!empty($result['trace']['llm_messages']))
           <div class="md:col-span-2">
             <h3 class="font-medium">LLM messages (payload)</h3>
-            <pre class="bg-gray-50 border rounded p-2 max-h-80 overflow-auto">{{ json_encode($result['trace']['llm_messages'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 max-h-80 overflow-auto rag-tester-pre rag-json-output">{{ json_encode($result['trace']['llm_messages'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
           @endif
           <div>
             <h3 class="font-medium">Fused top</h3>
-            <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['fused_top'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['fused_top'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
           <div>
             <h3 class="font-medium">Reranked top</h3>
-            <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['reranked_top'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['reranked_top'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
           <div class="md:col-span-2">
             <h3 class="font-medium">MMR selected idx</h3>
-            <pre class="bg-gray-50 border rounded p-2">{{ json_encode($result['trace']['mmr_selected_idx'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['mmr_selected_idx'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>
         </div>
       </details>
