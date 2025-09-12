@@ -338,11 +338,17 @@ class KbSearchService
         // Fusione finale tra tutte le query (RRF su posizioni già "scorate"):
         $fused = $this->rrfFuseMany($allFused, $rrfK);
         
+        // 🚀 NUOVO: Applica boost per Multi-KB Search
+        if ($useMultiKb && !empty($fused)) {
+            $fused = $this->applyBoostsToResults($fused, $tenantId, $query, $debug);
+        }
+        
         Log::info('🔀 [RETRIEVE] Fusione finale completata', [
             'tenant_id' => $tenantId,
             'query' => $query,
             'input_queries_count' => count($queries),
             'total_fused_results' => count($fused),
+            'multi_kb_boosts_applied' => $useMultiKb,
             'fused_top_10' => array_map(function($hit) {
                 return [
                     'doc_id' => $hit['document_id'] ?? 'unknown',
@@ -2412,6 +2418,145 @@ class KbSearchService
         }
         
         return $comparison;
+    }
+
+    /**
+     * 🚀 NUOVO: Applica boost configurabili ai risultati in modalità Multi-KB
+     * 
+     * Usa le stesse configurazioni dell'interfaccia RAG per mantenere coerenza
+     * 
+     * @param array $fused Risultati fusi da vector + BM25
+     * @param int $tenantId ID tenant
+     * @param string $query Query originale per location boost
+     * @param bool $debug Flag di debug
+     * @return array Risultati con boost applicati e riordinati
+     */
+    private function applyBoostsToResults(array $fused, int $tenantId, string $query, bool $debug = false): array
+    {
+        if (empty($fused)) {
+            return $fused;
+        }
+
+        // Ottieni configurazioni boost dalla stessa interfaccia RAG
+        $kbConfig = $this->tenantConfig->getKbSelectionConfig($tenantId);
+        $bm25BoostFactor = (float) ($kbConfig['bm25_boost_factor'] ?? 1.0);
+        $vectorBoostFactor = (float) ($kbConfig['vector_boost_factor'] ?? 1.0);
+        $uploadBoost = (float) ($kbConfig['upload_boost'] ?? 1.0);
+        $titleKeywordBoosts = (array) ($kbConfig['title_keyword_boosts'] ?? []);
+        $locationBoosts = (array) ($kbConfig['location_boosts'] ?? []);
+
+        // Preparazione per boost location
+        $queryLower = mb_strtolower($query);
+
+        // Recupera metadati dei documenti per applicare boost
+        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $fused)));
+        $docs = DB::table('documents')
+            ->select(['id', 'title', 'source', 'knowledge_base_id'])
+            ->whereIn('id', $docIds)
+            ->get()
+            ->keyBy('id');
+
+        $boostedResults = [];
+        $boostStats = [
+            'total_processed' => count($fused),
+            'bm25_boosts_applied' => 0,
+            'upload_boosts_applied' => 0,
+            'title_keyword_boosts_applied' => 0,
+            'location_boosts_applied' => 0,
+            'boost_factors_used' => [
+                'bm25_boost_factor' => $bm25BoostFactor,
+                'vector_boost_factor' => $vectorBoostFactor,
+                'upload_boost' => $uploadBoost,
+                'title_keyword_boosts' => $titleKeywordBoosts,
+                'location_boosts' => $locationBoosts
+            ]
+        ];
+
+        foreach ($fused as $hit) {
+            $docId = (int) $hit['document_id'];
+            $doc = $docs->get($docId);
+            
+            if (!$doc) {
+                // Documento non trovato, mantieni score originale
+                $boostedResults[] = $hit;
+                continue;
+            }
+
+            $originalScore = (float) $hit['score'];
+            $boostMultiplier = 1.0;
+
+            // 1. Boost base BM25 (sempre applicato)
+            $boostMultiplier *= $bm25BoostFactor;
+            if ($bm25BoostFactor !== 1.0) {
+                $boostStats['bm25_boosts_applied']++;
+            }
+
+            // 2. Boost documenti caricati manualmente
+            if (!empty($doc->source) && $doc->source === 'upload' && $uploadBoost > 0) {
+                $boostMultiplier *= $uploadBoost;
+                $boostStats['upload_boosts_applied']++;
+            }
+
+            // 3. Boost per keyword nel titolo
+            $titleLower = mb_strtolower((string) ($doc->title ?? ''));
+            foreach ($titleKeywordBoosts as $kw => $factor) {
+                $kw = mb_strtolower((string) $kw);
+                $f = (float) $factor;
+                if ($kw !== '' && $f > 0 && str_contains($titleLower, $kw)) {
+                    $boostMultiplier *= $f;
+                    $boostStats['title_keyword_boosts_applied']++;
+                }
+            }
+
+            // 4. Boost per location presenti nella query
+            foreach ($locationBoosts as $loc => $factor) {
+                $loc = mb_strtolower((string) $loc);
+                $f = (float) $factor;
+                if ($loc !== '' && $f > 0 && str_contains($queryLower, $loc)) {
+                    $boostMultiplier *= $f;
+                    $boostStats['location_boosts_applied']++;
+                }
+            }
+
+            // Applica boost al score
+            $boostedScore = $originalScore * $boostMultiplier;
+            
+            // Crea risultato con boost applicato
+            $boostedHit = $hit;
+            $boostedHit['score'] = $boostedScore;
+            
+            // Aggiungi metadati di debug se richiesto
+            if ($debug) {
+                $boostedHit['boost_debug'] = [
+                    'original_score' => $originalScore,
+                    'boost_multiplier' => $boostMultiplier,
+                    'final_score' => $boostedScore,
+                    'document_source' => $doc->source,
+                    'document_title' => $doc->title
+                ];
+            }
+            
+            $boostedResults[] = $boostedHit;
+        }
+
+        // Riordina per score boost applicato (decrescente)
+        usort($boostedResults, fn($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+
+        // Log dettagliato per monitoraggio
+        Log::info('🚀 [MULTI-KB-BOOST] Boost applicati ai risultati', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'stats' => $boostStats,
+            'top_3_after_boost' => array_map(function($hit) {
+                return [
+                    'doc_id' => $hit['document_id'] ?? 'unknown',
+                    'score' => $hit['score'] ?? 'unknown',
+                    'content_preview' => substr($hit['content'] ?? '', 0, 50)
+                ];
+            }, array_slice($boostedResults, 0, 3))
+        ]);
+
+        return $boostedResults;
     }
 }
 
