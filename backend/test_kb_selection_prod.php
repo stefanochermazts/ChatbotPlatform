@@ -14,9 +14,13 @@ $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
 use Illuminate\Support\Facades\DB;
 
-// Parametri
-$tenantId = (int) ($argv[1] ?? 5);
-$query = $argv[2] ?? 'telefono polizia locale';
+// Parametri - gestisce anche le parentesi quadre  
+$tenantIdRaw = $argv[1] ?? '5';
+$queryRaw = $argv[2] ?? 'telefono polizia locale';
+
+// Rimuovi parentesi quadre se presenti
+$tenantId = (int) trim($tenantIdRaw, '[]');
+$query = trim($queryRaw, '[]"\'');
 
 echo "🎯 TEST KB SELECTION - PRODUZIONE\n";
 echo "=================================\n";

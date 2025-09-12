@@ -16,9 +16,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 
-// Parametri
-$tenantId = (int) ($argv[1] ?? 5);
-$query = $argv[2] ?? 'telefono polizia locale';
+// Parametri - gestisce anche le parentesi quadre
+$tenantIdRaw = $argv[1] ?? '5';
+$queryRaw = $argv[2] ?? 'telefono polizia locale';
+
+// Rimuovi parentesi quadre se presenti
+$tenantId = (int) trim($tenantIdRaw, '[]');
+$query = trim($queryRaw, '[]"\'');
 
 echo "🔍 DIAGNOSTICA PRODUZIONE - TELEFONO POLIZIA LOCALE\n";
 echo "==================================================\n";
