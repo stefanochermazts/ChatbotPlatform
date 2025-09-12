@@ -117,16 +117,24 @@ class MonitorQueues extends Command
 
         // 3. JOBS BY CLASS
         $this->info('🔍 JOBS PER CLASSE (PENDING)');
-        $jobsByClass = DB::table('jobs')
-            ->select(
-                DB::raw('JSON_UNQUOTE(JSON_EXTRACT(payload, "$.displayName")) as job_class'),
-                'queue',
-                DB::raw('COUNT(*) as count')
-            )
-            ->groupBy('job_class', 'queue')
-            ->orderBy('count', 'desc')
-            ->limit(10)
-            ->get();
+        
+        try {
+            // Usa sintassi PostgreSQL per JSON
+            $jobsByClass = DB::table('jobs')
+                ->select(
+                    DB::raw("payload::json->>'displayName' as job_class"),
+                    'queue',
+                    DB::raw('COUNT(*) as count')
+                )
+                ->groupBy('job_class', 'queue')
+                ->orderBy('count', 'desc')
+                ->limit(10)
+                ->get();
+        } catch (\Exception $e) {
+            // Fallback se la query JSON fallisce
+            $this->warn('   ⚠️  Errore parsing JSON payload - usando fallback');
+            $jobsByClass = collect(); // Collection vuota
+        }
 
         if ($jobsByClass->isEmpty()) {
             $this->line('   ✅ Nessun job in coda');
@@ -134,9 +142,17 @@ class MonitorQueues extends Command
             $this->table(
                 ['Classe Job', 'Coda', 'Count'],
                 $jobsByClass->map(function ($job) {
+                    // Fallback per job_class vuoto o null
+                    $className = $job->job_class ?: 'Unknown Job';
+                    
+                    // Pulisci il nome della classe se troppo lungo
+                    if (strlen($className) > 50) {
+                        $className = '...' . substr($className, -47);
+                    }
+                    
                     return [
-                        $job->job_class ?: 'Unknown',
-                        $job->queue,
+                        $className,
+                        $job->queue ?: 'default',
                         $job->count
                     ];
                 })->toArray()
