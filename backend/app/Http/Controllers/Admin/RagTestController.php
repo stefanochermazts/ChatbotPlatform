@@ -127,6 +127,16 @@ class RagTestController extends Controller
                 'caller' => 'RagTestController'
             ]);
             
+            // 🔍 DEBUG: Log configurazione prima del retrieve
+            $ragConfig = app(\App\Services\RAG\TenantRagConfigService::class);
+            $hybridConfig = $ragConfig->getHybridConfig($tenantId);
+            \Log::info('RAG Tester Hybrid Config', [
+                'tenant_id' => $tenantId,
+                'neighbor_radius' => $hybridConfig['neighbor_radius'] ?? 'not_set',
+                'query' => $finalQuery,
+                'kb_service_class' => get_class($kb)
+            ]);
+            
             $retrieval = $kb->retrieve($tenantId, $finalQuery, true);
             
             // Aggiungi debug conversazione al trace
