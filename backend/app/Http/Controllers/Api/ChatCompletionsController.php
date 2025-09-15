@@ -326,21 +326,26 @@ class ChatCompletionsController extends Controller
                 $title = $c['title'] ?? ('Doc '.$c['id']);
                 // Usa snippet con limite configurabile per citation
                 $content = trim((string) ($c['snippet'] ?? $c['chunk_text'] ?? ''));
+                
+                // 🔧 FIX UTF-8: Pulisci caratteri malformati per evitare json_encode errors
+                $content = $this->cleanUtf8($content);
+                $title = $this->cleanUtf8($title);
+                
                 if ($enableTruncation && strlen($content) > $maxCitationChars) {
                     $content = substr($content, 0, $maxCitationChars) . '...';
                 }
                 $extra = '';
                 if (!empty($c['phone'])) {
-                    $extra = "\nTelefono: ".$c['phone'];
+                    $extra = "\nTelefono: " . $this->cleanUtf8($c['phone']);
                 }
                 if (!empty($c['email'])) {
-                    $extra .= "\nEmail: ".$c['email'];
+                    $extra .= "\nEmail: " . $this->cleanUtf8($c['email']);
                 }
                 if (!empty($c['address'])) {
-                    $extra .= "\nIndirizzo: ".$c['address'];
+                    $extra .= "\nIndirizzo: " . $this->cleanUtf8($c['address']);
                 }
                 if (!empty($c['schedule'])) {
-                    $extra .= "\nOrario: ".$c['schedule'];
+                    $extra .= "\nOrario: " . $this->cleanUtf8($c['schedule']);
                 }
                 if ($content !== '') {
                     $contextParts[] = "[".$title."]\n".$content.$extra;
@@ -365,6 +370,45 @@ class ChatCompletionsController extends Controller
             }
         }
         return $contextText;
+    }
+
+    /**
+     * Pulisce caratteri UTF-8 malformati per evitare errori json_encode
+     */
+    private function cleanUtf8(string $text): string
+    {
+        // Converte caratteri malformati UTF-8 in caratteri validi
+        $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+        
+        // Rimuove caratteri di controllo non stampabili (tranne newline e tab)
+        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text);
+        
+        // Fix comuni per caratteri malformati dall'encoding
+        $replacements = [
+            'â€™' => "'",      // apostrofo
+            'Ã ' => 'à',       // a con accento grave
+            'Ã¨' => 'è',       // e con accento grave  
+            'Ã©' => 'é',       // e con accento acuto
+            'Ã¬' => 'ì',       // i con accento grave
+            'Ã¯' => 'ï',       // i con dieresi
+            'Ã²' => 'ò',       // o con accento grave
+            'Ã¹' => 'ù',       // u con accento grave
+            'â€œ' => '"',       // virgolette aperte
+            'â€' => '"',        // virgolette chiuse
+            'â€"' => '-',       // trattino lungo
+            'â€¦' => '...',     // ellissi
+            'lâ' => "l'",       // apostrofo specifico del log
+            'sarÃ ' => 'sarà',  // caso specifico del log
+        ];
+        
+        $text = str_replace(array_keys($replacements), array_values($replacements), $text);
+        
+        // Assicurati che sia UTF-8 valido
+        if (!mb_check_encoding($text, 'UTF-8')) {
+            $text = utf8_encode($text);
+        }
+        
+        return $text;
     }
 
     // RIMOSSO: Metodi di prioritizzazione personalizzati - usa logica RAG Tester

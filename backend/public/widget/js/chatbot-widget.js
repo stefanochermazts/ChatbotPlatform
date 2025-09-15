@@ -340,11 +340,26 @@
 
       let html = text;
 
-      // PRE-PULIZIA: Ripara URL malformati che potrebbero arrivare dal backend
-      // Cerca pattern come: url" target="_blank" rel="noopener noreferrer" class="chatbot-link">Testo
-      html = html.replace(/(https?:\/\/[^\s"']+?)"[^>]*>([^<]+)/g, '$1');
+      // 🔍 DETECTA SE IL CONTENUTO CONTIENE GIÀ HTML VALIDO (link, tag, ecc.)
+      const containsHtml = /<[^>]+>/g.test(text) || /&[a-zA-Z0-9#]+;/.test(text);
       
-      // Escape HTML di base per sicurezza (dopo la pre-pulizia)
+      if (containsHtml) {
+        // Se contiene già HTML, NON fare escape e NON riprocessare i link
+        console.log('[ChatbotUI] Content contains HTML, skipping markdown processing');
+        
+        // 🔧 FIX: Ripara link annidati malformati del tipo <a href="https://<a href="...">...</a>" ...>
+        html = html.replace(/<a href="https:\/\/<a href="([^"]+)"[^>]*>([^<]+)<\/a>"[^>]*>([^<]+)<\/a>/g, 
+          '<a href="$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$2</a>');
+        
+        // Sanitizza solo caratteri pericolosi ma preserva HTML esistente
+        html = html.replace(/&(?![a-zA-Z0-9#]+;)/g, '&amp;'); // Solo & non già escaped
+        
+        // Ritorna direttamente il contenuto HTML così com'è
+        return html;
+      }
+      
+      // Se non contiene HTML, procedi con il normale markdown processing
+      // Escape HTML di base per sicurezza
       html = html.replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');

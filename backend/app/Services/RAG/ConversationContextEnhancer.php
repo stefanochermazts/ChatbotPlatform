@@ -68,7 +68,7 @@ class ConversationContextEnhancer
         // Filtra e pulisci messaggi
         $relevantMessages = $this->filterRelevantMessages($messages);
         
-        if (count($relevantMessages) <= 1) {
+        if (count($relevantMessages) < 1) {
             return null;
         }
         
@@ -84,8 +84,15 @@ class ConversationContextEnhancer
         $filtered = [];
         $maxMessages = config('rag.conversation.max_history_messages', 10);
         
-        // Prendi gli ultimi N messaggi, escludendo l'ultimo (query corrente)
-        $recentMessages = array_slice($messages, -($maxMessages + 1), -1);
+        // Gestione migliorata per conversazioni user-only brevi
+        $totalMessages = count($messages);
+        if ($totalMessages <= 1) {
+            $recentMessages = [];
+        } else {
+            // Prendi tutti i messaggi tranne l'ultimo (query corrente), limitando a maxMessages
+            $startIndex = max(0, $totalMessages - $maxMessages - 1);
+            $recentMessages = array_slice($messages, $startIndex, $totalMessages - 1 - $startIndex);
+        }
         
         foreach ($recentMessages as $message) {
             $role = $message['role'] ?? '';
