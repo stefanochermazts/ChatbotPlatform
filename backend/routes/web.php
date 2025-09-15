@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\DocumentAdminController;
 use App\Http\Controllers\Admin\RagTestController;
 use App\Http\Controllers\Admin\ScraperAdminController;
 use App\Http\Controllers\Admin\ScraperProgressController;
+use App\Http\Controllers\Admin\SuperAdminUtilitiesController;
 use App\Http\Controllers\Admin\TenantAdminController;
 use App\Http\Controllers\Admin\TenantFormController;
 use App\Http\Controllers\Admin\FormSubmissionController;
@@ -170,8 +171,8 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::post('/rag/run', [RagTestController::class, 'run'])->name('rag.run');
 
     // Super Admin Utilities (solo per admin)
-    Route::get('/utilities', [App\Http\Controllers\Admin\SuperAdminUtilitiesController::class, 'index'])->name('utilities.index');
-    Route::post('/utilities/execute', [App\Http\Controllers\Admin\SuperAdminUtilitiesController::class, 'executeCommand'])->name('utilities.execute');
+    Route::get('/utilities', [SuperAdminUtilitiesController::class, 'index'])->name('utilities.index');
+    Route::post('/utilities/execute', [SuperAdminUtilitiesController::class, 'executeCommand'])->name('utilities.execute');
 
     // Widget Configuration
     Route::get('/widget-config', [WidgetConfigController::class, 'index'])->name('widget-config.index');
