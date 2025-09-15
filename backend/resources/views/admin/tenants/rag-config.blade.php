@@ -643,6 +643,92 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Widget/API Performance -->
+                    <div class="mt-6 p-4 bg-purple-50 rounded-lg">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">⚡ Widget/API Performance</h3>
+                        <div class="mb-3 text-xs text-purple-700 bg-purple-100 p-2 rounded">
+                            <strong>🚀 Ottimizzazioni performance:</strong> Parametri specifici per il widget e le API chat completions.
+                            <br><strong>📊 Limiti contesto:</strong> Controllo dimensioni per garantire risposte rapide | <strong>🎛️ Modello LLM:</strong> Configurazione modello e parametri
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Performance Parameters -->
+                            <div class="space-y-3">
+                                <h4 class="font-medium text-gray-900">Limiti Performance</h4>
+                                
+                                <div>
+                                    <label for="widget_max_tokens" class="block text-sm font-medium text-gray-700">Max Tokens LLM</label>
+                                    <input type="number" name="widget_max_tokens" id="widget_max_tokens" min="100" max="4000" step="50"
+                                           value="{{ $currentConfig['widget']['max_tokens'] ?? 800 }}"
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <p class="text-xs text-gray-600 mt-1">Limite tokens per risposta LLM (default: 800)</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="widget_max_context_chars" class="block text-sm font-medium text-gray-700">Max Caratteri Contesto</label>
+                                    <input type="number" name="widget_max_context_chars" id="widget_max_context_chars" min="5000" max="50000" step="1000"
+                                           value="{{ $currentConfig['widget']['max_context_chars'] ?? 15000 }}"
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <p class="text-xs text-gray-600 mt-1">Limite totale contesto inviato al LLM (default: 15000)</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="widget_max_citation_chars" class="block text-sm font-medium text-gray-700">Max Caratteri per Citazione</label>
+                                    <input type="number" name="widget_max_citation_chars" id="widget_max_citation_chars" min="500" max="10000" step="250"
+                                           value="{{ $currentConfig['widget']['max_citation_chars'] ?? 2000 }}"
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <p class="text-xs text-gray-600 mt-1">Limite caratteri per singola citazione (default: 2000)</p>
+                                </div>
+                                
+                                <div class="flex items-center">
+                                    <input type="checkbox" name="widget_enable_context_truncation" id="widget_enable_context_truncation" value="1"
+                                           {{ ($currentConfig['widget']['enable_context_truncation'] ?? true) ? 'checked' : '' }}
+                                           class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                                    <label for="widget_enable_context_truncation" class="ml-2 block text-sm text-gray-900">
+                                        Abilita troncamento contesto per performance
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- LLM Configuration -->
+                            <div class="space-y-3">
+                                <h4 class="font-medium text-gray-900">Configurazione LLM</h4>
+                                
+                                <div>
+                                    <label for="widget_model" class="block text-sm font-medium text-gray-700">Modello LLM</label>
+                                    <select name="widget_model" id="widget_model"
+                                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                        <option value="gpt-4o" {{ ($currentConfig['widget']['model'] ?? 'gpt-4o-mini') === 'gpt-4o' ? 'selected' : '' }}>gpt-4o</option>
+                                        <option value="gpt-4o-mini" {{ ($currentConfig['widget']['model'] ?? 'gpt-4o-mini') === 'gpt-4o-mini' ? 'selected' : '' }}>gpt-4o-mini</option>
+                                        <option value="gpt-4.1" {{ ($currentConfig['widget']['model'] ?? '') === 'gpt-4.1' ? 'selected' : '' }}>gpt-4.1</option>
+                                        <option value="gpt-4.1-mini" {{ ($currentConfig['widget']['model'] ?? '') === 'gpt-4.1-mini' ? 'selected' : '' }}>gpt-4.1-mini</option>
+                                        <option value="gpt-4.1-nano" {{ ($currentConfig['widget']['model'] ?? '') === 'gpt-4.1-nano' ? 'selected' : '' }}>gpt-4.1-nano</option>
+                                        <option value="gpt-5" {{ ($currentConfig['widget']['model'] ?? '') === 'gpt-5' ? 'selected' : '' }}>gpt-5</option>
+                                        <option value="gpt-5-mini" {{ ($currentConfig['widget']['model'] ?? '') === 'gpt-5-mini' ? 'selected' : '' }}>gpt-5-mini</option>
+                                        <option value="gpt-5-nano" {{ ($currentConfig['widget']['model'] ?? '') === 'gpt-5-nano' ? 'selected' : '' }}>gpt-5-nano</option>
+                                    </select>
+                                    <p class="text-xs text-gray-600 mt-1">Modello OpenAI per risposte widget</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="widget_temperature" class="block text-sm font-medium text-gray-700">Temperature</label>
+                                    <input type="number" name="widget_temperature" id="widget_temperature" min="0" max="1" step="0.1"
+                                           value="{{ $currentConfig['widget']['temperature'] ?? 0.2 }}"
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <p class="text-xs text-gray-600 mt-1">Creatività risposte (0=preciso, 1=creativo, default: 0.2)</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="widget_timeout_seconds" class="block text-sm font-medium text-gray-700">Timeout Secondi</label>
+                                    <input type="number" name="widget_timeout_seconds" id="widget_timeout_seconds" min="10" max="120" step="5"
+                                           value="{{ $currentConfig['widget']['timeout_seconds'] ?? 30 }}"
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <p class="text-xs text-gray-600 mt-1">Timeout chiamate OpenAI (default: 30 secondi)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Action Buttons -->

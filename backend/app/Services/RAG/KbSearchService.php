@@ -33,6 +33,9 @@ class KbSearchService
      */
     public function retrieve(int $tenantId, string $query, bool $debug = false): array
     {
+        $startTime = microtime(true);
+        $profiling = ['start_time' => $startTime, 'steps' => []];
+        
         // 🔧 Normalizza query formali per miglior matching
         $normalizedQuery = $this->normalizeQuery($query);
         if ($normalizedQuery !== $query && $debug) {
@@ -76,6 +79,7 @@ class KbSearchService
             ];
         }
         
+        $profiling['steps']['init'] = microtime(true) - $startTime;
         Log::info('🎯 [RETRIEVE] Inizio elaborazione query', [
             'tenant_id' => $tenantId,
             'original_query' => $query,
@@ -170,6 +174,7 @@ class KbSearchService
             }
         }
 
+        $profiling['steps']['intents'] = microtime(true) - $startTime;
         Log::info('🚨 [RETRIEVE] Nessun intent soddisfatto - Attivando FALLBACK GENERALE', [
             'tenant_id' => $tenantId,
             'query' => $query,
@@ -206,7 +211,9 @@ class KbSearchService
 
         // Multi-query expansion (originale + parafrasi) - usa query normalizzata
         // Multi-query expansion per-tenant
+        $stepStart = microtime(true);
         $queries = $this->mq ? $this->mq->expand($tenantId, $normalizedQuery) : [$normalizedQuery];
+        $profiling['steps']['multiquery'] = microtime(true) - $stepStart;
         $this->telemetry->event('mq.expanded', ['tenant_id'=>$tenantId,'query'=>$query,'variants'=>$queries]);
         $allFused = [];
         $trace = $debug ? ['queries' => $queries] : null;
@@ -245,6 +252,8 @@ class KbSearchService
         }
         
         // HyDE (Hypothetical Document Embeddings) se abilitato
+        // 📊 PROFILING: HyDE expansion
+        $hydeStart = microtime(true);
         $hydeResult = null;
         // HyDE per-tenant
         $advCfg = (array) $this->tenantConfig->getAdvancedConfig($tenantId);
@@ -263,6 +272,7 @@ class KbSearchService
                 $trace['hyde'] = $hydeResult;
             }
         }
+        $profiling['steps']['hyde'] = microtime(true) - $hydeStart;
 
         foreach ($queries as $q) {
             if ($debug) {
@@ -357,23 +367,51 @@ class KbSearchService
                 }
                 
                 $key = 'rag:vecfts:'.$tenantId.':'.sha1($q).":{$vecTopK},{$bmTopK},{$rrfK}" . $cacheKeySuffix;
+                // 📊 PROFILING: Search operations (outside cache for accurate timing)
+                $searchStart = microtime(true);
                 $list = $this->cache->remember($key, function () use ($tenantId, $q, $vecTopK, $bmTopK, $rrfK, $useHyDE, $hydeResult) {
-                    // Determina quale embedding usare
+                    Log::info('🔍 [CACHE MISS] Executing search operations', [
+                        'query' => $q,
+                        'tenant_id' => $tenantId,
+                        'cache_key' => substr(sha1($q), 0, 8)
+                    ]);
+                    
+                    // 📊 PROFILING: Embedding generation (internal timing)
+                    $embStart = microtime(true);
                     $qEmb = null;
                     if ($useHyDE && $hydeResult && $hydeResult['success'] && $hydeResult['combined_embedding']) {
                         $qEmb = $hydeResult['combined_embedding'];
                     } else {
-                    $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
+                        $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
                     }
+                    $embTime = round((microtime(true) - $embStart) * 1000, 2);
                     
+                    // 📊 PROFILING: Milvus search (internal timing)
+                    $milvusStart = microtime(true);
                     $vecHit = [];
                     $milvusHealth = $this->milvus->health();
                     if (($milvusHealth['ok'] ?? false) === true && $qEmb) {
                         $vecHit = $this->milvus->searchTopKWithEmbedding($tenantId, $qEmb, $vecTopK);
                     }
+                    $milvusTime = round((microtime(true) - $milvusStart) * 1000, 2);
+                    
+                    // 📊 PROFILING: BM25 search (internal timing)
+                    $bm25Start = microtime(true);
                     $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK, null);
+                    $bm25Time = round((microtime(true) - $bm25Start) * 1000, 2);
+                    
+                    Log::info('⚡ [SEARCH TIMING] Individual operations', [
+                        'query' => $q,
+                        'embeddings_ms' => $embTime,
+                        'milvus_ms' => $milvusTime,
+                        'bm25_ms' => $bm25Time,
+                        'vec_results' => count($vecHit),
+                        'bm25_results' => count($bmHit)
+                    ]);
+                    
                     return $this->rrfFuse($vecHit, $bmHit, $rrfK);
                 });
+                $profiling['steps']['search_operations'] = ($profiling['steps']['search_operations'] ?? 0) + (microtime(true) - $searchStart);
                 // Applica filtro KB ai risultati fusi
                 $allFused[] = $this->filterFusedByKb($list, $selectedKbId);
             }
@@ -418,11 +456,13 @@ class KbSearchService
             $docId = (int) $h['document_id'];
             $chunkIndex = (int) $h['chunk_index'];
             
-            // 🆕 Applica neighbor_radius anche al reranking
-            $text = $this->text->getChunkSnippet($docId, $chunkIndex, 512) ?? '';
-            for ($d = -$neighbor; $d <= $neighbor; $d++) {
+            // 🚀 OTTIMIZZAZIONE: Testi più corti per reranking veloce
+            $text = $this->text->getChunkSnippet($docId, $chunkIndex, 300) ?? '';
+            // Riduci neighbor_radius per reranking (solo ±1 invece di configurato)
+            $rerankNeighbor = min(1, $neighbor);
+            for ($d = -$rerankNeighbor; $d <= $rerankNeighbor; $d++) {
                 if ($d === 0) continue;
-                $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 500);
+                $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 200);
                 if ($neighborText) $text .= "\n" . $neighborText;
             }
             
@@ -444,7 +484,8 @@ class KbSearchService
         $reranker = match($driver) {
             'cohere' => new CohereReranker(),
             'llm' => new LLMReranker(app(\App\Services\LLM\OpenAIChatService::class)),
-            default => new EmbeddingReranker($this->embeddings),
+            'embedding_slow' => new EmbeddingReranker($this->embeddings), // Vecchio reranker con embeddings
+            default => new FastEmbeddingReranker($this->embeddings), // Nuovo reranker veloce
         };
         
         // Cache key include driver e neighbor_radius per evitare conflitti
@@ -452,6 +493,9 @@ class KbSearchService
         
         // Per LLM reranking, usa TTL più breve ma mantieni cache
         // (TTL gestito dalla RagCache class)
+        
+        // 📊 PROFILING: Reranking
+        $rerankStart = microtime(true);
         
         // 🚀 LOG DETTAGLIATO: Pre-reranking
         Log::info('🔄 [RERANK] Prima del reranking', [
@@ -465,6 +509,8 @@ class KbSearchService
         $ranked = $this->cache->remember($cacheKey, function () use ($reranker, $query, $candidates, $topN) {
             return $reranker->rerank($query, $candidates, $topN);
         });
+        
+        $profiling['steps']['reranking'] = microtime(true) - $rerankStart;
         
         // 🚀 LOG DETTAGLIATO: Post-reranking
         Log::info('✅ [RERANK] Dopo il reranking', [
@@ -491,6 +537,9 @@ class KbSearchService
         $selIdx = $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
         if ($debug) { $trace['mmr_selected_idx'] = $selIdx; }
 
+        // 📊 PROFILING: Citations building
+        $citationsStart = microtime(true);
+        
         $seen = [];
         $cits = [];
         foreach ($selIdx as $i) {
@@ -546,6 +595,8 @@ class KbSearchService
                 'phones' => $phonesMerged,
             ];
         }
+        
+        $profiling['steps']['citations_building'] = microtime(true) - $citationsStart;
 
         $result = [
             'citations' => $cits,
@@ -553,11 +604,21 @@ class KbSearchService
             'debug' => $trace,
         ];
         
+        // Aggiungi profiling al debug trace
+        if ($debug && isset($profiling)) {
+            $result['debug']['profiling'] = $profiling;
+        }
+        
         // Aggiungi debug intent anche per il RAG normale
         if ($intentDebug) {
             $intentDebug['executed_intent'] = 'hybrid_rag';
             $result['debug']['intent_detection'] = $intentDebug;
         }
+        
+        // 🚀 PROFILAZIONE COMPLETA
+        $totalTime = microtime(true) - $startTime;
+        $profiling['total_time'] = $totalTime;
+        $profiling['steps']['final'] = $totalTime;
         
         Log::info('✅ [RETRIEVE] RISULTATO FINALE', [
             'tenant_id' => $tenantId,
@@ -573,6 +634,16 @@ class KbSearchService
                     'score' => $c['score'] ?? 'unknown'
                 ];
             }, array_slice($cits, 0, 3))
+        ]);
+        
+        // 📊 LOG PROFILAZIONE DETTAGLIATA
+        Log::info('📊 [PROFILING] RAG Performance Breakdown', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'total_time_ms' => round($totalTime * 1000, 2),
+            'profiling_steps' => array_map(function($time) {
+                return round($time * 1000, 2) . 'ms';
+            }, $profiling['steps'] ?? [])
         ]);
         
         return $result;

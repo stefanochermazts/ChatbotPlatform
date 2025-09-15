@@ -100,4 +100,15 @@ return [
             'advanced.llm_reranker.enabled' => true,
         ],
     ],
+    
+    // Configurazione Widget/API Performance
+    'widget' => [
+        'max_tokens' => 800,           // Limite tokens LLM
+        'max_context_chars' => 15000,  // Limite contesto totale (15KB)
+        'max_citation_chars' => 2000,  // Limite per singola citazione
+        'enable_context_truncation' => true, // Abilita troncamento per performance
+        'model' => 'gpt-4o-mini',      // Modello ottimizzato per velocità
+        'temperature' => 0.2,          // Temperatura per consistenza
+        'timeout_seconds' => 30,       // Timeout chiamate OpenAI
+    ],
 ];

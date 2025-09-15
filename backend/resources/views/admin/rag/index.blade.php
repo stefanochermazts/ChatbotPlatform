@@ -126,6 +126,100 @@
         <pre class="bg-white border rounded p-2 max-h-64 overflow-auto rag-tester-pre rag-json-output">{{ json_encode($result['trace']['llm_raw_response'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
       </div>
       @endif
+      
+      {{-- 📊 PROFILING SECTION --}}
+      @if(!empty($result['trace']['profiling']))
+      <div class="mt-4 p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded">
+        <div class="font-medium mb-3 text-green-800">⚡ Performance Profiling</div>
+        
+        @php
+          $profiling = $result['trace']['profiling'];
+          $steps = $profiling['steps'] ?? [];
+          
+          // Calculate total time from sum of all steps (excluding 'final' if it exists)
+          $totalTimeSeconds = 0;
+          foreach($steps as $step => $time) {
+            if($step !== 'final') {
+              $totalTimeSeconds += $time;
+            }
+          }
+          $totalTime = $totalTimeSeconds * 1000; // Convert to ms
+          
+          // Calculate percentages and format times
+          $formattedSteps = [];
+          foreach($steps as $step => $time) {
+            if($step === 'final') continue; // Skip final (it's the total)
+            $timeMs = $time * 1000;
+            $percentage = $totalTime > 0 ? ($timeMs / $totalTime) * 100 : 0;
+            $formattedSteps[$step] = [
+              'time_ms' => round($timeMs, 2),
+              'percentage' => round($percentage, 1)
+            ];
+          }
+          
+          // Sort by time descending
+          uasort($formattedSteps, fn($a, $b) => $b['time_ms'] <=> $a['time_ms']);
+        @endphp
+        
+        <div class="grid md:grid-cols-2 gap-4">
+          {{-- Total Time --}}
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-2xl font-bold text-green-600">{{ round($totalTime, 1) }}ms</div>
+            <div class="text-sm text-gray-600">Tempo totale</div>
+          </div>
+          
+          {{-- Step Breakdown --}}
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-sm font-medium mb-2">Breakdown per step:</div>
+            <div class="space-y-1">
+              @foreach($formattedSteps as $step => $data)
+                <div class="flex justify-between items-center text-xs">
+                  <span class="capitalize">{{ str_replace('_', ' ', $step) }}:</span>
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono">{{ $data['time_ms'] }}ms</span>
+                    <div class="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-blue-400 to-green-500 rounded-full" 
+                           style="width: {{ min(100, $data['percentage']) }}%"></div>
+                    </div>
+                    <span class="text-gray-500 w-8">{{ $data['percentage'] }}%</span>
+                  </div>
+                </div>
+              @endforeach
+            </div>
+          </div>
+        </div>
+        
+        {{-- Performance Status --}}
+        @php
+          $performanceStatus = $totalTime < 1000 ? 'excellent' : 
+                              ($totalTime < 3000 ? 'good' : 
+                              ($totalTime < 5000 ? 'fair' : 'slow'));
+          $statusColors = [
+            'excellent' => ['bg-green-100', 'text-green-800', 'border-green-300'],
+            'good' => ['bg-blue-100', 'text-blue-800', 'border-blue-300'],
+            'fair' => ['bg-yellow-100', 'text-yellow-800', 'border-yellow-300'],
+            'slow' => ['bg-red-100', 'text-red-800', 'border-red-300']
+          ];
+          $colors = $statusColors[$performanceStatus];
+        @endphp
+        
+        <div class="mt-3 p-2 rounded border {{ $colors[2] }} {{ $colors[0] }}">
+          <div class="text-xs {{ $colors[1] }} font-medium">
+            Status Performance: 
+            @if($performanceStatus === 'excellent')
+              🚀 Eccellente (&lt;1s)
+            @elseif($performanceStatus === 'good')
+              ✅ Buono (&lt;3s)
+            @elseif($performanceStatus === 'fair')
+              ⚠️ Accettabile (&lt;5s)
+            @else
+              🐌 Lento (&gt;5s)
+            @endif
+          </div>
+        </div>
+      </div>
+      @endif
+      
     </div>
     @endif
     <div class="bg-white border rounded p-4">

@@ -120,6 +120,17 @@ class TenantRagConfigController extends Controller
             }
         }
 
+        // Widget/API Performance Configuration
+        $settings['widget'] = [
+            'max_tokens' => (int) $request->input('widget_max_tokens', 800),
+            'max_context_chars' => (int) $request->input('widget_max_context_chars', 15000),
+            'max_citation_chars' => (int) $request->input('widget_max_citation_chars', 2000),
+            'enable_context_truncation' => (bool) $request->input('widget_enable_context_truncation', false),
+            'model' => (string) $request->input('widget_model', 'gpt-4o-mini'),
+            'temperature' => (float) $request->input('widget_temperature', 0.2),
+            'timeout_seconds' => (int) $request->input('widget_timeout_seconds', 30),
+        ];
+
         // Salva il profilo selezionato sul tenant
         $tenant->rag_profile = (string) $request->input('rag_profile');
         $tenant->save();

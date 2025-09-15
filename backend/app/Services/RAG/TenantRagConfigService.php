@@ -91,6 +91,11 @@ class TenantRagConfigService
     {
         return $this->getConfig($tenantId)['kb_selection'] ?? [];
     }
+    
+    public function getWidgetConfig(int $tenantId): array
+    {
+        return $this->getConfig($tenantId)['widget'] ?? [];
+    }
 
     /**
      * Aggiorna la configurazione RAG per un tenant

@@ -160,6 +160,20 @@ return [
         'summary_model' => env('RAG_CONVERSATION_SUMMARY_MODEL', 'gpt-4o-mini'),
         'require_min_messages' => (int) env('RAG_CONVERSATION_MIN_MESSAGES', 2),
     ],
+    
+    // Configurazione specifica per Widget/API Chat Completions
+    'widget' => [
+        // Parametri di ottimizzazione performance
+        'max_tokens' => (int) env('RAG_WIDGET_MAX_TOKENS', 800), // Limite tokens LLM
+        'max_context_chars' => (int) env('RAG_WIDGET_MAX_CONTEXT_CHARS', 15000), // Limite contesto totale (15KB)
+        'max_citation_chars' => (int) env('RAG_WIDGET_MAX_CITATION_CHARS', 2000), // Limite per singola citazione
+        'enable_context_truncation' => filter_var(env('RAG_WIDGET_ENABLE_TRUNCATION', true), FILTER_VALIDATE_BOOLEAN), // Abilita troncamento
+        
+        // Parametri modello LLM
+        'model' => env('RAG_WIDGET_MODEL', 'gpt-4o-mini'), // Modello per risposte widget
+        'temperature' => (float) env('RAG_WIDGET_TEMPERATURE', 0.2), // Temperatura per consistenza
+        'timeout_seconds' => (int) env('RAG_WIDGET_TIMEOUT', 30), // Timeout chiamate OpenAI
+    ],
 
 ];
 

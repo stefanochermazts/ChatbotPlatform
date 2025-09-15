@@ -8,6 +8,7 @@ use App\Services\LLM\OpenAIChatService;
 use App\Services\RAG\KbSearchService;
 use App\Services\RAG\ContextBuilder;
 use App\Services\RAG\ConversationContextEnhancer;
+use App\Services\RAG\TenantRagConfigService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
@@ -19,10 +20,13 @@ class ChatCompletionsController extends Controller
         private readonly KbSearchService $kb,
         private readonly ContextBuilder $ctx,
         private readonly ConversationContextEnhancer $conversationEnhancer,
+        private readonly TenantRagConfigService $tenantConfig,
     ) {}
 
     public function create(Request $request): JsonResponse
     {
+        $requestStartTime = microtime(true);
+        $profiling = ['request_start' => $requestStartTime, 'steps' => []];
         $tenantId = (int) $request->attributes->get('tenant_id');
 
         $validated = $request->validate([
@@ -72,7 +76,9 @@ class ChatCompletionsController extends Controller
         // REMOVE: Non più override nel widget - usa solo tenant config
         
         // Retrieval come nel RAG tester (usa la query originale per intent detection)
+        $stepStart = microtime(true);
         $retrieval = $kb->retrieve($tenantId, $queryText, true);
+        $profiling['steps']['rag_retrieval'] = microtime(true) - $stepStart;
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
         
@@ -120,7 +126,9 @@ class ChatCompletionsController extends Controller
         $retrieval['debug'] = $debug;
 
         // Costruzione contextText come nel RAG tester
+        $stepStart = microtime(true);
         $contextText = $this->buildRagTesterContextText($tenant, $queryText, $citations);
+        $profiling['steps']['context_building'] = microtime(true) - $stepStart;
 
         // DEBUG: Log citazioni e contesto
         \Log::info("WIDGET RAG CITATIONS", [
@@ -157,8 +165,23 @@ class ChatCompletionsController extends Controller
             $payload['max_completion_tokens'] = (int) $payload['max_completion_tokens'];
         }
 
-        // Modello da config (.env OPENAI_CHAT_MODEL)
-        $payload['model'] = (string) config('openai.chat_model', 'gpt-4o-mini');
+        // 🚀 CONFIGURAZIONE WIDGET: Usa configurazione per-tenant
+        $widgetConfig = $this->tenantConfig->getWidgetConfig($tenantId);
+        
+        // Modello: prima da request, poi da widget config, infine da global config
+        if (!isset($payload['model'])) {
+            $payload['model'] = $widgetConfig['model'] ?? config('openai.chat_model', 'gpt-4o-mini');
+        }
+        
+        // Temperature: da widget config se non specificata
+        if (!isset($payload['temperature'])) {
+            $payload['temperature'] = (float) ($widgetConfig['temperature'] ?? 0.2);
+        }
+        
+        // Max tokens: da widget config se non specificato
+        if (!isset($payload['max_tokens']) && !isset($payload['max_completion_tokens'])) {
+            $payload['max_tokens'] = (int) ($widgetConfig['max_tokens'] ?? 800);
+        }
 
         // Inserisci system prompt: custom del tenant oppure default come nel tester
         $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
@@ -190,7 +213,9 @@ class ChatCompletionsController extends Controller
         ]);
 
         // Non aggiungiamo ulteriori system messages legati a expansion
+        $stepStart = microtime(true);
         $result = $this->chat->chatCompletions($payload);
+        $profiling['steps']['llm_completion'] = microtime(true) - $stepStart;
 
         // Mantieni salvaguardia contro output più povero se era presente un'expansion (ma non sovrascrivere per schedule)
         if (!empty($retrieval['response_text'])) {
@@ -251,6 +276,21 @@ class ChatCompletionsController extends Controller
             ];
         }
 
+        // 📊 PROFILAZIONE COMPLETA WIDGET
+        $totalRequestTime = microtime(true) - $requestStartTime;
+        $profiling['total_request_time'] = $totalRequestTime;
+        
+        \Log::info("📊 [WIDGET PROFILING] Complete Request Breakdown", [
+            'tenant_id' => $tenantId,
+            'query' => $queryText,
+            'total_request_time_ms' => round($totalRequestTime * 1000, 2),
+            'profiling_steps' => array_map(function($time) {
+                return round($time * 1000, 2) . 'ms';
+            }, $profiling['steps'] ?? []),
+            'response_length' => mb_strlen($result['choices'][0]['message']['content'] ?? ''),
+            'citations_count' => count($citations)
+        ]);
+        
         \Log::info("WIDGET RAG DEBUG END");
         return response()->json($result);
     }
@@ -273,14 +313,22 @@ class ChatCompletionsController extends Controller
 
     private function buildRagTesterContextText(?Tenant $tenant, string $query, array $citations): string
     {
-        // ESATTA COPIA del RAG Tester - NO personalizzazioni widget
+        // 🚀 CONFIGURAZIONE WIDGET: Usa configurazione per-tenant
+        $widgetConfig = $this->tenantConfig->getWidgetConfig($tenant->id ?? 0);
+        $maxCitationChars = (int) ($widgetConfig['max_citation_chars'] ?? 2000);
+        $maxContextChars = (int) ($widgetConfig['max_context_chars'] ?? 15000);
+        $enableTruncation = (bool) ($widgetConfig['enable_context_truncation'] ?? true);
+        
         $contextText = '';
         if (!empty($citations)) {
             $contextParts = [];
             foreach ($citations as $c) {
                 $title = $c['title'] ?? ('Doc '.$c['id']);
-                // Usa snippet (con chunk vicini) invece di chunk_text (singolo chunk) - come RAG Tester
+                // Usa snippet con limite configurabile per citation
                 $content = trim((string) ($c['snippet'] ?? $c['chunk_text'] ?? ''));
+                if ($enableTruncation && strlen($content) > $maxCitationChars) {
+                    $content = substr($content, 0, $maxCitationChars) . '...';
+                }
                 $extra = '';
                 if (!empty($c['phone'])) {
                     $extra = "\nTelefono: ".$c['phone'];
@@ -302,6 +350,12 @@ class ChatCompletionsController extends Controller
             }
             if ($contextParts !== []) {
                 $rawContext = implode("\n\n---\n\n", $contextParts);
+                
+                // 🚀 CONFIGURAZIONE WIDGET: Limita contesto totale basato su config
+                if ($enableTruncation && strlen($rawContext) > $maxContextChars) {
+                    $rawContext = substr($rawContext, 0, $maxContextChars) . "\n\n[...contesto troncato per performance...]";
+                }
+                
                 // Usa il template personalizzato del tenant se disponibile
                 if ($tenant && !empty($tenant->custom_context_template)) {
                     $contextText = "\n\n" . str_replace('{context}', $rawContext, $tenant->custom_context_template);
