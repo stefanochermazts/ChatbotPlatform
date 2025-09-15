@@ -6,15 +6,18 @@ use App\Services\LLM\OpenAIChatService;
 
 class MultiQueryExpander
 {
-    public function __construct(private readonly OpenAIChatService $chat) {}
+    public function __construct(
+        private readonly OpenAIChatService $chat,
+        private readonly TenantRagConfigService $tenantConfig = new TenantRagConfigService(),
+    ) {}
 
     /**
      * Genera fino a N parafrasi brevi della query utente.
      * Ritorna l'elenco query: [originale, parafrasi...]
      */
-    public function expand(string $query): array
+    public function expand(int $tenantId, string $query): array
     {
-        $cfg = (array) config('rag.multiquery');
+        $cfg = (array) $this->tenantConfig->getMultiQueryConfig($tenantId);
         $enabled = (bool) ($cfg['enabled'] ?? true);
         $num = max(0, (int) ($cfg['num'] ?? 2));
         if (!$enabled || $num === 0 || trim($query) === '') {

@@ -52,8 +52,7 @@ class ChatCompletionsController extends Controller
             }
         }
 
-        // FORZA configurazioni veloci per widget PRIMA di qualsiasi operazione
-        $this->forceAdvancedRagConfiguration();
+        // Usa la stessa configurazione del RAG Tester (per-tenant)
         $kb = $this->kb;
 
         // 🔍 LOG: Configurazioni RAG applicate
@@ -70,10 +69,30 @@ class ChatCompletionsController extends Controller
             'caller' => 'ChatCompletionsController'
         ]);
 
+        // REMOVE: Non più override nel widget - usa solo tenant config
+        
         // Retrieval come nel RAG tester (usa la query originale per intent detection)
         $retrieval = $kb->retrieve($tenantId, $queryText, true);
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
+        
+        // DEBUG: Leggi configurazione RAG da tenant config
+        $tenantCfgSvc = app(\App\Services\RAG\TenantRagConfigService::class);
+        $advCfg = (array) $tenantCfgSvc->getAdvancedConfig($tenantId);
+        $rerankCfg = (array) $tenantCfgSvc->getRerankerConfig($tenantId);
+        $hybridCfg = (array) $tenantCfgSvc->getHybridConfig($tenantId);
+        
+        \Log::info("WIDGET RAG DEBUG START", [
+            'tenant_id' => $tenantId,
+            'query' => $queryText,
+            'citations_count' => count($citations),
+            'confidence' => $confidence,
+            'tenant_config' => [
+                'hyde_enabled' => (bool) (($advCfg['hyde']['enabled'] ?? false) === true),
+                'reranker_driver' => (string) ($rerankCfg['driver'] ?? 'embedding'),
+                'source' => 'TenantRagConfigService'
+            ]
+        ]);
 
         // Debug esteso per tracciare configurazioni e comportamento
         $debug = $retrieval['debug'] ?? [];
@@ -82,15 +101,17 @@ class ChatCompletionsController extends Controller
             'final_query' => $finalQuery,
             'conversation_used' => $conversationContext ? $conversationContext['context_used'] : false,
         ];
+        
         $debug['rag_config'] = [
-            'hyde_enabled' => config('rag.advanced.hyde.enabled'),
-            'reranker_driver' => config('rag.reranker.driver'),
-            'vector_top_k' => config('rag.hybrid.vector_top_k'),
-            'bm25_top_k' => config('rag.hybrid.bm25_top_k'),
-            'mmr_take' => config('rag.hybrid.mmr_take'),
-            'mmr_lambda' => config('rag.hybrid.mmr_lambda'),
-            'neighbor_radius' => config('rag.hybrid.neighbor_radius'),
-            'reranker_top_n' => config('rag.reranker.top_n'),
+            'hyde_enabled' => (bool) (($advCfg['hyde']['enabled'] ?? false) === true),
+            'reranker_driver' => (string) ($rerankCfg['driver'] ?? 'embedding'),
+            'vector_top_k' => (int) ($hybridCfg['vector_top_k'] ?? 30),
+            'bm25_top_k' => (int) ($hybridCfg['bm25_top_k'] ?? 50),
+            'mmr_take' => (int) ($hybridCfg['mmr_take'] ?? 8),
+            'mmr_lambda' => (float) ($hybridCfg['mmr_lambda'] ?? 0.3),
+            'neighbor_radius' => (int) ($hybridCfg['neighbor_radius'] ?? 1),
+            'reranker_top_n' => (int) ($rerankCfg['top_n'] ?? 10),
+            'source' => 'TenantRagConfigService',
         ];
         $debug['kb_info'] = [
             'selected_kb' => $retrieval['debug']['selected_kb'] ?? null,
@@ -100,6 +121,27 @@ class ChatCompletionsController extends Controller
 
         // Costruzione contextText come nel RAG tester
         $contextText = $this->buildRagTesterContextText($tenant, $queryText, $citations);
+
+        // DEBUG: Log citazioni e contesto
+        \Log::info("WIDGET RAG CITATIONS", [
+            'citations_preview' => array_map(function($c) {
+                return [
+                    'id' => $c['id'] ?? null,
+                    'document_id' => $c['document_id'] ?? null,
+                    'chunk_index' => $c['chunk_index'] ?? null,
+                    'score' => $c['score'] ?? null,
+                    'snippet_length' => mb_strlen($c['snippet'] ?? ''),
+                    'chunk_text_length' => mb_strlen($c['chunk_text'] ?? ''),
+                    'phones' => $c['phones'] ?? [],
+                    'phone' => $c['phone'] ?? null,
+                    'email' => $c['email'] ?? null,
+                    'title' => mb_substr($c['title'] ?? '', 0, 50),
+                    'snippet_preview' => mb_substr($c['snippet'] ?? '', 0, 200),
+                ];
+            }, array_slice($citations, 0, 8)),
+            'context_length' => mb_strlen($contextText),
+            'context_preview' => mb_substr($contextText, 0, 500),
+        ]);
 
         // Costruisci payload partendo dai messaggi forniti, ma inserendo system prompt e context come nel tester
         $payload = $validated;
@@ -137,6 +179,16 @@ class ChatCompletionsController extends Controller
             }
         }
 
+        // DEBUG: Log payload finale all'LLM
+        \Log::info("WIDGET RAG LLM PAYLOAD", [
+            'model' => $payload['model'] ?? null,
+            'temperature' => $payload['temperature'] ?? null,
+            'max_tokens' => $payload['max_tokens'] ?? null,
+            'system_prompt' => $payload['messages'][0]['content'] ?? null,
+            'user_message_length' => mb_strlen($payload['messages'][count($payload['messages'])-1]['content'] ?? ''),
+            'user_message_preview' => mb_substr($payload['messages'][count($payload['messages'])-1]['content'] ?? '', 0, 300),
+        ]);
+
         // Non aggiungiamo ulteriori system messages legati a expansion
         $result = $this->chat->chatCompletions($payload);
 
@@ -159,9 +211,9 @@ class ChatCompletionsController extends Controller
             }
         }
 
-        // Fallback controllato
-        $minCit = (int) config('rag.answer.min_citations', 2);
-        $minConf = (float) config('rag.answer.min_confidence', 0.15);
+        // Fallback controllato (stesse soglie del tester/per-tenant)
+        $minCit = (int) config('rag.answer.min_citations', 1);
+        $minConf = (float) config('rag.answer.min_confidence', 0.05);
         $forceIfHas = (bool) config('rag.answer.force_if_has_citations', true);
         if ((count($citations) < $minCit || $confidence < $minConf) && !($forceIfHas && count($citations) > 0)) {
             $fallback = (string) config('rag.answer.fallback_message');
@@ -178,6 +230,15 @@ class ChatCompletionsController extends Controller
             }
         }
 
+        // DEBUG: Log risposta finale LLM 
+        \Log::info("WIDGET RAG LLM RESPONSE", [
+            'llm_response_length' => mb_strlen($result['choices'][0]['message']['content'] ?? ''),
+            'llm_response_preview' => mb_substr($result['choices'][0]['message']['content'] ?? '', 0, 300),
+            'fallback_applied' => ($result['choices'][0]['message']['content'] ?? '') === (string) config('rag.answer.fallback_message'),
+            'final_citations_count' => count($citations),
+            'final_confidence' => $confidence,
+        ]);
+
         $result['citations'] = $citations;
         $result['retrieval'] = [ 'confidence' => $confidence ];
         if ($conversationContext && $conversationContext['context_used']) {
@@ -190,6 +251,7 @@ class ChatCompletionsController extends Controller
             ];
         }
 
+        \Log::info("WIDGET RAG DEBUG END");
         return response()->json($result);
     }
 
@@ -205,60 +267,53 @@ class ChatCompletionsController extends Controller
 
     private function forceAdvancedRagConfiguration(): \App\Services\RAG\KbSearchService
     {
-        // Configurazioni bilanciate per il widget (meno aggressive del tester)
-        // Disabilita HyDE per evitare timeout con OpenAI
-        Config::set('rag.advanced.hyde.enabled', false);
-        
-        // DISABILITA completamente il reranker per velocità massima nel widget
-        Config::set('rag.features.reranker', false);
-        
-        // Usa configurazioni veloci per il widget (ridotte per performance)
-        Config::set('rag.hybrid.vector_top_k', 20);  // Ridotto da 120 a 20
-        Config::set('rag.hybrid.bm25_top_k', 30);    // Ridotto da 200 a 30
-        Config::set('rag.hybrid.mmr_take', 5);       // Ridotto da 8 a 5
-        Config::set('rag.hybrid.mmr_lambda', 0.3);
-        Config::set('rag.hybrid.neighbor_radius', 1);
-        // Config::set('rag.reranker.top_n', 15);    // Non necessario se reranker disabilitato
-        
-        // Parametri LLM e fallback più permissivi
-        Config::set('rag.answer.min_citations', 1);
-        Config::set('rag.answer.min_confidence', 0.1);
-        Config::set('rag.answer.force_if_has_citations', true);
-        Config::set('rag.context.max_chars', 8000);
-        Config::set('rag.context.compress_if_over_chars', 1200);
-        Config::set('rag.context.compress_target_chars', 600);
-        
-        // Usa il KbSearchService esistente (no HyDE per evitare timeout)
+        // Allineato al RAG Tester: nessun override forzato; si usano i valori per-tenant
         return $this->kb;
     }
 
     private function buildRagTesterContextText(?Tenant $tenant, string $query, array $citations): string
     {
+        // ESATTA COPIA del RAG Tester - NO personalizzazioni widget
         $contextText = '';
         if (!empty($citations)) {
-            $parts = [];
+            $contextParts = [];
             foreach ($citations as $c) {
-                $title = $c['title'] ?? ('Doc '.($c['id'] ?? ''));
-                // Usa chunk_text (contenuto completo) se disponibile, altrimenti snippet
-                $content = trim((string) ($c['chunk_text'] ?? $c['snippet'] ?? ''));
+                $title = $c['title'] ?? ('Doc '.$c['id']);
+                // Usa snippet (con chunk vicini) invece di chunk_text (singolo chunk) - come RAG Tester
+                $content = trim((string) ($c['snippet'] ?? $c['chunk_text'] ?? ''));
                 $extra = '';
-                if (!empty($c['phone'])) { $extra .= ($extra ? "\n" : '').'Telefono: '.$c['phone']; }
-                if (!empty($c['email'])) { $extra .= ($extra ? "\n" : '').'Email: '.$c['email']; }
-                if (!empty($c['address'])) { $extra .= ($extra ? "\n" : '').'Indirizzo: '.$c['address']; }
-                if (!empty($c['schedule'])) { $extra .= ($extra ? "\n" : '').'Orario: '.$c['schedule']; }
+                if (!empty($c['phone'])) {
+                    $extra = "\nTelefono: ".$c['phone'];
+                }
+                if (!empty($c['email'])) {
+                    $extra .= "\nEmail: ".$c['email'];
+                }
+                if (!empty($c['address'])) {
+                    $extra .= "\nIndirizzo: ".$c['address'];
+                }
+                if (!empty($c['schedule'])) {
+                    $extra .= "\nOrario: ".$c['schedule'];
+                }
                 if ($content !== '') {
-                    $parts[] = '['.$title."]\n".$content.($extra !== '' ? "\n".$extra : '');
+                    $contextParts[] = "[".$title."]\n".$content.$extra;
                 } elseif ($extra !== '') {
-                    $parts[] = '['.$title."]\n".$extra;
+                    $contextParts[] = "[".$title."]\n".$extra;
                 }
             }
-            if ($parts !== []) {
-                $raw = implode("\n\n---\n\n", $parts);
-                $contextText = "Contesto (estratti rilevanti):\n".$raw;
+            if ($contextParts !== []) {
+                $rawContext = implode("\n\n---\n\n", $contextParts);
+                // Usa il template personalizzato del tenant se disponibile
+                if ($tenant && !empty($tenant->custom_context_template)) {
+                    $contextText = "\n\n" . str_replace('{context}', $rawContext, $tenant->custom_context_template);
+                } else {
+                    $contextText = "\n\nContesto (estratti rilevanti):\n".$rawContext;
+                }
             }
         }
         return $contextText;
     }
+
+    // RIMOSSO: Metodi di prioritizzazione personalizzati - usa logica RAG Tester
 
     /**
      * Trova il source_url del documento con la confidenza più alta
@@ -285,6 +340,7 @@ class ChatCompletionsController extends Controller
         return $bestCitation['document_source_url'] ?? null;
     }
 }
+
 
 
 

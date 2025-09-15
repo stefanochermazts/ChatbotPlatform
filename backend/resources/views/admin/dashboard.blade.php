@@ -8,6 +8,19 @@
   </div>
   <div class="bg-white border rounded p-4">
     <h2 class="font-semibold mb-2">Configurazione RAG attiva</h2>
+    <form method="get" class="mb-3 flex items-center gap-2 text-sm">
+      <label>Tenant:</label>
+      <select name="tenant_id" class="border rounded px-2 py-1" onchange="this.form.submit()">
+        <option value="">Global defaults</option>
+        @foreach(($tenants ?? collect()) as $t)
+          <option value="{{ $t->id }}" @selected(($selectedTenant?->id ?? null) === $t->id)>{{ $t->name }} ({{ $t->id }})</option>
+        @endforeach
+      </select>
+      @if($selectedTenant)
+        <a class="text-blue-600 underline" href="{{ route('admin.rag-config.show', $selectedTenant) }}">Apri RAG config del tenant</a>
+      @endif
+      <span class="ml-auto text-xs text-gray-600">Scope: <strong>{{ $ragScope ?? 'global' }}</strong></span>
+    </form>
     <div class="grid md:grid-cols-2 gap-4 text-sm">
       <div>
         <h3 class="font-medium mb-1">Feature flags</h3>

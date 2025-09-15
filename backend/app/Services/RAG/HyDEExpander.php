@@ -10,7 +10,8 @@ class HyDEExpander
 {
     public function __construct(
         private readonly OpenAIChatService $llm,
-        private readonly OpenAIEmbeddingsService $embeddings
+        private readonly OpenAIEmbeddingsService $embeddings,
+        private readonly TenantRagConfigService $tenantConfig = new TenantRagConfigService()
     ) {}
     
     /**
@@ -23,7 +24,7 @@ class HyDEExpander
         
         try {
             // Genera documento ipotetico
-            $hypotheticalDoc = $this->generateHypotheticalAnswer($query);
+            $hypotheticalDoc = $this->generateHypotheticalAnswer($tenantId, $query);
             
             // Crea embeddings per entrambi
             $originalEmb = $this->embeddings->embedTexts([$query])[0] ?? null;
@@ -96,9 +97,10 @@ class HyDEExpander
     /**
      * Genera una risposta ipotetica dettagliata alla query
      */
-    private function generateHypotheticalAnswer(string $query): string
+    private function generateHypotheticalAnswer(int $tenantId, string $query): string
     {
-        $config = config('rag.advanced.hyde', []);
+        $advanced = $this->tenantConfig->getAdvancedConfig($tenantId);
+        $config = (array) ($advanced['hyde'] ?? []);
         $model = $config['model'] ?? 'gpt-4o-mini';
         $maxTokens = $config['max_tokens'] ?? 200;
         $temperature = $config['temperature'] ?? 0.3;
@@ -183,6 +185,7 @@ class HyDEExpander
      */
     public function isEnabled(): bool
     {
-        return config('rag.advanced.hyde.enabled', false) === true;
+        // Il check di abilitazione viene gestito da KbSearchService passando il tenantId
+        return true;
     }
 }

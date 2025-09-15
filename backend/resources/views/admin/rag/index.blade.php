@@ -108,6 +108,12 @@
         <pre class="bg-white border rounded p-2 max-h-48 overflow-auto rag-tester-pre rag-json-output">{{ json_encode($result['trace']['llm_messages'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
       </div>
       @endif
+      @if(!empty($result['trace']['hybrid_config']))
+      <div class="mt-2">
+        <div class="font-medium mb-1">Hybrid params (effettivi)</div>
+        <pre class="bg-white border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['hybrid_config'], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
+      </div>
+      @endif
       @if(!empty($result['answer']))
       <div class="mt-2">
         <div class="font-medium mb-1">Answer preview:</div>
@@ -174,8 +180,13 @@
                   @endif
                 </div>
               @endif
-              @if(!empty($c['phone']))
-                <div class="mt-1 text-sm"><span class="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">📞 Telefono: {{ $c['phone'] }}</span></div>
+              @if(!empty($c['phone']) || (!empty($c['phones']) && is_array($c['phones'])))
+                <div class="mt-1 text-xs bg-green-50 border border-green-200 rounded p-2">
+                  📞 <strong>Telefoni trovati:</strong>
+                  @php $allPhones = []; if(!empty($c['phone'])) { $allPhones[] = $c['phone']; } if(!empty($c['phones']) && is_array($c['phones'])) { $allPhones = array_merge($allPhones, $c['phones']); }
+                  $allPhones = array_values(array_unique(array_map('trim', $allPhones))); @endphp
+                  {{ implode(', ', $allPhones) }}
+                </div>
               @endif
               @if(!empty($c['email']))
                 <div class="mt-1 text-sm"><span class="inline-block px-2 py-0.5 bg-blue-100 text-blue-800 rounded">📧 Email: {{ $c['email'] }}</span></div>
@@ -330,7 +341,7 @@ Fonti:
               
               @if(!empty($result['trace']['semantic_fallback']['citation_debug']))
               <div class="mt-3">
-                <h4 class="font-medium text-sm">Citation Debug</h4>
+                <h3 class="font-medium text-sm">Citation Debug</h3>
                 <div class="bg-white border rounded p-2 mt-1 max-h-40 overflow-auto">
                   @foreach($result['trace']['semantic_fallback']['citation_debug'] as $i => $debug)
                   <div class="text-xs border-b pb-2 mb-2">
@@ -354,111 +365,10 @@ Fonti:
             </div>
           </div>
           @endif
-
-          <div>
-            <h3 class="font-medium">Queries</h3>
-            <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['queries'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
-          </div>
           
-          @if(!empty($result['trace']['hyde']))
-          <div>
-            <h3 class="font-medium text-purple-600">🔬 HyDE (Hypothetical Document Embeddings)</h3>
-            <div class="bg-purple-50 border border-purple-200 rounded p-3 space-y-2">
-              <div class="grid md:grid-cols-2 gap-3">
-                <div>
-                  <h4 class="font-medium text-sm text-purple-700">Status</h4>
-                  <div class="text-sm">
-                    <span class="inline-flex items-center px-2 py-1 rounded text-xs {{ $result['trace']['hyde']['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
-                      {{ $result['trace']['hyde']['success'] ? '✅ Success' : '❌ Failed' }}
-                    </span>
-                    <span class="ml-2 text-gray-600">{{ $result['trace']['hyde']['processing_time_ms'] ?? 0 }}ms</span>
-                  </div>
-                </div>
-                
-                @if($result['trace']['hyde']['success'] && !empty($result['trace']['hyde']['weights']))
-                <div>
-                  <h4 class="font-medium text-sm text-purple-700">Embedding Weights</h4>
-                  <div class="text-sm text-gray-600">
-                    Original: {{ $result['trace']['hyde']['weights']['original'] ?? 0 }}% • 
-                    Hypothetical: {{ $result['trace']['hyde']['weights']['hypothetical'] ?? 0 }}%
-                  </div>
-                </div>
-                @endif
-              </div>
-              
-              @if($result['trace']['hyde']['success'])
-              <div>
-                <h4 class="font-medium text-sm text-purple-700">Original Query</h4>
-                <div class="text-sm bg-white border rounded p-2">{{ $result['trace']['hyde']['original_query'] ?? '' }}</div>
-              </div>
-              
-              <div>
-                <h4 class="font-medium text-sm text-purple-700">Generated Hypothetical Document</h4>
-                <div class="text-sm bg-white border rounded p-2 max-h-32 overflow-auto">{{ $result['trace']['hyde']['hypothetical_document'] ?? '' }}</div>
-              </div>
-              @endif
-              
-              @if(!$result['trace']['hyde']['success'] && !empty($result['trace']['hyde']['error']))
-              <div>
-                <h4 class="font-medium text-sm text-red-700">Error</h4>
-                <div class="text-sm text-red-600 bg-white border rounded p-2">{{ $result['trace']['hyde']['error'] }}</div>
-              </div>
-              @endif
-            </div>
-          </div>
-          @endif
-          
-          @if(!empty($result['trace']['conversation']))
-          <div>
-            <h3 class="font-medium text-teal-600">💬 Conversation Context Enhancement</h3>
-            <div class="bg-teal-50 border border-teal-200 rounded p-3 space-y-2">
-              <div class="grid md:grid-cols-2 gap-3">
-                <div>
-                  <h4 class="font-medium text-sm text-teal-700">Context Status</h4>
-                  <div class="text-sm">
-                    <span class="inline-flex items-center px-2 py-1 rounded text-xs {{ $result['trace']['conversation']['context_used'] ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800' }}">
-                      {{ $result['trace']['conversation']['context_used'] ? '✅ Context Applied' : '🔄 No Context Used' }}
-                    </span>
-                    <span class="ml-2 text-gray-600">{{ $result['trace']['conversation']['processing_time_ms'] ?? 0 }}ms</span>
-                  </div>
-                </div>
-                
-                @if($result['trace']['conversation']['context_used'])
-                <div>
-                  <h4 class="font-medium text-sm text-teal-700">Enhancement Info</h4>
-                  <div class="text-sm text-gray-600">
-                    <div>Original: {{ mb_strlen($result['trace']['conversation']['original_query'] ?? '') }} chars</div>
-                    <div>Enhanced: {{ mb_strlen($result['trace']['conversation']['enhanced_query'] ?? '') }} chars</div>
-                  </div>
-                </div>
-                @endif
-              </div>
-              
-              @if($result['trace']['conversation']['context_used'])
-              <div>
-                <h4 class="font-medium text-sm text-teal-700">Original Query</h4>
-                <div class="text-sm bg-white border rounded p-2">{{ $result['trace']['conversation']['original_query'] ?? '' }}</div>
-              </div>
-              
-              <div>
-                <h4 class="font-medium text-sm text-teal-700">Enhanced Query (with conversation context)</h4>
-                <div class="text-sm bg-white border rounded p-2 max-h-32 overflow-auto">{{ $result['trace']['conversation']['enhanced_query'] ?? '' }}</div>
-              </div>
-              
-              @if(!empty($result['trace']['conversation']['conversation_summary']))
-              <div>
-                <h4 class="font-medium text-sm text-teal-700">Conversation Summary</h4>
-                <div class="text-sm bg-teal-25 border rounded p-2 max-h-24 overflow-auto">{{ $result['trace']['conversation']['conversation_summary'] }}</div>
-              </div>
-              @endif
-              @endif
-            </div>
-          </div>
-          @endif
-          
-          @if(!empty($result['trace']['reranking']) && $result['trace']['reranking']['driver'] === 'llm')
-          <div>
-            <h3 class="font-medium text-blue-600">🤖 LLM-as-a-Judge Reranking</h3>
+          @if(!empty($result['trace']['reranking']))
+          <div class="md:col-span-2">
+            <h3 class="font-medium text-blue-600">Reranking (driver: {{ $result['trace']['reranking']['driver'] }})</h3>
             <div class="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
               <div class="grid md:grid-cols-3 gap-3">
                 <div>
@@ -471,13 +381,14 @@ Fonti:
                 </div>
                 
                 <div>
-                  <h4 class="font-medium text-sm text-blue-700">LLM Scores</h4>
+                  <h4 class="font-medium text-sm text-blue-700">Scores</h4>
                   <div class="text-sm max-h-32 overflow-auto">
                     @foreach(array_slice($result['trace']['reranking']['top_candidates'] ?? [], 0, 5) as $i => $candidate)
                     <div class="text-xs border-b pb-1 mb-1">
-                      {{ $i + 1 }}. Doc {{ $candidate['document_id'] ?? 'N/A' }}.{{ $candidate['chunk_index'] ?? 'N/A' }} 
-                      <span class="inline-flex items-center px-1 py-0.5 rounded text-xs {{ ($candidate['llm_score'] ?? 0) >= 70 ? 'bg-green-100 text-green-800' : (($candidate['llm_score'] ?? 0) >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
-                        🤖 {{ $candidate['llm_score'] ?? 0 }}/100
+                      {{ $i + 1 }}. 
+                      <a class="text-blue-700 underline" target="_blank" href="{{ route('admin.documents.index', ['tenant' => $tenant_id]) }}?doc_id={{ $candidate['document_id'] ?? '' }}">Doc {{ $candidate['document_id'] ?? 'N/A' }}</a>.{{ $candidate['chunk_index'] ?? 'N/A' }} 
+                      <span class="inline-flex items-center px-1 py-0.5 rounded text-xs {{ (($candidate['llm_score'] ?? 0) >= 70 || ($candidate['score'] ?? 0) >= 0.7) ? 'bg-green-100 text-green-800' : ((($candidate['llm_score'] ?? 0) >= 50 || ($candidate['score'] ?? 0) >= 0.5) ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
+                        {{ isset($candidate['llm_score']) ? ('🤖 '.$candidate['llm_score'].'/100') : ('sim '.number_format(($candidate['score'] ?? 0),3)) }}
                       </span>
                       @if(isset($candidate['original_score']))
                       <span class="text-gray-500 ml-1">(was {{ number_format($candidate['original_score'], 3) }})</span>
@@ -488,54 +399,27 @@ Fonti:
                 </div>
                 
                 <div>
-                  <h4 class="font-medium text-sm text-blue-700">Score Distribution</h4>
-                  <div class="text-xs space-y-1">
-                    @php
-                    $scores = array_column($result['trace']['reranking']['top_candidates'] ?? [], 'llm_score');
-                    $excellent = count(array_filter($scores, fn($s) => $s >= 80));
-                    $good = count(array_filter($scores, fn($s) => $s >= 60 && $s < 80));
-                    $average = count(array_filter($scores, fn($s) => $s >= 40 && $s < 60));
-                    $poor = count(array_filter($scores, fn($s) => $s < 40));
-                    @endphp
-                    <div class="flex justify-between">
-                      <span>🚀 Excellent (80-100):</span> <span class="font-bold text-green-600">{{ $excellent }}</span>
+                  <h4 class="font-medium text-sm text-blue-700">Top Reranked Results Preview</h4>
+                  <div class="bg-white border rounded p-2 max-h-40 overflow-auto">
+                    @foreach(array_slice($result['trace']['reranking']['top_candidates'] ?? [], 0, 3) as $i => $candidate)
+                    <div class="text-xs border-b pb-2 mb-2">
+                      <div class="flex justify-between items-center">
+                        <span class="font-medium">{{ $i + 1 }}. <a class="text-blue-700 underline" target="_blank" href="{{ route('admin.documents.index', ['tenant' => $tenant_id]) }}?doc_id={{ $candidate['document_id'] ?? '' }}">Doc {{ $candidate['document_id'] ?? 'N/A' }}</a>.{{ $candidate['chunk_index'] ?? 'N/A' }}</span>
+                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-bold {{ (($candidate['llm_score'] ?? 0) >= 70 || ($candidate['score'] ?? 0) >= 0.7) ? 'bg-green-100 text-green-800' : ((($candidate['llm_score'] ?? 0) >= 50 || ($candidate['score'] ?? 0) >= 0.5) ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
+                          {{ isset($candidate['llm_score']) ? ('🤖 '.$candidate['llm_score'].'/100') : ('sim '.number_format(($candidate['score'] ?? 0),3)) }}
+                        </span>
+                      </div>
+                      <div class="text-gray-600 mt-1">{{ mb_substr($candidate['text'] ?? '', 0, 150) }}{{ mb_strlen($candidate['text'] ?? '') > 150 ? '...' : '' }}</div>
                     </div>
-                    <div class="flex justify-between">
-                      <span>😊 Good (60-79):</span> <span class="font-bold text-blue-600">{{ $good }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span>😐 Average (40-59):</span> <span class="font-bold text-yellow-600">{{ $average }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span>😟 Poor (0-39):</span> <span class="font-bold text-red-600">{{ $poor }}</span>
-                    </div>
+                    @endforeach
                   </div>
                 </div>
               </div>
-              
-              @if(!empty($result['trace']['reranking']['top_candidates']))
-              <div>
-                <h4 class="font-medium text-sm text-blue-700">Top Reranked Results Preview</h4>
-                <div class="bg-white border rounded p-2 max-h-40 overflow-auto">
-                  @foreach(array_slice($result['trace']['reranking']['top_candidates'] ?? [], 0, 3) as $i => $candidate)
-                  <div class="text-xs border-b pb-2 mb-2">
-                    <div class="flex justify-between items-center">
-                      <span class="font-medium">{{ $i + 1 }}. Doc {{ $candidate['document_id'] ?? 'N/A' }}.{{ $candidate['chunk_index'] ?? 'N/A' }}</span>
-                      <span class="inline-flex items-center px-2 py-1 rounded text-xs font-bold {{ ($candidate['llm_score'] ?? 0) >= 70 ? 'bg-green-100 text-green-800' : (($candidate['llm_score'] ?? 0) >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
-                        🤖 {{ $candidate['llm_score'] ?? 0 }}/100
-                      </span>
-                    </div>
-                    <div class="text-gray-600 mt-1">{{ mb_substr($candidate['text'] ?? '', 0, 150) }}{{ mb_strlen($candidate['text'] ?? '') > 150 ? '...' : '' }}</div>
-                  </div>
-                  @endforeach
-                </div>
-              </div>
-              @endif
             </div>
           </div>
           @endif
           
-          <div>
+          <div class="md:col-span-2">
             <h3 class="font-medium">Milvus health</h3>
             <pre class="bg-gray-50 border rounded p-2 rag-tester-pre rag-json-output">{{ json_encode($result['trace']['milvus'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre>
           </div>

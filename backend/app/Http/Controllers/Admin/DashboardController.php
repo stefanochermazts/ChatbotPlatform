@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
+use App\Services\RAG\TenantRagConfigService;
 
 class DashboardController extends Controller
 {
@@ -32,19 +33,41 @@ class DashboardController extends Controller
         
         // Dashboard admin normale
         $tenantCount = Tenant::count();
+        $tenants = Tenant::orderBy('name')->get();
+
+        // Selezione opzionale di un tenant per visualizzare la config per-tenant
+        $selectedTenantId = (int) ($request->query('tenant_id') ?: 0);
+        $selectedTenant = $selectedTenantId ? Tenant::find($selectedTenantId) : null;
+
+        if ($selectedTenant) {
+            // Configurazione per-tenant (unione di defaults + profilo + overrides del tenant)
+            $cfgSvc = app(TenantRagConfigService::class);
+            $tenantCfg = $cfgSvc->getConfig($selectedTenant->id);
+            $rag = [
+                'features' => $tenantCfg['features'] ?? config('rag.features', []),
+                'hybrid' => $tenantCfg['hybrid'] ?? config('rag.hybrid', []),
+                'reranker' => $tenantCfg['reranker'] ?? config('rag.reranker', []),
+                'multiquery' => $tenantCfg['multiquery'] ?? config('rag.multiquery', []),
+                'context' => $tenantCfg['context'] ?? config('rag.context', []),
+                'cache' => $tenantCfg['cache'] ?? config('rag.cache', []),
+                'telemetry' => $tenantCfg['telemetry'] ?? config('rag.telemetry', []),
+            ];
+            $ragScope = 'tenant';
+        } else {
+            // Configurazione globale (defaults)
+            $rag = [
+                'features' => config('rag.features', []),
+                'hybrid' => config('rag.hybrid', []),
+                'reranker' => config('rag.reranker', []),
+                'multiquery' => config('rag.multiquery', []),
+                'context' => config('rag.context', []),
+                'cache' => config('rag.cache', []),
+                'telemetry' => config('rag.telemetry', []),
+            ];
+            $ragScope = 'global';
+        }
         
-        // Carica configurazioni RAG per visualizzazione
-        $rag = [
-            'features' => config('rag.features', []),
-            'hybrid' => config('rag.hybrid', []),
-            'reranker' => config('rag.reranker', []),
-            'multiquery' => config('rag.multiquery', []),
-            'context' => config('rag.context', []),
-            'cache' => config('rag.cache', []),
-            'telemetry' => config('rag.telemetry', []),
-        ];
-        
-        return view('admin.dashboard', compact('tenantCount', 'rag'));
+        return view('admin.dashboard', compact('tenantCount', 'tenants', 'rag', 'ragScope', 'selectedTenant'));
     }
 }
 

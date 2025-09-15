@@ -138,6 +138,33 @@ class KbSearchService
                     $intentDebug['executed_intent'] = isset($result['debug']['semantic_fallback']) ? $intentType . '_semantic' : $intentType;
                     $result['debug']['intent_detection'] = $intentDebug;
                     $result['debug']['selected_kb'] = $kbSelIntent;
+
+                    // Esponi anche params hybrid e driver reranker per coerenza UI
+                    $cfg = $this->tenantConfig->getHybridConfig($tenantId);
+                    $vecTopK   = (int) ($cfg['vector_top_k'] ?? 30);
+                    $bmTopK    = (int) ($cfg['bm25_top_k']   ?? 50);
+                    $rrfK      = (int) ($cfg['rrf_k']        ?? 60);
+                    $mmrLambda = (float) ($cfg['mmr_lambda'] ?? 0.3);
+                    $mmrTake   = (int) ($cfg['mmr_take']     ?? 8);
+                    $neighbor  = (int) ($cfg['neighbor_radius'] ?? 1);
+                    $result['debug']['hybrid_config'] = [
+                        'vector_top_k' => $vecTopK,
+                        'bm25_top_k' => $bmTopK,
+                        'rrf_k' => $rrfK,
+                        'mmr_lambda' => $mmrLambda,
+                        'mmr_take' => $mmrTake,
+                        'neighbor_radius' => $neighbor,
+                    ];
+                    $advCfg = (array) $this->tenantConfig->getAdvancedConfig($tenantId);
+                    $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
+                    $llmEnabled = (bool) (($advCfg['llm_reranker']['enabled'] ?? true) === true);
+                    if ($driver === 'llm' && !$llmEnabled) { $driver = 'embedding'; }
+                    $result['debug']['reranking'] = $result['debug']['reranking'] ?? [
+                        'driver' => $driver,
+                        'input_candidates' => 0,
+                        'output_candidates' => 0,
+                        'top_candidates' => []
+                    ];
                 }
                 return $result;
             }
@@ -165,8 +192,21 @@ class KbSearchService
             'mmr_lambda' => $mmrLambda
         ]);
 
+        // Esponi nel trace i parametri hybrid effettivamente usati
+        if ($debug) {
+            $trace['hybrid_config'] = [
+                'vector_top_k' => $vecTopK,
+                'bm25_top_k' => $bmTopK,
+                'rrf_k' => $rrfK,
+                'mmr_lambda' => $mmrLambda,
+                'mmr_take' => $mmrTake,
+                'neighbor_radius' => $neighbor,
+            ];
+        }
+
         // Multi-query expansion (originale + parafrasi) - usa query normalizzata
-        $queries = $this->mq ? $this->mq->expand($normalizedQuery) : [$normalizedQuery];
+        // Multi-query expansion per-tenant
+        $queries = $this->mq ? $this->mq->expand($tenantId, $normalizedQuery) : [$normalizedQuery];
         $this->telemetry->event('mq.expanded', ['tenant_id'=>$tenantId,'query'=>$query,'variants'=>$queries]);
         $allFused = [];
         $trace = $debug ? ['queries' => $queries] : null;
@@ -206,7 +246,10 @@ class KbSearchService
         
         // HyDE (Hypothetical Document Embeddings) se abilitato
         $hydeResult = null;
-        $useHyDE = $this->hyde && $this->hyde->isEnabled();
+        // HyDE per-tenant
+        $advCfg = (array) $this->tenantConfig->getAdvancedConfig($tenantId);
+        $hydeCfg = (array) ($advCfg['hyde'] ?? []);
+        $useHyDE = $this->hyde && (($hydeCfg['enabled'] ?? false) === true);
         if ($useHyDE) {
             $hydeResult = $this->hyde->expandQuery($normalizedQuery, $tenantId, $debug);
             $this->telemetry->event('hyde.expanded', [
@@ -393,6 +436,11 @@ class KbSearchService
 
         // Seleziona reranker basato su configurazione tenant
         $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
+        // Se llm_reranker.enabled è false, forza embedding anche se driver=llm
+        $llmEnabled = (bool) (($advCfg['llm_reranker']['enabled'] ?? true) === true);
+        if ($driver === 'llm' && !$llmEnabled) {
+            $driver = 'embedding';
+        }
         $reranker = match($driver) {
             'cohere' => new CohereReranker(),
             'llm' => new LLMReranker(app(\App\Services\LLM\OpenAIChatService::class)),
@@ -455,10 +503,11 @@ class KbSearchService
             if (isset($seen[$docId])) continue;
             $seen[$docId] = true;
 
-            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 1200) ?? '';
+            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 50000) ?? '';
             for ($d = -$neighbor; $d <= $neighbor; $d++) {
                 if ($d === 0) continue;
-                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 500);
+                // Aumenta il limite per includere righe di contatto (es. tel: ...)
+                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 2000);
                 if ($s2) $snippet .= "\n".$s2;
             }
 
@@ -467,6 +516,20 @@ class KbSearchService
             
             // Get full chunk text for deep-link highlighting (use large limit to get full text)
             $chunkText = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 5000) ?? '';
+
+            // Phone extraction (generic patterns) on raw chunk and on built snippet
+            $phonesInChunk   = $this->extractPhoneFromContent($chunkText);
+            $phonesInSnippet = $this->extractPhoneFromContent($snippet);
+            $phonesMerged    = array_values(array_unique(array_merge($phonesInChunk, $phonesInSnippet)));
+
+            if ($debug) {
+                $trace['phone_trace'][] = [
+                    'doc_id' => $docId,
+                    'chunk_index' => (int)$base['chunk_index'],
+                    'raw_chunk_hits' => $phonesInChunk,
+                    'snippet_hits' => $phonesInSnippet,
+                ];
+            }
             
             $cits[] = [
                 'id' => (int) $doc->id,
@@ -481,6 +544,9 @@ class KbSearchService
                 'document_type' => pathinfo($doc->path, PATHINFO_EXTENSION) ?: 'unknown',
                 'view_url' => null, // Will be populated by frontend with secure token
                 'document_source_url' => $doc->source_url ?? null, // 🆕 URL originale del documento
+                // Phone enrichment for UI (generic, not tenant specific)
+                'phone' => $phonesMerged[0] ?? null,
+                'phones' => $phonesMerged,
             ];
         }
 

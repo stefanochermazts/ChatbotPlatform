@@ -11,6 +11,7 @@ use App\Services\RAG\HyDEExpander;
 use App\Services\RAG\ConversationContextEnhancer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Cache;
 
 class RagTestController extends Controller
 {
@@ -53,18 +54,12 @@ class RagTestController extends Controller
         }
         $health = $milvus->health();
         
-        // Gestisci configurazioni temporanee per test
-        $originalHydeConfig = config('rag.advanced.hyde.enabled');
-        $originalRerankerDriver = config('rag.reranker.driver');
-        $originalConversationConfig = config('rag.conversation.enabled');
+        // REMOVE: Non più gestione override UI - usiamo solo tenant config
+        // I checkbox nell'UI ora sono solo informativi, non modificano la configurazione
         
-        $hydeEnabled = (bool) ($data['enable_hyde'] ?? false);
-        $conversationEnabled = (bool) ($data['enable_conversation'] ?? false);
-        $rerankerDriver = $data['reranker_driver'] ?? 'embedding';
-        
-        // Parse conversation messages se forniti
+        // Parse conversation messages se forniti (gestito da tenant config)
         $conversationMessages = [];
-        if ($conversationEnabled && !empty($data['conversation_messages'])) {
+        if (!empty($data['conversation_messages'])) {
             try {
                 $parsedMessages = json_decode($data['conversation_messages'], true, 512, JSON_THROW_ON_ERROR);
                 if (is_array($parsedMessages)) {
@@ -78,30 +73,22 @@ class RagTestController extends Controller
         }
         
         try {
-            // Applica configurazioni temporanee
-            if ($hydeEnabled) {
-                Config::set('rag.advanced.hyde.enabled', true);
-            }
+            // REMOVE: Non più override - usa solo tenant config da /admin/tenants/{id}/rag-config
+            // Tutte le configurazioni vengono lette da TenantRagConfigService
             
-            if ($conversationEnabled) {
-                Config::set('rag.conversation.enabled', true);
-            }
+            // Invalida solo la cache per assicurarsi di leggere config aggiornate
+            Cache::forget("rag_config_tenant_{$tenantId}");
             
-            if ($rerankerDriver !== $originalRerankerDriver) {
-                Config::set('rag.reranker.driver', $rerankerDriver);
-            }
-            
-            // Crea KbSearchService con configurazioni aggiornate
-            if ($hydeEnabled) {
-                $hyde = app(HyDEExpander::class);
-                $kb = app()->makeWith(KbSearchService::class, ['hyde' => $hyde]);
-            }
+            // Usa sempre il service standard (le configurazioni vengono da tenant config)
+            $kb = app(KbSearchService::class);
             
             // Gestione query con contesto conversazionale
             $finalQuery = $data['query'];
             $conversationContext = null;
             
-            if ($conversationEnabled && !empty($conversationMessages)) {
+            // La gestione conversazione è ora controllata dalla tenant config
+            // Non più override dal UI - usa TenantRagConfigService
+            if (!empty($conversationMessages)) {
                 $conversationEnhancer = app(ConversationContextEnhancer::class);
                 $conversationContext = $conversationEnhancer->enhanceQuery(
                     $data['query'],
@@ -114,17 +101,21 @@ class RagTestController extends Controller
                 }
             }
             
-            // 🔍 LOG: Configurazioni RAG Tester
+            // 🔍 LOG: Configurazioni RAG Tester (ora da tenant config)
+            $tenantCfgSvc = app(\App\Services\RAG\TenantRagConfigService::class);
+            $advCfg = (array) $tenantCfgSvc->getAdvancedConfig($tenantId);
+            $rerankCfg = (array) $tenantCfgSvc->getRerankerConfig($tenantId);
+            
             \Log::info('RagTestController RAG Config', [
                 'tenant_id' => $tenantId,
                 'original_query' => $data['query'],
                 'final_query' => $finalQuery,
-                'conversation_enabled' => $conversationEnabled,
                 'conversation_enhanced' => $conversationContext ? $conversationContext['context_used'] : false,
-                'hyde_enabled' => Config::get('rag.advanced.hyde.enabled'),
-                'reranker_driver' => Config::get('rag.reranker.driver'),
+                'hyde_enabled' => (bool) (($advCfg['hyde']['enabled'] ?? false) === true),
+                'reranker_driver' => (string) ($rerankCfg['driver'] ?? 'embedding'),
                 'with_answer' => $data['with_answer'] ?? false,
-                'caller' => 'RagTestController'
+                'caller' => 'RagTestController',
+                'ui_overrides_removed' => true
             ]);
             
             // 🔍 DEBUG: Log configurazione prima del retrieve
@@ -155,14 +146,47 @@ class RagTestController extends Controller
             }
             
         } finally {
-            // Ripristina configurazioni originali
-            Config::set('rag.advanced.hyde.enabled', $originalHydeConfig);
-            Config::set('rag.reranker.driver', $originalRerankerDriver);
-            Config::set('rag.conversation.enabled', $originalConversationConfig);
+            // REMOVE: Non più ripristino config - usiamo solo tenant config
+            // Pulizia cache tenant per prossime chiamate
+            Cache::forget("rag_config_tenant_{$tenantId}");
         }
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
         $trace = $retrieval['debug'] ?? null;
+
+        // DEBUG: Log per confronto con Widget
+        \Log::info("RAG TESTER CITATIONS", [
+            'citations_preview' => array_map(function($c) {
+                return [
+                    'id' => $c['id'] ?? null,
+                    'document_id' => $c['document_id'] ?? null,
+                    'chunk_index' => $c['chunk_index'] ?? null,
+                    'score' => $c['score'] ?? null,
+                    'snippet_length' => mb_strlen($c['snippet'] ?? ''),
+                    'chunk_text_length' => mb_strlen($c['chunk_text'] ?? ''),
+                    'phones' => $c['phones'] ?? [],
+                    'phone' => $c['phone'] ?? null,
+                    'email' => $c['email'] ?? null,
+                    'title' => mb_substr($c['title'] ?? '', 0, 50),
+                    'snippet_preview' => mb_substr($c['snippet'] ?? '', 0, 200),
+                ];
+            }, array_slice($citations, 0, 8)),
+        ]);
+        // Aggiungi panoramica configurazione RAG effettiva (per-tenant)
+        try {
+            $tenantCfgSvc = app(\App\Services\RAG\TenantRagConfigService::class);
+            $advCfg = (array) $tenantCfgSvc->getAdvancedConfig($tenantId);
+            $rerankCfg = (array) $tenantCfgSvc->getRerankerConfig($tenantId);
+            if (is_array($trace)) {
+                $trace['rag_config'] = [
+                    'reranker_driver' => (string) ($rerankCfg['driver'] ?? 'embedding'),
+                    'llm_reranker_enabled' => (bool) (($advCfg['llm_reranker']['enabled'] ?? false) === true),
+                    'hyde_enabled' => (bool) (($advCfg['hyde']['enabled'] ?? false) === true),
+                ];
+            }
+        } catch (\Throwable $e) {
+            // Ignora errori di introspezione config nel tester
+        }
         
         // 🔍 DEBUG: Analizza citazioni per telefoni
         \Log::error('RAG Tester Citations Debug', [
