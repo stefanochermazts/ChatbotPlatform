@@ -494,7 +494,7 @@
       }
       
       // Check for demo/test tenant
-      if (tenantId && (tenantId.includes('demo') || tenantId.includes('test') || tenantId === 'debug')) {
+      if (tenantId && (String(tenantId).includes('demo') || String(tenantId).includes('test') || tenantId === 'debug')) {
         console.log('[WidgetTheme] Demo tenant detected, using default theme');
         return Promise.resolve('default');
       }

@@ -655,6 +655,94 @@ php artisan rag:test-llm-reranking 1 "query" --with-hyde
 Vedi `backend/docs/hyde-implementation.md` per dettagli completi su HyDE.
 Vedi `backend/docs/advanced-rag-roadmap.md` per roadmap completa.
 
+## 📦 Gestione Code e Worker
+
+### **Comando per Avviare Tutte le Code**
+
+Per far funzionare correttamente il sistema RAG, è necessario avviare i worker per le diverse code di elaborazione:
+
+```bash
+php artisan queue:work --queue=default,ingestion,scraping,indexing,email,evaluation
+```
+
+**Code Gestite**:
+- **`default`**: Operazioni generali del sistema (Milvus partitions, cleanup)
+- **`ingestion`**: Processamento, parsing, chunking e embeddings documenti caricati 
+- **`scraping`**: Web scraping automatico da URL configurati
+- **`indexing`**: Indicizzazione/cancellazione vettori in Milvus e PostgreSQL FTS
+- **`email`**: Invio notifiche form e conferme utenti
+- **`evaluation`**: Valutazione qualità contenuti e metriche RAG
+
+**⚠️ Nota**: La coda `embeddings` è integrata nella coda `ingestion` per ottimizzare il flusso di processing.
+
+### **Worker Separati per Produzione**
+
+In ambiente di produzione, è consigliabile usare worker dedicati:
+
+```bash
+# Worker per ingestion (CPU/memory intensivo)
+php artisan queue:work --queue=ingestion --timeout=1800 --sleep=3 --memory=1024 --tries=3
+
+# Worker per scraping (I/O intensivo, long-running)
+php artisan queue:work --queue=scraping --timeout=1800 --sleep=3 --memory=512 --tries=3
+
+# Worker per indexing (database/Milvus)
+php artisan queue:work --queue=indexing --timeout=300 --sleep=1 --tries=3
+
+# Worker per email (priorità media)
+php artisan queue:work --queue=email --timeout=60 --sleep=1 --tries=3
+
+# Worker per evaluation (background, bassa priorità)
+php artisan queue:work --queue=evaluation --timeout=300 --sleep=5 --tries=2
+```
+
+### **Monitoring Code**
+
+```bash
+# Verifica code attive
+php artisan queue:monitor
+
+# Restart worker (dopo deploy)
+php artisan queue:restart
+
+# Clear failed jobs
+php artisan queue:clear
+
+# Statistiche code
+php artisan horizon:status  # Se Horizon configurato
+```
+
+### **Script di Avvio Automatico**
+
+Per Windows (Laragon):
+```batch
+@echo off
+cd /d "C:\laragon\www\ChatbotPlatform\backend"
+php artisan queue:work --queue=default,ingestion,scraping,indexing,email,evaluation --timeout=1800 --sleep=3 --tries=3 --memory=1024
+```
+
+Per Linux/MacOS:
+```bash
+#!/bin/bash
+cd /path/to/ChatbotPlatform/backend
+php artisan queue:work --queue=default,ingestion,scraping,indexing,email,evaluation --timeout=1800 --sleep=3 --tries=3 --memory=1024
+```
+
+**Script Esistenti** (per worker specializzati):
+```bash
+# Solo ingestion (Windows)
+./start-ingestion-worker.bat
+
+# Solo scraping (Windows)  
+./start-scraping-worker.bat
+
+# Equivalenti per Linux/MacOS
+./start-ingestion-worker.sh
+./start-scraping-worker.sh
+```
+
+**⚠️ Importante**: I worker devono essere sempre attivi per il corretto funzionamento del sistema RAG. Senza worker attivi, documenti caricati non verranno processati e non saranno disponibili per le ricerche.
+
 ## 🔧 Troubleshooting
 
 ### **Problemi Comuni**

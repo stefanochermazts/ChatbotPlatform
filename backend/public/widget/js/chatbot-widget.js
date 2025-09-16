@@ -911,7 +911,7 @@
       
       if (welcomeMessage) {
         setTimeout(() => {
-          this.addBotMessage(welcomeMessage);
+          this.addBotMessage(welcomeMessage, [], true); // true = isWelcomeMessage
         }, 500);
       }
     }
@@ -1099,10 +1099,10 @@
       this.events.emit(CONFIG.events.MESSAGE_SENT, { content, role: 'user' });
     }
 
-    addBotMessage(content, citations = []) {
-      console.log('🤖 addBotMessage called with:', content.substring(0, 50) + '...');
+    addBotMessage(content, citations = [], isWelcomeMessage = false) {
+      console.log('🤖 addBotMessage called with:', content.substring(0, 50) + '...', 'isWelcome:', isWelcomeMessage);
       
-      const messageEl = this.createMessageElement('bot', content, citations);
+      const messageEl = this.createMessageElement('bot', content, citations, isWelcomeMessage);
       if (!messageEl) {
         console.error('Failed to create bot message element');
         return;
@@ -1123,7 +1123,7 @@
       this.events.emit(CONFIG.events.MESSAGE_RECEIVED, { content, role: 'assistant', citations });
     }
 
-    createMessageElement(role, content, citations = []) {
+    createMessageElement(role, content, citations = [], isWelcomeMessage = false) {
       const template = role === 'user' 
         ? this.templates.userMessage 
         : this.templates.botMessage;
@@ -1158,9 +1158,12 @@
       //   this.addCitations(messageEl, citations);
       // }
 
-      // 👍👎 Aggiungi sistema di feedback per i messaggi bot
-      if (role === 'bot') {
+      // 👍👎 Aggiungi sistema di feedback SOLO per risposte effettive, NON per messaggi di benvenuto
+      if (role === 'bot' && !isWelcomeMessage) {
+        console.log('📝 Adding feedback buttons for bot response (not welcome message)');
         this.addFeedbackButtons(messageEl, content);
+      } else if (role === 'bot' && isWelcomeMessage) {
+        console.log('📝 Skipping feedback buttons for welcome message');
       }
 
       return messageEl;
@@ -1294,8 +1297,37 @@
           buttons.forEach(btn => btn.disabled = true);
 
           try {
+            // Ottieni il contenuto del messaggio bot dal DOM, escludendo le icone di feedback
+            const messageContentEl = messageEl.querySelector('.chatbot-message-content, .chatbot-message-bubble');
+            let actualBotResponse = botResponse; // fallback al parametro originale
+            
+            if (messageContentEl) {
+              // Clona l'elemento per non modificare il DOM originale
+              const tempEl = messageContentEl.cloneNode(true);
+              
+              // Rimuovi tutti gli elementi di feedback (pulsanti e contenitori)
+              const feedbackElements = tempEl.querySelectorAll('.chatbot-feedback, .chatbot-feedback-container, .chatbot-feedback-buttons, .chatbot-feedback-thanks');
+              feedbackElements.forEach(el => el.remove());
+              
+              // Ottieni solo il testo pulito
+              actualBotResponse = tempEl.textContent.trim();
+              
+              // Rimuovi pattern di testo delle icone di feedback che potrebbero rimanere
+              actualBotResponse = actualBotResponse
+                .replace(/Questa risposta ti è stata utile\?/g, '')
+                .replace(/😡\s*No/g, '')
+                .replace(/😐\s*Così così/g, '')
+                .replace(/😊\s*Sì/g, '')
+                .replace(/Grazie per il feedback!/g, '')
+                .replace(/\s+/g, ' ') // normalizza spazi multipli
+                .trim();
+            }
+            
+            // Log per debug: mostra contenuto pulito
+            console.log('📝 Bot response pulita per feedback:', actualBotResponse.substring(0, 100) + '...');
+            
             // Invia il feedback all'API
-            await this.submitFeedback(messageId, botResponse, rating);
+            await this.submitFeedback(messageId, actualBotResponse, rating);
             
             // Mostra messaggio di ringraziamento
             if (buttonsContainer && thanksContainer) {
@@ -1345,9 +1377,18 @@
       // Ottieni la domanda dell'utente dall'ultimo messaggio user
       const userQuestion = this.getLastUserQuestion();
       
+      // Validazione dati richiesti
+      if (!botResponse || botResponse.trim().length === 0) {
+        console.error('❌ botResponse vuoto o mancante:', botResponse);
+        throw new Error('Risposta del bot mancante per il feedback');
+      }
+
+      // Migliore gestione della user_question mancante
+      const fallbackQuestion = userQuestion || `[Messaggio inviato da: ${window.location.href}]`;
+      
       const feedbackData = {
-        user_question: userQuestion || 'Domanda non disponibile',
-        bot_response: botResponse,
+        user_question: fallbackQuestion,
+        bot_response: botResponse.trim(),
         rating: rating,
         message_id: messageId,
         session_id: this.getSessionId(),
@@ -1356,11 +1397,12 @@
         response_metadata: {
           timestamp: new Date().toISOString(),
           user_agent: navigator.userAgent,
-          widget_version: window.CHATBOT_CONFIG?.version || '1.0'
+          widget_version: window.CHATBOT_CONFIG?.version || '1.0',
+          question_source: userQuestion ? 'conversation' : 'fallback'
         }
       };
 
-      console.log('📝 Inviando feedback:', { rating, messageId });
+      console.log('📝 Inviando feedback:', { rating, messageId, userQuestion: userQuestion?.substring(0, 50), botResponse: botResponse?.substring(0, 100) });
 
       const response = await fetch(`${window.CHATBOT_CONFIG.apiUrl}/feedback`, {
         method: 'POST',
@@ -1390,12 +1432,32 @@
      * Ottiene l'ultima domanda dell'utente dalla cronologia
      */
     getLastUserQuestion() {
+      // Prima prova a recuperare dalla memoria locale delle conversazioni
+      const storedConversation = this.state?.conversation || [];
+      if (storedConversation && storedConversation.length > 0) {
+        // Trova l'ultimo messaggio utente nella conversazione memorizzata
+        for (let i = storedConversation.length - 1; i >= 0; i--) {
+          const msg = storedConversation[i];
+          if (msg.role === 'user' && msg.content && msg.content.trim().length > 0) {
+            console.log('📝 User question trovata dalla memoria:', msg.content.substring(0, 50));
+            return msg.content.trim();
+          }
+        }
+      }
+      
+      // Fallback: cerca nel DOM
       const messages = this.elements.messagesContainer?.querySelectorAll('.chatbot-message.user');
       if (messages && messages.length > 0) {
         const lastUserMessage = messages[messages.length - 1];
-        const bubble = lastUserMessage.querySelector('.chatbot-message-bubble');
-        return bubble?.textContent?.trim() || null;
+        const bubble = lastUserMessage.querySelector('.chatbot-message-bubble, .chatbot-message-content');
+        const content = bubble?.textContent?.trim();
+        if (content && content.length > 0) {
+          console.log('📝 User question trovata dal DOM:', content.substring(0, 50));
+          return content;
+        }
       }
+      
+      console.warn('📝 Nessuna domanda utente trovata');
       return null;
     }
 
