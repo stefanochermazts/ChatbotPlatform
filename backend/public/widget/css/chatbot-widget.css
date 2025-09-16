@@ -1120,7 +1120,7 @@
   margin: var(--chatbot-spacing-4) 0;
   overflow-x: auto;
   border-radius: var(--chatbot-border-radius-default);
-  border: 2px solid var(--chatbot-border-primary);
+  border: 1px solid var(--chatbot-border-primary); /* ⚡ Ridotto da 2px a 1px */
   background: var(--chatbot-bg-primary);
   box-shadow: var(--chatbot-shadow-md);
 }
@@ -1137,13 +1137,13 @@
   color: var(--chatbot-text-inverse);
   font-weight: var(--chatbot-font-semibold);
   text-align: left;
-  padding: var(--chatbot-spacing-3) var(--chatbot-spacing-4);
-  border-bottom: 2px solid var(--chatbot-primary-700);
+  padding: var(--chatbot-spacing-4) var(--chatbot-spacing-5); /* ⚡ Aumentato da 3,4 a 4,5 (+4px vertical, +4px horizontal) */
+  border-bottom: 1px solid var(--chatbot-primary-700); /* ⚡ Ridotto da 2px a 1px */
   white-space: nowrap;
 }
 
 .chatbot-table-cell {
-  padding: var(--chatbot-spacing-3) var(--chatbot-spacing-4);
+  padding: var(--chatbot-spacing-4) var(--chatbot-spacing-5); /* ⚡ Aumentato da 3,4 a 4,5 (+4px vertical, +4px horizontal) */
   border-bottom: 1px solid var(--chatbot-border-primary);
   vertical-align: top;
   word-wrap: break-word;
@@ -1169,7 +1169,7 @@
   
   .chatbot-table-header,
   .chatbot-table-cell {
-    padding: var(--chatbot-spacing-2) var(--chatbot-spacing-3);
+    padding: var(--chatbot-spacing-3) var(--chatbot-spacing-4); /* ⚡ Aumentato da 2,3 a 3,4 (+4px su mobile) */
     max-width: 150px;
   }
   
