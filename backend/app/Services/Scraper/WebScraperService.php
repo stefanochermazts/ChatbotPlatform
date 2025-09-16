@@ -8,6 +8,8 @@ use App\Models\ScraperProgress;
 use App\Models\Tenant;
 use App\Jobs\IngestUploadedDocumentJob;
 use App\Services\Scraper\ContentQualityAnalyzer;
+use App\Services\Scraper\JavaScriptRenderer;
+use App\Services\Scraper\ScraperLogger;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -19,13 +21,15 @@ class WebScraperService
     private array $visitedUrls = [];
     private array $results = [];
     private array $stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
-    private ContentQualityAnalyzer $qualityAnalyzer;
+    private ?ContentQualityAnalyzer $qualityAnalyzer = null;
     private ?ScraperProgress $progress = null;
     private array $urlsQueue = [];
-
+    private string $sessionId;
+    
     public function __construct()
     {
         $this->qualityAnalyzer = new ContentQualityAnalyzer();
+        $this->sessionId = 'scraper_' . uniqid();
     }
 
     public function scrapeForTenant(int $tenantId, ?int $scraperConfigId = null): array
@@ -39,6 +43,9 @@ class WebScraperService
             return ['error' => 'Nessuna configurazione scraper trovata o seed URLs vuoti'];
         }
 
+        // 🚀 Log avvio sessione di scraping
+        ScraperLogger::sessionStarted($this->sessionId, $tenantId, $config->name);
+        
         // Inizializza progress tracking
         $this->initializeProgress($tenantId, $scraperConfigId);
         
@@ -62,6 +69,16 @@ class WebScraperService
         // Salva i risultati come documenti
         $savedCount = $this->saveResults($tenant, false);
 
+        // 🏁 Log completamento sessione
+        $finalStats = [
+            'urls_visited' => count($this->visitedUrls),
+            'documents_saved' => $savedCount,
+            'new' => $this->stats['new'],
+            'updated' => $this->stats['updated'],
+            'skipped' => $this->stats['skipped']
+        ];
+        ScraperLogger::sessionCompleted($this->sessionId, $finalStats, 0); // Duration calcolata altrove
+
         return [
             'success' => true,
             'urls_visited' => count($this->visitedUrls),
@@ -79,6 +96,9 @@ class WebScraperService
         if (!$this->isUrlAllowed($url, $config)) return;
 
         $this->visitedUrls[] = $url;
+        
+        // 📄 Log processing URL
+        ScraperLogger::urlProcessing($this->sessionId, $url, $depth);
 
         // Rate limiting
         if ($config->rate_limit_rps > 0) {
@@ -96,6 +116,7 @@ class WebScraperService
                 // Politica: se skip_known_urls attivo, e abbiamo già un documento per questo URL (e non è da recrawllare), salta
                 if ($this->shouldSkipKnownUrl($url, $tenant, $config)) {
                     $this->stats['skipped']++;
+                    ScraperLogger::urlSuccess($this->sessionId, $url, 'skipped', 0);
                     \Log::info('Skip URL già noto', ['url' => $url]);
                 } else {
                 // Estrai contenuto principale
@@ -122,6 +143,8 @@ class WebScraperService
             }
 
         } catch (\Exception $e) {
+            // ❌ Log errore specifico per scraper
+            ScraperLogger::urlError($this->sessionId, $url, $e->getMessage());
             \Log::warning("Errore scraping URL: {$url}", ['error' => $e->getMessage()]);
         }
     }
@@ -148,7 +171,13 @@ class WebScraperService
 
     private function fetchUrl(string $url, ScraperConfig $config): ?string
     {
-        // Timeout configurabile con fallback a 60 secondi
+        // 🚀 NEW: JavaScript rendering support per SPA (Angular, React, Vue)
+        if ($config->render_js) {
+            \Log::info("🌐 [JS-RENDER] Using JavaScript rendering for SPA", ['url' => $url]);
+            return $this->fetchUrlWithJS($url, $config);
+        }
+
+        // Metodo standard HTTP per siti statici
         $timeout = $config->timeout ?? 60;
         
         $httpBuilder = Http::timeout($timeout)
@@ -165,6 +194,30 @@ class WebScraperService
         
         // Gestione robusta dell'encoding UTF-8
         $content = $this->ensureUtf8Encoding($content, $response);
+        
+        return $content;
+    }
+
+    /**
+     * 🌐 Fetch URL con rendering JavaScript per SPA (Angular, React, Vue)
+     */
+    private function fetchUrlWithJS(string $url, ScraperConfig $config): ?string
+    {
+        // 🌐 Log avvio rendering JavaScript
+        ScraperLogger::jsRenderStart($this->sessionId, $url);
+        
+        $startTime = microtime(true);
+        $renderer = new JavaScriptRenderer();
+        $timeout = max($config->timeout ?? 60, 30);
+        
+        $content = $renderer->renderUrl($url, $timeout);
+        
+        if ($content) {
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+            ScraperLogger::jsRenderSuccess($this->sessionId, $url, strlen($content), $duration);
+        } else {
+            ScraperLogger::jsRenderError($this->sessionId, $url, "Rendering failed - no content returned");
+        }
         
         return $content;
     }
@@ -1333,6 +1386,7 @@ class WebScraperService
                         $existingDocument->update($updateData);
                         $skippedCount++;
                         $this->stats['skipped']++;
+                        ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'skipped', strlen($result['content']));
                         \Log::info("Documento invariato, skip", ['url' => $result['url']]);
                         continue;
                     } else {
@@ -1346,6 +1400,7 @@ class WebScraperService
                         $this->updateExistingDocument($existingDocument, $result, $markdownContent, $contentHash);
                         $updatedCount++;
                         $this->stats['updated']++;
+                        ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'updated', strlen($result['content']));
                         continue;
                     }
                 }
@@ -1354,6 +1409,7 @@ class WebScraperService
                 $document = $this->createNewDocument($tenant, $result, $markdownContent, $contentHash);
                 $savedCount++;
                 $this->stats['new']++;
+                ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'new', strlen($result['content']));
                 
             } catch (\Exception $e) {
                 \Log::error("Errore salvataggio documento scraped", [

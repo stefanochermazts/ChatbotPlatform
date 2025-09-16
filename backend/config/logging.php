@@ -65,6 +65,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // 🕷️ SCRAPER: Log dedicato per web scraping - SEMPRE attivo
+        'scraper' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/scraper.log'),
+            'level' => 'debug', // Sempre DEBUG, indipendente dall'ambiente
+            'days' => 14, // Mantieni 14 giorni di log
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
