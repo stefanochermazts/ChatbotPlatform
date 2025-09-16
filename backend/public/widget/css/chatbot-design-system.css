@@ -530,4 +530,156 @@ Esempio per Tenant "AziendaRossa":
   --chatbot-citation-bg: var(--chatbot-info-900);
   --chatbot-citation-border: var(--chatbot-info-700);
   --chatbot-citation-text: var(--chatbot-info-300);
+
+  /* Feedback - Dark Mode */
+  --chatbot-feedback-bg: var(--chatbot-neutral-800);
+  --chatbot-feedback-border: var(--chatbot-neutral-700);
+  --chatbot-feedback-text: var(--chatbot-neutral-300);
+  --chatbot-feedback-btn-bg: var(--chatbot-neutral-700);
+  --chatbot-feedback-btn-hover: var(--chatbot-neutral-600);
+}
+
+/* =================================================================
+ * 📝 FEEDBACK SYSTEM
+ * Stili per faccine di feedback sotto i messaggi bot
+ * ================================================================= */
+
+.chatbot-feedback {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--chatbot-feedback-bg, var(--chatbot-neutral-50));
+  border: 1px solid var(--chatbot-feedback-border, var(--chatbot-neutral-200));
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.chatbot-feedback-title {
+  color: var(--chatbot-feedback-text, var(--chatbot-text-secondary));
+  font-weight: 500;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.chatbot-feedback-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
+.chatbot-feedback-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--chatbot-feedback-btn-bg, var(--chatbot-neutral-100));
+  border: 1px solid var(--chatbot-border-secondary, var(--chatbot-neutral-300));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  color: var(--chatbot-text-primary, var(--chatbot-neutral-900));
+  min-width: 60px;
+}
+
+.chatbot-feedback-btn:hover:not(:disabled) {
+  background: var(--chatbot-feedback-btn-hover, var(--chatbot-neutral-200));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chatbot-feedback-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.chatbot-feedback-btn .feedback-emoji {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.chatbot-feedback-btn .feedback-text {
+  font-weight: 500;
+}
+
+/* Stati selezionati */
+.chatbot-feedback-btn.selected.rating-negative {
+  background: var(--chatbot-error-100, #fee);
+  border-color: var(--chatbot-error-300, #fca5a5);
+  color: var(--chatbot-error-700, #b91c1c);
+}
+
+.chatbot-feedback-btn.selected.rating-neutral {
+  background: var(--chatbot-warning-100, #fffbeb);
+  border-color: var(--chatbot-warning-300, #fcd34d);
+  color: var(--chatbot-warning-700, #92400e);
+}
+
+.chatbot-feedback-btn.selected.rating-positive {
+  background: var(--chatbot-success-100, #dcfce7);
+  border-color: var(--chatbot-success-300, #86efac);
+  color: var(--chatbot-success-700, #15803d);
+}
+
+.chatbot-feedback-thanks {
+  text-align: center;
+  padding: 8px;
+  color: var(--chatbot-success-600, var(--chatbot-primary-600));
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.chatbot-feedback-thanks .chatbot-feedback-btn {
+  margin: 0;
+  position: static;
+  pointer-events: none;
+}
+
+.feedback-error {
+  color: var(--chatbot-error-600, #dc2626);
+  font-weight: 500;
+}
+
+/* Responsive design per schermi piccoli */
+@media (max-width: 480px) {
+  .chatbot-feedback-buttons {
+    gap: 6px;
+  }
+  
+  .chatbot-feedback-btn {
+    min-width: 50px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  
+  .chatbot-feedback-btn .feedback-emoji {
+    font-size: 18px;
+  }
+}
+
+/* Accessibilità - High contrast mode */
+@media (prefers-contrast: high) {
+  .chatbot-feedback-btn {
+    border-width: 2px;
+  }
+  
+  .chatbot-feedback-btn:hover:not(:disabled) {
+    border-width: 3px;
+  }
+}
+
+/* Riduzione movimento per utenti con disabilità */
+@media (prefers-reduced-motion: reduce) {
+  .chatbot-feedback-btn {
+    transition: none;
+  }
+  
+  .chatbot-feedback-btn:hover:not(:disabled) {
+    transform: none;
+  }
 }

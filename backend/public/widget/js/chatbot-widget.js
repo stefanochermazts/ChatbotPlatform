@@ -347,9 +347,17 @@
         // Se contiene già HTML, NON fare escape e NON riprocessare i link
         console.log('[ChatbotUI] Content contains HTML, skipping markdown processing');
         
-        // 🔧 FIX: Ripara link annidati malformati del tipo <a href="https://<a href="...">...</a>" ...>
-        html = html.replace(/<a href="https:\/\/<a href="([^"]+)"[^>]*>([^<]+)<\/a>"[^>]*>([^<]+)<\/a>/g, 
+        // 🔧 FIX: Ripara link annidati malformati con multiple passate
+        // Pattern 1: <a href="https://<a href="URL">TEXT</a>" ...>NAME</a>
+        html = html.replace(/<a href="[^"]*<a href="([^"]+)"[^>]*>([^<]*)<\/a>[^"]*"[^>]*>([^<]+)<\/a>/g, 
+          '<a href="$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$3</a>');
+        
+        // Pattern 2: Link con attributi duplicati
+        html = html.replace(/<a href="([^"]+)"[^>]*><a href="[^"]*"[^>]*>([^<]+)<\/a><\/a>/g,
           '<a href="$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$2</a>');
+          
+        // Pattern 3: Pulisci link vuoti rimasti
+        html = html.replace(/<a href="[^"]*"[^>]*><\/a>/g, '');
         
         // Sanitizza solo caratteri pericolosi ma preserva HTML esistente
         html = html.replace(/&(?![a-zA-Z0-9#]+;)/g, '&amp;'); // Solo & non già escaped
@@ -1150,6 +1158,11 @@
       //   this.addCitations(messageEl, citations);
       // }
 
+      // 👍👎 Aggiungi sistema di feedback per i messaggi bot
+      if (role === 'bot') {
+        this.addFeedbackButtons(messageEl, content);
+      }
+
       return messageEl;
     }
 
@@ -1213,6 +1226,191 @@
         
         citationsList.appendChild(citationEl);
       });
+    }
+
+    /**
+     * Aggiunge i pulsanti di feedback (faccine) sotto un messaggio bot
+     */
+    addFeedbackButtons(messageEl, botResponse) {
+      if (!messageEl) return;
+
+      // Genera un ID unico per questo messaggio
+      const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      messageEl.setAttribute('data-message-id', messageId);
+
+      // HTML per i pulsanti di feedback
+      const feedbackHtml = `
+        <div class="chatbot-feedback" data-message-id="${messageId}">
+          <div class="chatbot-feedback-title">Questa risposta ti è stata utile?</div>
+          <div class="chatbot-feedback-buttons">
+            <button class="chatbot-feedback-btn" data-rating="negative" title="Non utile">
+              <span class="feedback-emoji">😡</span>
+              <span class="feedback-text">No</span>
+            </button>
+            <button class="chatbot-feedback-btn" data-rating="neutral" title="Così così">
+              <span class="feedback-emoji">😐</span>
+              <span class="feedback-text">Così così</span>
+            </button>
+            <button class="chatbot-feedback-btn" data-rating="positive" title="Utile">
+              <span class="feedback-emoji">😊</span>
+              <span class="feedback-text">Sì</span>
+            </button>
+          </div>
+          <div class="chatbot-feedback-thanks" style="display: none;">
+            <span class="feedback-thanks-text">Grazie per il feedback!</span>
+          </div>
+        </div>
+      `;
+
+      // Trova il bubble del messaggio e aggiungi i feedback dopo
+      const bubble = messageEl.querySelector('.chatbot-message-bubble');
+      if (bubble) {
+        bubble.insertAdjacentHTML('afterend', feedbackHtml);
+        
+        // Aggiungi event listeners per i pulsanti
+        this.setupFeedbackHandlers(messageEl, messageId, botResponse);
+      }
+    }
+
+    /**
+     * Configura gli event handlers per i pulsanti di feedback
+     */
+    setupFeedbackHandlers(messageEl, messageId, botResponse) {
+      const feedbackContainer = messageEl.querySelector('.chatbot-feedback');
+      if (!feedbackContainer) return;
+
+      const buttons = feedbackContainer.querySelectorAll('.chatbot-feedback-btn');
+      const thanksContainer = feedbackContainer.querySelector('.chatbot-feedback-thanks');
+      const buttonsContainer = feedbackContainer.querySelector('.chatbot-feedback-buttons');
+
+      buttons.forEach(button => {
+        button.addEventListener('click', async (e) => {
+          e.preventDefault();
+          
+          const rating = button.getAttribute('data-rating');
+          if (!rating) return;
+
+          // Disabilita tutti i pulsanti per evitare click multipli
+          buttons.forEach(btn => btn.disabled = true);
+
+          try {
+            // Invia il feedback all'API
+            await this.submitFeedback(messageId, botResponse, rating);
+            
+            // Mostra messaggio di ringraziamento
+            if (buttonsContainer && thanksContainer) {
+              buttonsContainer.style.display = 'none';
+              thanksContainer.style.display = 'block';
+              
+              // Aggiunge classe per evidenziare il rating selezionato
+              button.classList.add('selected', `rating-${rating}`);
+              thanksContainer.appendChild(button.cloneNode(true));
+            }
+
+          } catch (error) {
+            console.error('Errore nell\'invio del feedback:', error);
+            
+            // Riabilita i pulsanti in caso di errore
+            buttons.forEach(btn => btn.disabled = false);
+            
+            // Mostra messaggio di errore
+            if (thanksContainer) {
+              thanksContainer.innerHTML = '<span class="feedback-error">Errore nell\'invio del feedback. Riprova.</span>';
+              thanksContainer.style.display = 'block';
+              
+              // Nascondi l'errore dopo 3 secondi
+              setTimeout(() => {
+                thanksContainer.style.display = 'none';
+              }, 3000);
+            }
+          }
+        });
+      });
+    }
+
+    /**
+     * Invia il feedback all'API del backend
+     */
+    async submitFeedback(messageId, botResponse, rating) {
+      // 🔧 Controllo configurazione obbligatoria
+      if (!window.CHATBOT_CONFIG || !window.CHATBOT_CONFIG.apiUrl || !window.CHATBOT_CONFIG.apiKey) {
+        console.error('❌ CHATBOT_CONFIG non configurato correttamente:', {
+          config_defined: !!window.CHATBOT_CONFIG,
+          api_url: window.CHATBOT_CONFIG?.apiUrl,
+          api_key: window.CHATBOT_CONFIG?.apiKey ? '[PRESENTE]' : '[MANCANTE]'
+        });
+        throw new Error('Configurazione widget non valida. Verifica apiUrl e apiKey.');
+      }
+      
+      // Ottieni la domanda dell'utente dall'ultimo messaggio user
+      const userQuestion = this.getLastUserQuestion();
+      
+      const feedbackData = {
+        user_question: userQuestion || 'Domanda non disponibile',
+        bot_response: botResponse,
+        rating: rating,
+        message_id: messageId,
+        session_id: this.getSessionId(),
+        conversation_id: this.getConversationId(),
+        page_url: window.location.href,
+        response_metadata: {
+          timestamp: new Date().toISOString(),
+          user_agent: navigator.userAgent,
+          widget_version: window.CHATBOT_CONFIG?.version || '1.0'
+        }
+      };
+
+      console.log('📝 Inviando feedback:', { rating, messageId });
+
+      const response = await fetch(`${window.CHATBOT_CONFIG.apiUrl}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${window.CHATBOT_CONFIG.apiKey}`,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(feedbackData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Errore nel salvare il feedback');
+      }
+
+      console.log('✅ Feedback inviato con successo:', result);
+      return result;
+    }
+
+    /**
+     * Ottiene l'ultima domanda dell'utente dalla cronologia
+     */
+    getLastUserQuestion() {
+      const messages = this.elements.messagesContainer?.querySelectorAll('.chatbot-message.user');
+      if (messages && messages.length > 0) {
+        const lastUserMessage = messages[messages.length - 1];
+        const bubble = lastUserMessage.querySelector('.chatbot-message-bubble');
+        return bubble?.textContent?.trim() || null;
+      }
+      return null;
+    }
+
+    /**
+     * Ottiene l'ID della sessione corrente
+     */
+    getSessionId() {
+      return window.CHATBOT_CONFIG?.sessionId || 'session_' + Date.now();
+    }
+
+    /**
+     * Ottiene l'ID della conversazione corrente
+     */
+    getConversationId() {
+      return window.CHATBOT_CONFIG?.conversationId || 'conv_' + Date.now();
     }
 
     setupCitationHandlers(messageEl) {

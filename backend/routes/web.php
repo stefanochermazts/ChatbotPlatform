@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DocumentAdminController;
+use App\Http\Controllers\Admin\FeedbackAdminController;
 use App\Http\Controllers\Admin\RagTestController;
 use App\Http\Controllers\Admin\ScraperAdminController;
 use App\Http\Controllers\Admin\ScraperProgressController;
@@ -184,6 +185,12 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::get('/tenants/{tenant}/widget-config/current-colors', [WidgetConfigController::class, 'getCurrentColors'])->name('widget-config.current-colors');
     Route::get('/tenants/{tenant}/widget-config/test-api', [WidgetConfigController::class, 'testApi'])->name('widget-config.test-api');
     // Route::get('/tenants/{tenant}/widget-config/preview', [WidgetConfigController::class, 'preview'])->name('widget-config.preview'); // ⚠️ MOVED TO PUBLIC ROUTE
+
+    // Feedback Management
+    Route::get('/tenants/{tenant}/feedback', [FeedbackAdminController::class, 'index'])->name('tenants.feedback.index');
+    Route::get('/tenants/{tenant}/feedback/{feedback}', [FeedbackAdminController::class, 'show'])->name('tenants.feedback.show');
+    Route::delete('/tenants/{tenant}/feedback/{feedback}', [FeedbackAdminController::class, 'destroy'])->name('tenants.feedback.destroy');
+    Route::get('/tenants/{tenant}/feedback-export', [FeedbackAdminController::class, 'export'])->name('tenants.feedback.export');
 
     // RAG Configuration
     Route::get('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'show'])->name('rag-config.show');

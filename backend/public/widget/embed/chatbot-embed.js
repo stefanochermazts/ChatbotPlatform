@@ -36,8 +36,11 @@
       return ''; // Fallback - use relative paths
     })(),
     
-    // Files to load
-                  files: {
+        // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
+        version: Date.now(),
+        
+        // Files to load
+        files: {
             css: [
                 '/widget/css/chatbot-design-system.css',
                 '/widget/css/chatbot-widget.css',
@@ -134,6 +137,7 @@
         apiKey: null,
         tenantId: null,
         baseURL: EMBED_CONFIG.baseURL,
+        apiUrl: null, // Sarà impostato come baseURL + '/api/v1' se non specificato
         theme: 'default',
         autoOpen: false,
         position: 'bottom-right',
@@ -249,6 +253,24 @@
 
       // Initialize theme toggle (inline fallback)
       this.initThemeToggle();
+      
+      // 🔧 Esponi configurazione globale per il widget principale
+      window.CHATBOT_CONFIG = {
+        apiKey: this.config.apiKey,
+        tenantId: this.config.tenantId,
+        apiUrl: this.config.apiUrl || (EMBED_CONFIG.baseURL + '/api/v1'),
+        theme: this.config.theme,
+        primaryColor: this.config.primaryColor,
+        debug: this.config.debug,
+        version: EMBED_CONFIG.version,
+        sessionId: this.config.sessionId || 'session_' + Date.now(),
+        conversationId: this.config.conversationId || 'conv_' + Date.now()
+      };
+      
+      // Log configurazione per debug
+      if (this.config.debug) {
+        console.log('🔧 CHATBOT_CONFIG esposto:', window.CHATBOT_CONFIG);
+      }
        
       // Initialize widget
       await this.initializeWidget();
@@ -267,7 +289,8 @@
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.type = 'text/css';
-        link.href = url;
+        // 🔄 Aggiungi version parameter per forzare cache refresh
+        link.href = url + (url.includes('?') ? '&' : '?') + 'v=' + EMBED_CONFIG.version;
         
         link.onload = () => {
           this.resources.css.push(url);

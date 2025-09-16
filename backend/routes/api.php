@@ -50,6 +50,12 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/submit', [FormController::class, 'submit']);
             Route::get('/submissions', [FormController::class, 'listSubmissions']);
         });
+        
+        // Feedback del Chatbot (protected by API key)
+        Route::prefix('feedback')->group(function () {
+            Route::post('/', [\App\Http\Controllers\Api\ChatbotFeedbackController::class, 'store']);
+            Route::get('/stats', [\App\Http\Controllers\Api\ChatbotFeedbackController::class, 'stats']);
+        });
     });
     
     // Public document viewing (no API key needed, uses secure token)
