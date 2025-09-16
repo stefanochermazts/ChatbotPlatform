@@ -24,12 +24,18 @@ class JavaScriptRenderer
             $script = $this->generatePuppeteerScript($url, $timeoutMs, $outputPath, $errorPath);
             file_put_contents($scriptPath, $script);
             
-            // Esegui Puppeteer dalla directory backend (dove sono i node_modules)
-            $backendDir = base_path('backend');
-            $nodeCmd = "cd \"$backendDir\" && node \"$scriptPath\"";
+            // Esegui Puppeteer dalla directory corrente (backend)
+            $backendDir = base_path(); // Già punta a /backend
+            $absoluteScriptPath = $scriptPath;
+            
+            // Comando bash-friendly (Git Bash su Windows)
+            $nodeCmd = "cd \"$backendDir\" && node \"$absoluteScriptPath\"";
             
             // Debug: log del comando
-            \Log::debug("Executing command: $nodeCmd");
+            \Log::debug("Executing command: $nodeCmd", [
+                'backend_dir' => $backendDir,
+                'script_path' => $absoluteScriptPath
+            ]);
             $exitCode = 0;
             $output = [];
             
@@ -43,7 +49,9 @@ class JavaScriptRenderer
                 \Log::error("❌ [JS-RENDER] Puppeteer failed", [
                     'url' => $url,
                     'exit_code' => $exitCode,
-                    'error' => $errorMsg
+                    'error' => $errorMsg,
+                    'command' => $nodeCmd,
+                    'output' => $output
                 ]);
                 
                 // Cleanup
@@ -91,6 +99,10 @@ class JavaScriptRenderer
     private function generatePuppeteerScript(string $url, int $timeout, string $outputPath, string $errorPath): string
     {
         $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Fix path per Windows - converte backslash in forward slash per JavaScript
+        $outputPath = str_replace('\\', '/', $outputPath);
+        $errorPath = str_replace('\\', '/', $errorPath);
         
         return <<<JS
 const puppeteer = require('puppeteer');

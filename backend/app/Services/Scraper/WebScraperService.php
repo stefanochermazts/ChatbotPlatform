@@ -1744,10 +1744,11 @@ class WebScraperService
                 // Crea una configurazione temporanea per questo scraping
                 $config = new ScraperConfig([
                     'user_agent' => 'Mozilla/5.0 (compatible; WebScraper/1.0)',
-                    'timeout' => 30,
+                    'timeout' => 60, // Aumentato per JS rendering
                     'max_redirects' => 5,
                     'respect_robots' => false,
                     'rate_limit_rps' => 1,
+                    'render_js' => true, // ✅ FIX: Abilita rendering JavaScript per SPA
                     'target_knowledge_base_id' => $knowledgeBaseId
                 ]);
             } else {
