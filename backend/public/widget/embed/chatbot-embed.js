@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: Date.now(),
+        version: '1.1.1.' + Date.now(), // ⚡ Force immediate cache refresh for table CSS fixes
         
         // Files to load
         files: {
