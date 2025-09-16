@@ -345,19 +345,31 @@
       
       if (containsHtml) {
         // Se contiene già HTML, NON fare escape e NON riprocessare i link
-        console.log('[ChatbotUI] Content contains HTML, skipping markdown processing');
+        console.log('[ChatbotUI] Content contains HTML, applying fixes only');
         
-        // 🔧 FIX: Ripara link annidati malformati con multiple passate
-        // Pattern 1: <a href="https://<a href="URL">TEXT</a>" ...>NAME</a>
+        // 🔧 FIX: Ripara link malformati che causano problemi di rendering
+        
+        // Pattern 1: Fix attributi HTML che finiscono nel testo
+        // Es: 'testo" target="_blank" rel="noopener noreferrer" class="chatbot-link">Altri testo'
+        html = html.replace(/([^<>"]+)" target="_blank" rel="noopener noreferrer" class="chatbot-link">([^<]+)/g, 
+          (match, beforeText, afterText) => {
+            console.log('🔧 Fixing malformed HTML attributes:', match.substring(0, 100));
+            return beforeText + ' ' + afterText;
+          });
+        
+        // Pattern 2: Link annidati malformati
         html = html.replace(/<a href="[^"]*<a href="([^"]+)"[^>]*>([^<]*)<\/a>[^"]*"[^>]*>([^<]+)<\/a>/g, 
           '<a href="$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$3</a>');
         
-        // Pattern 2: Link con attributi duplicati
+        // Pattern 3: Link con attributi duplicati
         html = html.replace(/<a href="([^"]+)"[^>]*><a href="[^"]*"[^>]*>([^<]+)<\/a><\/a>/g,
           '<a href="$1" target="_blank" rel="noopener noreferrer" class="chatbot-link">$2</a>');
           
-        // Pattern 3: Pulisci link vuoti rimasti
+        // Pattern 4: Pulisci link vuoti rimasti
         html = html.replace(/<a href="[^"]*"[^>]*><\/a>/g, '');
+        
+        // Pattern 5: Fix tag HTML orfani nel testo
+        html = html.replace(/([^<>]+)(<\/[^>]+>)/g, '$1');
         
         // Sanitizza solo caratteri pericolosi ma preserva HTML esistente
         html = html.replace(/&(?![a-zA-Z0-9#]+;)/g, '&amp;'); // Solo & non già escaped
@@ -411,21 +423,31 @@
       html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
-      // 6. Links markdown [text](url) - gestisce URL completi e troncati
-      // Prima gestisce link completi con parentesi di chiusura
-      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+      // 6. Links markdown [text](url) - gestisce URL completi e troncati  
+      // FIXED: Pattern più robusto per evitare malformazioni
+      html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
+        // Pulisce l'URL rimuovendo spazi e caratteri finali problematici
         const cleanUrl = url.trim().replace(/[.,;:!?)"'>]+$/, '');
-        const finalUrl = cleanUrl.match(/^(https?|mailto|tel):/) ? cleanUrl : 
-                        cleanUrl.startsWith('www.') ? `http://${cleanUrl}` : 
-                        cleanUrl.startsWith('/') ? cleanUrl : 
-                        `https://${cleanUrl}`;
+        
+        // Validazione URL più robusta
+        let finalUrl;
+        if (cleanUrl.match(/^https?:\/\//)) {
+          finalUrl = cleanUrl;
+        } else if (cleanUrl.match(/^mailto:/)) {
+          finalUrl = cleanUrl;
+        } else if (cleanUrl.match(/^tel:/)) {
+          finalUrl = cleanUrl;
+        } else if (cleanUrl.startsWith('www.')) {
+          finalUrl = `https://${cleanUrl}`;
+        } else if (cleanUrl.startsWith('/')) {
+          finalUrl = cleanUrl; // Relative URL
+        } else {
+          // Se non è un URL valido, non creare il link
+          console.warn('🔍 Invalid URL in markdown link:', cleanUrl);
+          return `${text} (${cleanUrl})`; // Fallback a testo normale
+        }
+        
         return `<a href="${finalUrl}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
-      });
-      
-      // Poi gestisce link troncati senza parentesi di chiusura (alla fine della riga)
-      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]*?)(?=\s|$)/g, (match, text, url) => {
-        const cleanUrl = url.trim().replace(/[.,;:!?)"'>]+$/, '');
-        return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
       });
 
       // 7. RESTORE URLs e linkificali
@@ -1139,8 +1161,15 @@
       const timeEl = messageEl?.querySelector('time');
       
       if (bubble) {
+        // Debug: log del contenuto prima del parsing
+        console.log('🔍 Content before markdown parsing:', content.substring(0, 200) + '...');
+        
         // Parse markdown e applica al contenuto
         const parsedContent = MarkdownParser.parse(content);
+        
+        // Debug: log del contenuto dopo il parsing
+        console.log('🔍 Content after markdown parsing:', parsedContent.substring(0, 200) + '...');
+        
         bubble.innerHTML = parsedContent;
       }
       
