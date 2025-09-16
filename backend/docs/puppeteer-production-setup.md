@@ -19,27 +19,26 @@ sudo yum install -y nodejs
 
 ### **Dipendenze Sistema per Puppeteer**
 ```bash
-# Ubuntu/Debian
+# Ubuntu/Debian (aggiornato per Ubuntu 22.04/24.04)
 sudo apt-get update
 sudo apt-get install -y \
     ca-certificates \
     fonts-liberation \
     libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
+    libasound2t64 \
+    libatk-bridge2.0-0t64 \
+    libatk1.0-0t64 \
     libc6 \
     libcairo-gobject2 \
     libcairo2 \
-    libcups2 \
+    libcups2t64 \
     libdbus-1-3 \
     libdrm2 \
     libgbm1 \
-    libgcc1 \
-    libgconf-2-4 \
+    libgcc-s1 \
     libgdk-pixbuf2.0-0 \
-    libglib2.0-0 \
-    libgtk-3-0 \
+    libglib2.0-0t64 \
+    libgtk-3-0t64 \
     libnspr4 \
     libnss3 \
     libpango-1.0-0 \
@@ -61,6 +60,19 @@ sudo apt-get install -y \
     lsb-release \
     wget \
     xdg-utils
+
+# Alternativa semplificata (Ubuntu 20.04 e precedenti)
+# Se i pacchetti sopra non funzionano, usa:
+# sudo apt-get install -y \
+#     fonts-liberation \
+#     libasound2 \
+#     libatk-bridge2.0-0 \
+#     libdrm2 \
+#     libgtk-3-0 \
+#     libnss3 \
+#     lsb-release \
+#     xdg-utils \
+#     wget
 
 # CentOS/RHEL
 sudo yum install -y \
@@ -219,6 +231,27 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 ```
 
 ## 🔧 Troubleshooting Comune
+
+### **Errore: "Package has no installation candidate" (Ubuntu 22.04+)**
+```bash
+# Problema: Nomi pacchetti cambiati nelle nuove versioni Ubuntu
+# Soluzione: Usa comando aggiornato sopra, oppure installa pacchetti essenziali:
+
+sudo apt-get install -y \
+    fonts-liberation \
+    libasound2t64 \
+    libatk-bridge2.0-0t64 \
+    libgtk-3-0t64 \
+    libnss3 \
+    lsb-release \
+    xdg-utils
+
+# Se ancora problemi, installa Chrome direttamente (include dipendenze):
+wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+echo "deb http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+sudo apt-get update
+sudo apt-get install -y google-chrome-stable
+```
 
 ### **Errore: "Chrome not found"**
 ```bash

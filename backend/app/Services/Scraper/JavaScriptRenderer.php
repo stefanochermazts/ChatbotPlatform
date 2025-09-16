@@ -143,25 +143,68 @@ const fs = require('fs');
       timeout: $timeout 
     });
     
+    // Special handling for problematic sites
+    if ('$url'.includes('comune.palmanova.ud.it')) {
+      console.log('🏛️ Palmanova site detected - applying special handling...');
+      
+      // Click away browser warning if present
+      try {
+        const browserWarning = await page.$('button, .close, [onclick*="close"]');
+        if (browserWarning) {
+          await browserWarning.click();
+          console.log('✅ Closed browser warning');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (e) {
+        console.log('ℹ️ No browser warning to close');
+      }
+      
+      // Try to trigger content loading by scrolling
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight / 2);
+      });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    
     // Attendi che Angular/SPA sia completamente caricato
     console.log('⏳ Waiting for JavaScript rendering...');
     
-    // Attendi elementi comuni di Angular
+    // Strategy 1: Wait for main content to appear
     try {
       await page.waitForFunction(() => {
-        // Verifica che Angular sia caricato
-        return (
-          !document.querySelector('body').textContent.includes('Please enable JavaScript') &&
-          !document.querySelector('body').textContent.includes('JavaScript to continue') &&
-          document.readyState === 'complete'
-        );
-      }, { timeout: 15000 });
+        const body = document.querySelector('body');
+        const hasMainContent = body && body.textContent.length > 1000; // Sufficient content
+        const noLoadingIndicators = !body.textContent.includes('Loading') && 
+                                   !body.textContent.includes('Caricamento') &&
+                                   !body.textContent.includes('Please enable JavaScript') &&
+                                   !body.textContent.includes('JavaScript to continue');
+        
+        console.log('Content check:', {
+          contentLength: body ? body.textContent.length : 0,
+          hasMainContent,
+          noLoadingIndicators,
+          readyState: document.readyState
+        });
+        
+        return hasMainContent && noLoadingIndicators && document.readyState === 'complete';
+      }, { timeout: 25000 });
+      
+      console.log('✅ Angular content loaded successfully');
     } catch (e) {
-      console.log('⚠️ Timeout waiting for Angular, proceeding anyway...');
+      console.log('⚠️ Timeout waiting for main content, trying fallback...');
+      
+      // Strategy 2: Wait for specific Angular elements
+      try {
+        await page.waitForSelector('main, article, .content, .main-content, [role="main"]', { timeout: 10000 });
+        console.log('✅ Found main content selector');
+      } catch (e2) {
+        console.log('⚠️ No main content selectors found, proceeding with current state...');
+      }
     }
     
-    // Attendi ulteriori 2 secondi per eventuali chiamate AJAX
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Attendi ulteriori 5 secondi per lazy loading e AJAX calls
+    console.log('⏳ Waiting for lazy loading...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // Estrai contenuto HTML completo
     console.log('📝 Extracting content...');

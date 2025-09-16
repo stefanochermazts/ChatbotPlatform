@@ -1743,8 +1743,8 @@ class WebScraperService
             if (!$config) {
                 // Crea una configurazione temporanea per questo scraping
                 $config = new ScraperConfig([
-                    'user_agent' => 'Mozilla/5.0 (compatible; WebScraper/1.0)',
-                    'timeout' => 60, // Aumentato per JS rendering
+                    'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'timeout' => 90, // Aumentato per siti Angular complessi
                     'max_redirects' => 5,
                     'respect_robots' => false,
                     'rate_limit_rps' => 1,
