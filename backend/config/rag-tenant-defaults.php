@@ -7,13 +7,13 @@
  */
 
 return [
-    // Parametri Hybrid Search
+    // Parametri Hybrid Search (⚡ Optimized for Performance)
     'hybrid' => [
-        'vector_top_k' => 40,      // Risultati vettoriali per query
-        'bm25_top_k' => 80,        // Risultati BM25 per query  
+        'vector_top_k' => 25,      // ⚡ Ridotto da 40 per performance
+        'bm25_top_k' => 40,        // ⚡ Ridotto da 80 per performance  
         'rrf_k' => 60,             // Parametro fusion RRF
         'mmr_lambda' => 0.25,      // Balance rilevanza/diversità (0-1)
-        'mmr_take' => 10,          // Documenti finali selezionati
+        'mmr_take' => 8,           // ⚡ Ridotto da 10 per MMR performance
         'neighbor_radius' => 2,    // Chunk adiacenti da includere
     ],
 
@@ -35,7 +35,7 @@ return [
     // Reranking Strategy
     'reranker' => [
         'driver' => 'embedding',   // embedding | cohere | llm | none
-        'top_n' => 40,            // Candidati per reranking
+        'top_n' => 25,            // ⚡ Ridotto da 40 per performance
     ],
 
     // Context Building
@@ -80,17 +80,20 @@ return [
 
     // Configurazioni Avanzate per Tipologia Cliente
     'profiles' => [
-        // Profilo PA/Enti Pubblici
+        // Profilo PA/Enti Pubblici (⚡ Performance Optimized)
         'public_administration' => [
-            'hybrid.vector_top_k' => 50,
-            'hybrid.bm25_top_k' => 100,
-            'hybrid.mmr_lambda' => 0.3,  // Più diversità
-            'answer.min_confidence' => 0.12,  // Soglia più alta
+            'hybrid.vector_top_k' => 30,    // ⚡ Ridotto da 50
+            'hybrid.bm25_top_k' => 50,      // ⚡ Ridotto da 100
+            'hybrid.mmr_lambda' => 0.3,     // Più diversità
+            'hybrid.mmr_take' => 6,         // ⚡ Ridotto per performance
+            'answer.min_confidence' => 0.12, // Soglia più alta
         ],
-        // Profilo E-commerce
+        // Profilo E-commerce (⚡ Performance Optimized)
         'ecommerce' => [
-            'hybrid.vector_top_k' => 30,
+            'hybrid.vector_top_k' => 20,    // ⚡ Ridotto da 30
+            'hybrid.bm25_top_k' => 30,      // ⚡ Aggiunto limite BM25
             'hybrid.mmr_lambda' => 0.2,     // Meno diversità, più focus
+            'hybrid.mmr_take' => 6,         // ⚡ Ridotto per performance
             'multiquery.num' => 2,          // Meno parafrasi
         ],
         // Profilo FAQ/Customer Service

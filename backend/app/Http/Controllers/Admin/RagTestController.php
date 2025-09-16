@@ -128,7 +128,10 @@ class RagTestController extends Controller
                 'kb_service_class' => get_class($kb)
             ]);
             
+            // ⏱️ Profiling RAG Retrieval
+            $retrievalStart = microtime(true);
             $retrieval = $kb->retrieve($tenantId, $finalQuery, true);
+            $retrievalTime = round((microtime(true) - $retrievalStart) * 1000, 2);
             
             // 🔍 DEBUG: Aggiungi sempre al trace
             if (!isset($retrieval['debug'])) {
@@ -251,7 +254,11 @@ class RagTestController extends Controller
                 'messages' => $messages,
                 'max_tokens' => (int) ($data['max_output_tokens'] ?? config('openai.max_output_tokens', 700)),
             ];
+            
+            // ⏱️ Profiling LLM Generation
+            $llmStart = microtime(true);
             $rawResponse = $chat->chatCompletions($payload);
+            $llmTime = round((microtime(true) - $llmStart) * 1000, 2);
             $answer = $rawResponse['choices'][0]['message']['content'] ?? '';
             
             // 🆕 Aggiungi source_url del documento con confidenza più alta se disponibile
@@ -269,6 +276,18 @@ class RagTestController extends Controller
                     'custom_context_template' => $tenant->custom_context_template ?? null,
                     'using_custom_system' => !empty($tenant->custom_system_prompt),
                     'using_custom_context' => !empty($tenant->custom_context_template),
+                ];
+                
+                // ⏱️ Aggiungi profiling completo al trace
+                $totalTime = $retrievalTime + $llmTime;
+                $trace['performance_detailed'] = [
+                    'total_time_ms' => $totalTime,
+                    'retrieval_time_ms' => $retrievalTime,
+                    'llm_generation_time_ms' => $llmTime,
+                    'retrieval_percentage' => round(($retrievalTime / $totalTime) * 100, 1),
+                    'llm_percentage' => round(($llmTime / $totalTime) * 100, 1),
+                    'status' => $totalTime < 1000 ? '🚀 Excellent' : 
+                               ($totalTime < 2500 ? '✅ Good' : '⚠️ Slow')
                 ];
                 
                 // 🔍 DEBUG: Aggiungi configurazione hybrid al trace

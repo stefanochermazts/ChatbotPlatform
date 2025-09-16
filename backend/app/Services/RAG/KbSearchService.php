@@ -34,33 +34,43 @@ class KbSearchService
     public function retrieve(int $tenantId, string $query, bool $debug = false): array
     {
         $startTime = microtime(true);
-        $profiling = ['start_time' => $startTime, 'steps' => []];
+        $profiling = [
+            'start_time' => $startTime, 
+            'steps' => [],
+            'breakdown' => []
+        ];
         
-        // 🔧 Normalizza query formali per miglior matching
+        // ⏱️ STEP 1: Query Normalization
+        $stepStart = microtime(true);
         $normalizedQuery = $this->normalizeQuery($query);
+        $profiling['breakdown']['Query Normalization'] = round((microtime(true) - $stepStart) * 1000, 2);
+        
         if ($normalizedQuery !== $query && $debug) {
-            // Se in debug mode, logga la normalizzazione
             Log::info('[RAG] Query normalized', [
                 'original' => $query,
                 'normalized' => $normalizedQuery
             ]);
         }
         if ($query === '') {
-            return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? [] : null];
+            return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $profiling : null];
         }
 
+        // ⏱️ STEP 2: Tenant & Language Setup
+        $stepStart = microtime(true);
         $this->activeLangs = $this->getTenantLanguages($tenantId);
-
-        // Controllo tenant per multi-KB (usato sia per intent che per retrieval normale)
         $tenant = \App\Models\Tenant::find($tenantId);
         $useMultiKb = $tenant && $tenant->multi_kb_search;
+        $profiling['breakdown']['Tenant Setup'] = round((microtime(true) - $stepStart) * 1000, 2);
 
-        // Determina l'intent primario più specifico
+        // ⏱️ STEP 3: Intent Detection
+        $stepStart = microtime(true);
         $intents = $this->detectIntents($query, $tenantId);
-        $intentDebug = null;
+        $profiling['breakdown']['Intent Detection'] = round((microtime(true) - $stepStart) * 1000, 2);
         
+        $intentDebug = null;
         if ($debug) {
-            // Calcola scores per debug
+            // ⏱️ STEP 4: Debug Information Building
+            $stepStart = microtime(true);
             $q = mb_strtolower($query);
             $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
             $intentDebug = [
@@ -77,6 +87,7 @@ class KbSearchService
                 ],
                 'keywords_matched' => $this->getMatchedKeywords($q, $expandedQ),
             ];
+            $profiling['breakdown']['Debug Info Building'] = round((microtime(true) - $stepStart) * 1000, 2);
         }
         
         $profiling['steps']['init'] = microtime(true) - $startTime;
@@ -221,8 +232,8 @@ class KbSearchService
             $trace['milvus'] = $this->milvus->health();
         }
         
-        // Selezione automatica KB per la query - supporta multi-KB se abilitato dal tenant
-        
+        // ⏱️ STEP 5: KB Selection
+        $stepStart = microtime(true);
         if ($useMultiKb) {
             // Multi-KB: cerca in tutte le KB del tenant
             $kbSel = $this->getAllKnowledgeBasesForTenant($tenantId);
@@ -234,6 +245,7 @@ class KbSearchService
             $selectedKbId = $kbSel['knowledge_base_id'] ?? null;
             $selectedKbName = $kbSel['kb_name'] ?? null;
         }
+        $profiling['breakdown']['KB Selection'] = round((microtime(true) - $stepStart) * 1000, 2);
         
         // 🔍 LOG DETTAGLIATO per debug KB selection
         \Log::info('RAG KB Selection', [
@@ -251,11 +263,9 @@ class KbSearchService
             $trace['multi_kb_enabled'] = $useMultiKb;
         }
         
-        // HyDE (Hypothetical Document Embeddings) se abilitato
-        // 📊 PROFILING: HyDE expansion
-        $hydeStart = microtime(true);
+        // ⏱️ STEP 6: HyDE (Hypothetical Document Embeddings)
+        $stepStart = microtime(true);
         $hydeResult = null;
-        // HyDE per-tenant
         $advCfg = (array) $this->tenantConfig->getAdvancedConfig($tenantId);
         $hydeCfg = (array) ($advCfg['hyde'] ?? []);
         $useHyDE = $this->hyde && (($hydeCfg['enabled'] ?? false) === true);
@@ -272,8 +282,13 @@ class KbSearchService
                 $trace['hyde'] = $hydeResult;
             }
         }
-        $profiling['steps']['hyde'] = microtime(true) - $hydeStart;
+        $profiling['breakdown']['HyDE'] = round((microtime(true) - $stepStart) * 1000, 2);
 
+        // ⏱️ STEP 7: Multi-Query Vector + BM25 Search
+        $searchStart = microtime(true);
+        $vectorSearchTime = 0;
+        $bm25SearchTime = 0;
+        
         foreach ($queries as $q) {
             if ($debug) {
                 // Determina quale embedding usare
@@ -289,6 +304,9 @@ class KbSearchService
                 
                 $vecHit = [];
                 if ((($trace['milvus']['ok'] ?? false) === true) && $qEmb) {
+                    // ⏱️ Vector Search Timing
+                    $vecStart = microtime(true);
+                    
                     // 🚀 LOG DETTAGLIATO: Ricerca Milvus
                     Log::info('🔍 [MILVUS] Invio query a Milvus', [
                         'tenant_id' => $tenantId,
@@ -300,6 +318,8 @@ class KbSearchService
                     
                     $vecHit = $this->milvus->searchTopKWithEmbedding($tenantId, $qEmb, $vecTopK);
                     
+                    $vectorSearchTime += microtime(true) - $vecStart;
+                    
                     // 🚀 LOG DETTAGLIATO: Risultati Milvus
                     Log::info('📊 [MILVUS] Risultati ricevuti da Milvus', [
                         'tenant_id' => $tenantId,
@@ -310,7 +330,11 @@ class KbSearchService
                         'all_scores' => array_column($vecHit, 'score'),
                     ]);
                 }
-                $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK, $selectedKbId);
+                
+                // ⏱️ BM25 Search Timing
+                $bm25Start = microtime(true);
+                $bmHit = $this->text->searchTopK($tenantId, $q, $bmTopK, $selectedKbId);
+                $bm25SearchTime += microtime(true) - $bm25Start;
                 
                 // 🔍 LOG DETTAGLIATO per ogni query
                 Log::info("🔎 [RETRIEVE] Risultati per query: {$q}", [
@@ -416,13 +440,21 @@ class KbSearchService
                 $allFused[] = $this->filterFusedByKb($list, $selectedKbId);
             }
         }
-        // Fusione finale tra tutte le query (RRF su posizioni già "scorate"):
+        
+        // ⏱️ Add search timing to profiling
+        $profiling['breakdown']['Vector Search'] = round($vectorSearchTime * 1000, 2);
+        $profiling['breakdown']['BM25 Search'] = round($bm25SearchTime * 1000, 2);
+        $profiling['breakdown']['Search Total'] = round((microtime(true) - $searchStart) * 1000, 2);
+        
+        // ⏱️ STEP 8: RRF Fusion
+        $stepStart = microtime(true);
         $fused = $this->rrfFuseMany($allFused, $rrfK);
         
         // 🚀 NUOVO: Applica boost per Multi-KB Search
         if ($useMultiKb && !empty($fused)) {
             $fused = $this->applyBoostsToResults($fused, $tenantId, $query, $debug);
         }
+        $profiling['breakdown']['RRF Fusion'] = round((microtime(true) - $stepStart) * 1000, 2);
         
         Log::info('🔀 [RETRIEVE] Fusione finale completata', [
             'tenant_id' => $tenantId,
@@ -494,8 +526,8 @@ class KbSearchService
         // Per LLM reranking, usa TTL più breve ma mantieni cache
         // (TTL gestito dalla RagCache class)
         
-        // 📊 PROFILING: Reranking
-        $rerankStart = microtime(true);
+        // ⏱️ STEP 9: Reranking
+        $stepStart = microtime(true);
         
         // 🚀 LOG DETTAGLIATO: Pre-reranking
         Log::info('🔄 [RERANK] Prima del reranking', [
@@ -510,7 +542,7 @@ class KbSearchService
             return $reranker->rerank($query, $candidates, $topN);
         });
         
-        $profiling['steps']['reranking'] = microtime(true) - $rerankStart;
+        $profiling['breakdown']['Reranking'] = round((microtime(true) - $stepStart) * 1000, 2);
         
         // 🚀 LOG DETTAGLIATO: Post-reranking
         Log::info('✅ [RERANK] Dopo il reranking', [
@@ -530,20 +562,47 @@ class KbSearchService
             $trace['reranked_top'] = array_slice($ranked, 0, 20); 
         }
 
-        // Ora calcola MMR sugli embedding dei candidati rerankati (usa query normalizzata)
+        // ⏱️ STEP 10: MMR (Maximal Marginal Relevance)
+        $stepStart = microtime(true);
+        
+        // 🚀 OPTIMIZATION: Cache MMR based on query + ranked documents hash
+        $mmrCacheKey = "mmr:" . sha1($normalizedQuery . serialize(array_map(fn($r) => $r['document_id'] . ':' . $r['chunk_index'], $ranked)));
+        
         $qEmb = $this->embeddings->embedTexts([$normalizedQuery])[0] ?? null;
-        $texts = array_map(fn($c) => (string)$c['text'], $ranked);
-        $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
-        $selIdx = $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
+        
+        // 🚀 OPTIMIZATION: Limita MMR a massimo 15 candidates per performance
+        // Con 30 docs: O(30²) = 900 calc/iteration × 8 iterations = ~7200 calculations!
+        // Con 15 docs: O(15²) = 225 calc/iteration × 8 iterations = ~1800 calculations (4x faster)
+        $mmrMaxCandidates = min(15, count($ranked));
+        $mmrRanked = array_slice($ranked, 0, $mmrMaxCandidates);
+        
+        // 🚀 OPTIMIZATION: Try cache first
+        $selIdx = $this->cache->remember($mmrCacheKey, function () use ($mmrRanked, $qEmb, $mmrLambda, $mmrTake) {
+            $texts = array_map(fn($c) => (string)$c['text'], $mmrRanked);
+            $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
+            return $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
+        });
+        
+        // 📊 Log optimization impact
+        if ($debug) {
+            Log::info('🚀 [MMR] Performance optimization applied', [
+                'total_ranked_docs' => count($ranked),
+                'mmr_candidates_used' => $mmrMaxCandidates,
+                'performance_gain_estimate' => round((count($ranked) ** 2) / ($mmrMaxCandidates ** 2), 1) . 'x faster'
+            ]);
+        }
+        
+        $profiling['breakdown']['MMR'] = round((microtime(true) - $stepStart) * 1000, 2);
         if ($debug) { $trace['mmr_selected_idx'] = $selIdx; }
 
-        // 📊 PROFILING: Citations building
-        $citationsStart = microtime(true);
+        // ⏱️ STEP 11: Citations Building  
+        $stepStart = microtime(true);
         
         $seen = [];
         $cits = [];
         foreach ($selIdx as $i) {
-            $base = $ranked[$i] ?? null;
+            // 🔧 Fix: accedi al subset MMR, non all'array ranked completo
+            $base = $mmrRanked[$i] ?? null;
             if ($base === null) { continue; }
             $docId = (int) $base['document_id'];
             if (isset($seen[$docId])) continue;
@@ -596,7 +655,7 @@ class KbSearchService
             ];
         }
         
-        $profiling['steps']['citations_building'] = microtime(true) - $citationsStart;
+        $profiling['breakdown']['Citations Building'] = round((microtime(true) - $stepStart) * 1000, 2);
 
         $result = [
             'citations' => $cits,
@@ -604,9 +663,14 @@ class KbSearchService
             'debug' => $trace,
         ];
         
+        // ⏱️ PROFILING COMPLETO: Aggiungi breakdown dettagliato
+        $totalTime = microtime(true) - $startTime;
+        $profiling['total_time_ms'] = round($totalTime * 1000, 2);
+        
         // Aggiungi profiling al debug trace
         if ($debug && isset($profiling)) {
             $result['debug']['profiling'] = $profiling;
+            $result['debug']['performance_breakdown'] = $profiling['breakdown'];
         }
         
         // Aggiungi debug intent anche per il RAG normale
@@ -640,13 +704,28 @@ class KbSearchService
         Log::info('📊 [PROFILING] RAG Performance Breakdown', [
             'tenant_id' => $tenantId,
             'query' => $query,
-            'total_time_ms' => round($totalTime * 1000, 2),
-            'profiling_steps' => array_map(function($time) {
-                return round($time * 1000, 2) . 'ms';
-            }, $profiling['steps'] ?? [])
+            'total_time_ms' => $profiling['total_time_ms'],
+            'breakdown' => $profiling['breakdown'],
+            'performance_status' => $profiling['total_time_ms'] < 1000 ? '🚀 Excellent' : 
+                                   ($profiling['total_time_ms'] < 2500 ? '✅ Good' : '⚠️ Slow'),
+            'bottlenecks' => $this->identifyBottlenecks($profiling['breakdown'])
         ]);
         
         return $result;
+    }
+
+    /**
+     * Identifica i passaggi più lenti per ottimizzazione
+     */
+    private function identifyBottlenecks(array $breakdown): array
+    {
+        $bottlenecks = [];
+        foreach ($breakdown as $step => $timeMs) {
+            if ($timeMs > 500) {
+                $bottlenecks[] = "{$step}: {$timeMs}ms";
+            }
+        }
+        return $bottlenecks;
     }
 
     private function filterVecHitsByKb(array $vecHits, ?int $kbId): array
@@ -700,28 +779,66 @@ class KbSearchService
     private function mmr(?array $queryEmbedding, array $docEmbeddings, float $lambda, int $k): array
     {
         if (!$queryEmbedding || $docEmbeddings === []) return array_slice(range(0, count($docEmbeddings)-1), 0, $k);
+        
         $selected = [];
         $candidates = range(0, count($docEmbeddings) - 1);
         $queryNorm = $this->l2norm($queryEmbedding);
         $docNorms = array_map(fn ($v) => $this->l2norm($v), $docEmbeddings);
+        
+        // 🚀 OPTIMIZATION: Pre-calculate all query similarities (only once!)
+        $querySimCache = [];
+        foreach ($candidates as $i) {
+            $querySimCache[$i] = $this->cosine($queryEmbedding, $docEmbeddings[$i], $queryNorm, $docNorms[$i]);
+        }
+        
+        // 🚀 OPTIMIZATION: Early exit if lambda = 1 (no diversity needed)
+        if ($lambda >= 0.99) {
+            arsort($querySimCache);
+            return array_slice(array_keys($querySimCache), 0, $k);
+        }
+        
+        // 🚀 OPTIMIZATION: Cache similarities between documents
+        $docSimCache = [];
+        $getCachedSim = function($i, $j) use (&$docSimCache, $docEmbeddings, $docNorms) {
+            $key = $i < $j ? "{$i}:{$j}" : "{$j}:{$i}";
+            if (!isset($docSimCache[$key])) {
+                $docSimCache[$key] = $this->cosine($docEmbeddings[$i], $docEmbeddings[$j], $docNorms[$i], $docNorms[$j]);
+            }
+            return $docSimCache[$key];
+        };
 
         while (count($selected) < $k && $candidates !== []) {
             $bestIdx = null;
             $bestScore = -INF;
+            
             foreach ($candidates as $i) {
-                $simToQuery = $this->cosine($queryEmbedding, $docEmbeddings[$i], $queryNorm, $docNorms[$i]);
+                $simToQuery = $querySimCache[$i]; // Use cached value
                 $maxSimToSelected = 0.0;
+                
+                // Only check similarity with selected docs
                 foreach ($selected as $j) {
-                    $sim = $this->cosine($docEmbeddings[$i], $docEmbeddings[$j], $docNorms[$i], $docNorms[$j]);
-                    if ($sim > $maxSimToSelected) { $maxSimToSelected = $sim; }
+                    $sim = $getCachedSim($i, $j);
+                    if ($sim > $maxSimToSelected) { 
+                        $maxSimToSelected = $sim; 
+                        // 🚀 OPTIMIZATION: Early exit if similarity is very high
+                        if ($maxSimToSelected > 0.95) break;
+                    }
                 }
+                
                 $score = $lambda * $simToQuery - (1.0 - $lambda) * $maxSimToSelected;
-                if ($score > $bestScore) { $bestScore = $score; $bestIdx = $i; }
+                if ($score > $bestScore) { 
+                    $bestScore = $score; 
+                    $bestIdx = $i; 
+                }
             }
+            
             if ($bestIdx === null) break;
             $selected[] = $bestIdx;
-            $candidates = array_values(array_diff($candidates, [$bestIdx]));
+            
+            // 🚀 OPTIMIZATION: Remove from candidates more efficiently
+            $candidates = array_values(array_filter($candidates, fn($x) => $x !== $bestIdx));
         }
+        
         return $selected;
     }
 

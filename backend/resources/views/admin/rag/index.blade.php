@@ -127,38 +127,94 @@
       </div>
       @endif
       
-      {{-- 📊 PROFILING SECTION --}}
-      @if(!empty($result['trace']['profiling']))
+      {{-- 📊 ENHANCED PROFILING SECTION --}}
+      @if(!empty($result['trace']['performance_breakdown']) || !empty($result['trace']['performance_detailed']) || !empty($result['trace']['profiling']))
       <div class="mt-4 p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded">
-        <div class="font-medium mb-3 text-green-800">⚡ Performance Profiling</div>
+        <div class="font-medium mb-3 text-green-800 flex items-center gap-2">
+          ⚡ Performance Profiling
+          @if(!empty($result['trace']['performance_detailed']))
+            <span class="text-xs px-2 py-1 rounded {{ $result['trace']['performance_detailed']['status'] === '🚀 Excellent' ? 'bg-green-100 text-green-800' : ($result['trace']['performance_detailed']['status'] === '✅ Good' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800') }}">
+              {{ $result['trace']['performance_detailed']['status'] }}
+            </span>
+          @endif
+        </div>
         
         @php
-          $profiling = $result['trace']['profiling'];
-          $steps = $profiling['steps'] ?? [];
+          // New enhanced breakdown handling
+          $breakdown = $result['trace']['performance_breakdown'] ?? [];
+          $detailed = $result['trace']['performance_detailed'] ?? [];
+          $oldProfiling = $result['trace']['profiling'] ?? [];
           
-          // Calculate total time from sum of all steps (excluding 'final' if it exists)
-          $totalTimeSeconds = 0;
-          foreach($steps as $step => $time) {
-            if($step !== 'final') {
-              $totalTimeSeconds += $time;
+          // Get total time (prefer new format)
+          $totalTime = 0;
+          if (!empty($detailed['total_time_ms'])) {
+            $totalTime = $detailed['total_time_ms'];
+          } elseif (!empty($breakdown)) {
+            $totalTime = array_sum($breakdown);
+          } elseif (!empty($oldProfiling['total_time_ms'])) {
+            $totalTime = $oldProfiling['total_time_ms'];
+          } else {
+            // Fallback to old format
+            $steps = $oldProfiling['steps'] ?? [];
+            $totalTimeSeconds = 0;
+            foreach($steps as $step => $time) {
+              if($step !== 'final') {
+                $totalTimeSeconds += $time;
+              }
             }
+            $totalTime = $totalTimeSeconds * 1000;
           }
-          $totalTime = $totalTimeSeconds * 1000; // Convert to ms
           
-          // Calculate percentages and format times
+          // Format steps for display
           $formattedSteps = [];
-          foreach($steps as $step => $time) {
-            if($step === 'final') continue; // Skip final (it's the total)
-            $timeMs = $time * 1000;
-            $percentage = $totalTime > 0 ? ($timeMs / $totalTime) * 100 : 0;
-            $formattedSteps[$step] = [
-              'time_ms' => round($timeMs, 2),
-              'percentage' => round($percentage, 1)
-            ];
+          if (!empty($breakdown)) {
+            // New format with detailed breakdown
+            foreach($breakdown as $step => $timeMs) {
+              $percentage = $totalTime > 0 ? ($timeMs / $totalTime) * 100 : 0;
+              $category = match(true) {
+                str_contains($step, 'Search') => 'search',
+                str_contains($step, 'Rerank') => 'reranking', 
+                str_contains($step, 'Citation') => 'building',
+                str_contains($step, 'HyDE') => 'expansion',
+                str_contains($step, 'Intent') => 'analysis',
+                str_contains($step, 'KB') => 'selection',
+                default => 'other'
+              };
+              
+              $formattedSteps[$step] = [
+                'time_ms' => round($timeMs, 2),
+                'percentage' => round($percentage, 1),
+                'category' => $category
+              ];
+            }
+          } else {
+            // Fallback to old format
+            $steps = $oldProfiling['steps'] ?? [];
+            foreach($steps as $step => $time) {
+              if($step === 'final') continue;
+              $timeMs = $time * 1000;
+              $percentage = $totalTime > 0 ? ($timeMs / $totalTime) * 100 : 0;
+              $formattedSteps[$step] = [
+                'time_ms' => round($timeMs, 2),
+                'percentage' => round($percentage, 1),
+                'category' => 'other'
+              ];
+            }
           }
           
           // Sort by time descending
           uasort($formattedSteps, fn($a, $b) => $b['time_ms'] <=> $a['time_ms']);
+          
+          // Category colors
+          $categoryColors = [
+            'search' => 'bg-blue-100 text-blue-800',
+            'reranking' => 'bg-purple-100 text-purple-800', 
+            'building' => 'bg-green-100 text-green-800',
+            'expansion' => 'bg-yellow-100 text-yellow-800',
+            'analysis' => 'bg-indigo-100 text-indigo-800',
+            'selection' => 'bg-pink-100 text-pink-800',
+            'other' => 'bg-gray-100 text-gray-800'
+          ];
         @endphp
         
         <div class="grid md:grid-cols-2 gap-4">
@@ -168,16 +224,21 @@
             <div class="text-sm text-gray-600">Tempo totale</div>
           </div>
           
-          {{-- Step Breakdown --}}
+          {{-- Enhanced Step Breakdown --}}
           <div class="bg-white rounded-lg p-3 border">
-            <div class="text-sm font-medium mb-2">Breakdown per step:</div>
-            <div class="space-y-1">
+            <div class="text-sm font-medium mb-2">Breakdown dettagliato:</div>
+            <div class="space-y-1 max-h-48 overflow-y-auto">
               @foreach($formattedSteps as $step => $data)
                 <div class="flex justify-between items-center text-xs">
-                  <span class="capitalize">{{ str_replace('_', ' ', $step) }}:</span>
+                  <div class="flex items-center gap-2 flex-1">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] {{ $categoryColors[$data['category']] ?? 'bg-gray-100 text-gray-800' }}">
+                      {{ ucfirst($data['category']) }}
+                    </span>
+                    <span class="capitalize truncate">{{ str_replace('_', ' ', $step) }}</span>
+                  </div>
                   <div class="flex items-center gap-2">
-                    <span class="font-mono">{{ $data['time_ms'] }}ms</span>
-                    <div class="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <span class="font-mono font-bold">{{ $data['time_ms'] }}ms</span>
+                    <div class="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div class="h-full bg-gradient-to-r from-blue-400 to-green-500 rounded-full" 
                            style="width: {{ min(100, $data['percentage']) }}%"></div>
                     </div>
@@ -188,6 +249,22 @@
             </div>
           </div>
         </div>
+        
+        {{-- LLM vs Retrieval Breakdown (if available) --}}
+        @if(!empty($detailed['retrieval_time_ms']) && !empty($detailed['llm_generation_time_ms']))
+        <div class="mt-4 grid md:grid-cols-2 gap-4">
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-sm font-medium mb-2 text-blue-600">🔍 RAG Retrieval</div>
+            <div class="text-xl font-bold text-blue-600">{{ $detailed['retrieval_time_ms'] }}ms</div>
+            <div class="text-xs text-gray-600">{{ $detailed['retrieval_percentage'] }}% del tempo totale</div>
+          </div>
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-sm font-medium mb-2 text-purple-600">🤖 LLM Generation</div>
+            <div class="text-xl font-bold text-purple-600">{{ $detailed['llm_generation_time_ms'] }}ms</div>
+            <div class="text-xs text-gray-600">{{ $detailed['llm_percentage'] }}% del tempo totale</div>
+          </div>
+        </div>
+        @endif
         
         {{-- Performance Status --}}
         @php
