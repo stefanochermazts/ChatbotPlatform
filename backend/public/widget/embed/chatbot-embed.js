@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.2.0.' + Date.now(), // ⚡ AGGRESSIVE padding fix with !important
+        version: '1.2.1.' + Date.now(), // ⚡ Fine-tuned padding: 3px top/bottom/left, no word-wrap
         
         // Files to load
         files: {
