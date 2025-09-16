@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.1.1.' + Date.now(), // ⚡ Force immediate cache refresh for table CSS fixes
+        version: '1.2.0.' + Date.now(), // ⚡ AGGRESSIVE padding fix with !important
         
         // Files to load
         files: {

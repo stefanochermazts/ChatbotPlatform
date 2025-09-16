@@ -1137,19 +1137,20 @@
   color: var(--chatbot-text-inverse);
   font-weight: var(--chatbot-font-semibold);
   text-align: left;
-  padding: var(--chatbot-spacing-4) var(--chatbot-spacing-5); /* ⚡ Aumentato da 3,4 a 4,5 (+4px vertical, +4px horizontal) */
-  border-bottom: 1px solid var(--chatbot-primary-700); /* ⚡ Ridotto da 2px a 1px */
+  padding: 20px 24px !important; /* ⚡ FORCE: Padding generoso con !important */
+  border-bottom: 1px solid var(--chatbot-primary-700);
   white-space: nowrap;
 }
 
 .chatbot-table-cell {
-  padding: var(--chatbot-spacing-4) var(--chatbot-spacing-5); /* ⚡ Aumentato da 3,4 a 4,5 (+4px vertical, +4px horizontal) */
+  padding: 18px 22px !important; /* ⚡ FORCE: Padding molto generoso con !important */
   border-bottom: 1px solid var(--chatbot-border-primary);
   vertical-align: top;
   word-wrap: break-word;
   max-width: 200px;
   color: var(--chatbot-text-primary);
   background: var(--chatbot-bg-primary);
+  line-height: 1.6 !important; /* ⚡ Migliora leggibilità */
 }
 
 .chatbot-table tbody tr:hover {
@@ -1169,8 +1170,9 @@
   
   .chatbot-table-header,
   .chatbot-table-cell {
-    padding: var(--chatbot-spacing-3) var(--chatbot-spacing-4); /* ⚡ Aumentato da 2,3 a 3,4 (+4px su mobile) */
+    padding: 16px 18px !important; /* ⚡ FORCE: Padding mobile generoso */
     max-width: 150px;
+    line-height: 1.5 !important;
   }
   
   /* Stack table su mobile se troppo larga */
