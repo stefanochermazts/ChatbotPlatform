@@ -28,6 +28,7 @@
           <a href="{{ route('admin.documents.index', $t) }}" class="text-indigo-600">Documenti</a>
           <a href="{{ route('admin.scraper.edit', $t) }}" class="text-emerald-600">Scraper</a>
           <a href="{{ route('admin.rag-config.show', $t) }}" class="text-purple-600">RAG Config</a>
+          <a href="{{ route('admin.tenants.feedback.index', $t) }}" class="text-amber-600">📝 Feedback</a>
           <form method="post" action="{{ route('admin.tenants.destroy', $t) }}" onsubmit="return confirm('Eliminare?')">
             @csrf @method('delete')
             <button class="text-rose-600">Elimina</button>

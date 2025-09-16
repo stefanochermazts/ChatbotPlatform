@@ -2,8 +2,30 @@
 
 @section('content')
 <div class="grid gap-6">
-  <div class="bg-white border rounded p-6">
+  <!-- Quick Navigation -->
+  <div class="bg-white border rounded p-4">
     <h1 class="text-xl font-semibold mb-4">Modifica Cliente: {{ $tenant->name }}</h1>
+    <div class="flex flex-wrap gap-3">
+      <a href="{{ route('admin.documents.index', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-indigo-100 text-indigo-700 rounded text-sm hover:bg-indigo-200">
+        📄 Documenti
+      </a>
+      <a href="{{ route('admin.scraper.edit', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-emerald-100 text-emerald-700 rounded text-sm hover:bg-emerald-200">
+        🕷️ Scraper
+      </a>
+      <a href="{{ route('admin.rag-config.show', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-purple-100 text-purple-700 rounded text-sm hover:bg-purple-200">
+        🎛️ RAG Config
+      </a>
+      <a href="{{ route('admin.tenants.feedback.index', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-amber-100 text-amber-700 rounded text-sm hover:bg-amber-200">
+        📝 Feedback
+      </a>
+      <a href="{{ route('admin.tenants.index') }}" class="inline-flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded text-sm hover:bg-gray-200">
+        ← Torna ai Clienti
+      </a>
+    </div>
+  </div>
+
+  <div class="bg-white border rounded p-6">
+    <h2 class="text-lg font-semibold mb-4">Informazioni di Base</h2>
     
     <form method="post" action="{{ route('admin.tenants.update', $tenant) }}" class="grid gap-4">
       @csrf @method('put')
