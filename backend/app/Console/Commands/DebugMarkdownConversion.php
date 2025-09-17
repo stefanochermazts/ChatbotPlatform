@@ -8,14 +8,16 @@ use App\Services\Scraper\WebScraperService;
 
 class DebugMarkdownConversion extends Command
 {
-    protected $signature = 'scraper:debug-markdown {url}';
-    protected $description = 'Debug Markdown conversion process step by step';
+    protected $signature = 'scraper:debug-markdown {tenant_id} {url}';
+    protected $description = 'Debug Markdown conversion process step by step with tenant configuration';
 
     public function handle()
     {
+        $tenantId = $this->argument('tenant_id');
         $url = $this->argument('url');
         
         $this->info('🔍 DEBUG: Markdown Conversion Analysis');
+        $this->line("Tenant ID: {$tenantId}");
         $this->line("URL: {$url}");
         $this->line("Timestamp: " . now()->toISOString());
         $this->line("");
@@ -35,13 +37,37 @@ class DebugMarkdownConversion extends Command
             $this->line("Raw HTML length: " . strlen($rawHtml));
             $this->line("");
             
-            // STEP 2: WebScraperService Content Extraction
-            $this->line("📝 STEP 2: Content Extraction...");
+            // STEP 2: WebScraperService Content Extraction with Tenant Configuration
+            $this->line("📝 STEP 2: Content Extraction with Tenant Config...");
+            
+            // ✅ Use tenant configuration for extraction patterns
+            $webScraperInstance = new WebScraperService();
+            
+            // Store tenant context for pattern access
+            $tenant = \App\Models\Tenant::findOrFail($tenantId);
+            $config = \App\Models\ScraperConfig::where('tenant_id', $tenantId)->first();
+            
+            if ($config) {
+                $this->line("✅ Using tenant scraper config: {$config->name}");
+                if (!empty($config->extraction_patterns)) {
+                    $this->line("🎯 Custom extraction patterns found: " . count($config->extraction_patterns));
+                }
+            } else {
+                $this->warn("⚠️  No tenant scraper config found - using global patterns only");
+            }
+            
+            // Use reflection to access private method but with tenant context
             $scraperService = new \ReflectionClass(WebScraperService::class);
             $extractContentMethod = $scraperService->getMethod('extractContent');
             $extractContentMethod->setAccessible(true);
             
-            $webScraperInstance = new WebScraperService();
+            // Set current config for tenant patterns
+            if ($config) {
+                $currentConfigProperty = $scraperService->getProperty('currentConfig');
+                $currentConfigProperty->setAccessible(true);
+                $currentConfigProperty->setValue($webScraperInstance, $config);
+            }
+            
             $extractedContent = $extractContentMethod->invokeArgs($webScraperInstance, [$rawHtml, $url]);
             
             if (!$extractedContent) {

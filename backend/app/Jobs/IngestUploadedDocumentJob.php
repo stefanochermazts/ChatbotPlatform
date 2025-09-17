@@ -28,6 +28,16 @@ class IngestUploadedDocumentJob implements ShouldQueue
         /** @var Document|null $doc */
         $doc = Document::find($this->documentId);
         if ($doc === null) {
+            \Log::warning('ingestion.document_not_found', ['document_id' => $this->documentId]);
+            return;
+        }
+
+        // 🔒 Verifica se un altro job sta già processando questo documento
+        if ($doc->ingestion_status === 'processing') {
+            \Log::info('ingestion.already_processing', [
+                'document_id' => $this->documentId,
+                'status' => $doc->ingestion_status
+            ]);
             return;
         }
 
@@ -55,23 +65,39 @@ class IngestUploadedDocumentJob implements ShouldQueue
             }
             $this->updateDoc($doc, ['ingestion_progress' => 60]);
 
-            // 4) Persistenza chunk su DB (sostituzione completa)
-            DB::table('document_chunks')->where('document_id', $doc->id)->delete();
-            $now = now();
-            $rows = [];
-            foreach ($chunks as $i => $content) {
-                $rows[] = [
-                    'tenant_id' => (int) $doc->tenant_id,
-                    'document_id' => (int) $doc->id,
-                    'chunk_index' => (int) $i,
-                    'content' => (string) $content,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
-            }
-            foreach (array_chunk($rows, 500) as $batch) {
-                DB::table('document_chunks')->insert($batch);
-            }
+            // 4) Persistenza chunk su DB (sostituzione completa) - ATOMIC TRANSACTION
+            DB::transaction(function () use ($doc, $chunks) {
+                // 🔒 Lock del documento per evitare race conditions
+                $doc->refresh();
+                $doc->lockForUpdate();
+                
+                // Elimina e reinserisci in modo atomico
+                DB::table('document_chunks')->where('document_id', $doc->id)->delete();
+                
+                $now = now();
+                $rows = [];
+                foreach ($chunks as $i => $content) {
+                    $rows[] = [
+                        'tenant_id' => (int) $doc->tenant_id,
+                        'document_id' => (int) $doc->id,
+                        'chunk_index' => (int) $i,
+                        'content' => (string) $content,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+                
+                // Inserisci in batch per performance
+                foreach (array_chunk($rows, 500) as $batch) {
+                    DB::table('document_chunks')->insert($batch);
+                }
+                
+                Log::debug('document_chunks.replaced_atomically', [
+                    'document_id' => $doc->id,
+                    'chunks_count' => count($chunks),
+                    'tenant_id' => $doc->tenant_id
+                ]);
+            });
             $this->updateDoc($doc, ['ingestion_progress' => 80]);
 
             // 5) Indicizzazione vettori su Milvus

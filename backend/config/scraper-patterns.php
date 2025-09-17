@@ -28,6 +28,16 @@ return [
             'priority' => 2
         ],
         
+        // 🔥 AGGIUNGI QUI I TUOI NUOVI PATTERN CMS ITALIANI
+        // Esempio:
+        // [
+        //     'name' => 'nuovo_cms_pattern',
+        //     'regex' => '/<div[^>]*class="[^"]*contenuto-principale[^"]*"[^>]*>(.*?)<\/div>/is',
+        //     'description' => 'Nuovo pattern per CMS comunale',
+        //     'min_length' => 100,
+        //     'priority' => 3
+        // ],
+        
         // Pattern 2: Container di contenuto standard
         [
             'name' => 'content_main_text',

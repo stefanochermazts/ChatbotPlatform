@@ -7,15 +7,19 @@ use App\Services\Scraper\JavaScriptRenderer;
 
 class DebugPalmanovaRendering extends Command
 {
-    protected $signature = 'scraper:debug-palmanova {url}';
-    protected $description = 'Debug Palmanova rendering issues with detailed output';
+    protected $signature = 'scraper:debug-palmanova {url} {--tenant= : Optional tenant ID for context}';
+    protected $description = 'Debug rendering issues with detailed output (optional tenant context)';
 
     public function handle()
     {
         $url = $this->argument('url');
+        $tenantId = $this->option('tenant');
         
-        $this->info('🔍 DEBUG: Palmanova Rendering Analysis');
+        $this->info('🔍 DEBUG: Rendering Analysis');
         $this->line("URL: {$url}");
+        if ($tenantId) {
+            $this->line("Tenant ID: {$tenantId}");
+        }
         $this->line("Timestamp: " . now()->toISOString());
         $this->line("");
         

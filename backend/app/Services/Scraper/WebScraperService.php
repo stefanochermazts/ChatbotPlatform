@@ -25,6 +25,7 @@ class WebScraperService
     private ?ScraperProgress $progress = null;
     private array $urlsQueue = [];
     private string $sessionId;
+    private ?ScraperConfig $currentConfig = null; // Current scraper config for tenant patterns
     
     public function __construct()
     {
@@ -38,6 +39,9 @@ class WebScraperService
         $config = $scraperConfigId
             ? ScraperConfig::where('tenant_id', $tenantId)->where('id', $scraperConfigId)->first()
             : ScraperConfig::where('tenant_id', $tenantId)->first();
+            
+        // Store config for pattern access
+        $this->currentConfig = $config;
         
         if (!$config || empty($config->seed_urls)) {
             return ['error' => 'Nessuna configurazione scraper trovata o seed URLs vuoti'];
@@ -1478,7 +1482,7 @@ class WebScraperService
                 // Calcola hash del contenuto (solo del contenuto estratto, non delle metadati)
                 $contentHash = hash('sha256', $result['content']);
                 
-                // Cerca documento esistente per lo stesso URL
+                // Cerca documento esistente per lo stesso URL con lock per evitare race conditions
                 // Strategia robusta: cerca per source_url, ma se non trova nulla,
                 // cerca anche per titolo/path per compatibilità con documenti vecchi
                 $existingDocument = Document::where('tenant_id', $tenant->id)
@@ -1541,11 +1545,26 @@ class WebScraperService
                     }
                 }
 
-                // Nuovo documento - crea ex-novo
-                $document = $this->createNewDocument($tenant, $result, $markdownContent, $contentHash);
-                $savedCount++;
-                $this->stats['new']++;
-                ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'new', strlen($result['content']));
+                // Nuovo documento - crea ex-novo con protezione race condition
+                try {
+                    $document = $this->createNewDocument($tenant, $result, $markdownContent, $contentHash);
+                    $savedCount++;
+                    $this->stats['new']++;
+                    ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'new', strlen($result['content']));
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Se errore di chiave duplicata, probabilmente un altro processo ha già creato il documento
+                    if (str_contains($e->getMessage(), 'duplicate key') || str_contains($e->getMessage(), '23505')) {
+                        \Log::warning("🔄 Documento probabilmente già creato da processo concorrente", [
+                            'url' => $result['url'],
+                            'error' => $e->getMessage()
+                        ]);
+                        $skippedCount++;
+                        $this->stats['skipped']++;
+                        ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'skipped', strlen($result['content']));
+                    } else {
+                        throw $e; // Rilancia se non è un errore di duplicazione
+                    }
+                }
                 
             } catch (\Exception $e) {
                 \Log::error("Errore salvataggio documento scraped", [
@@ -1670,6 +1689,17 @@ class WebScraperService
         // Load content patterns from configuration (extensible and maintainable)
         $contentPatterns = config('scraper-patterns.content_patterns', []);
         
+        // 🎯 PRIORITY: Tenant-specific patterns override global ones
+        $tenantPatterns = $this->getTenantExtractionPatterns();
+        if (!empty($tenantPatterns)) {
+            \Log::debug("🎯 Using tenant-specific patterns", [
+                'tenant_patterns_count' => count($tenantPatterns),
+                'global_patterns_count' => count($contentPatterns)
+            ]);
+            // Prepend tenant patterns (higher priority)
+            $contentPatterns = array_merge($tenantPatterns, $contentPatterns);
+        }
+        
         // Sort patterns by priority
         usort($contentPatterns, fn($a, $b) => ($a['priority'] ?? 999) <=> ($b['priority'] ?? 999));
 
@@ -1706,6 +1736,26 @@ class WebScraperService
 
         \Log::debug("🔍 No smart patterns matched", ['url' => $url]);
         return null;
+    }
+
+    /**
+     * 🎯 Get tenant-specific extraction patterns from current scraping context
+     */
+    private function getTenantExtractionPatterns(): array
+    {
+        if (!$this->currentConfig || empty($this->currentConfig->extraction_patterns)) {
+            return [];
+        }
+
+        $patterns = $this->currentConfig->extraction_patterns;
+        
+        \Log::debug("🎯 Loading tenant-specific patterns", [
+            'tenant_id' => $this->currentConfig->tenant_id,
+            'config_id' => $this->currentConfig->id,
+            'patterns_count' => count($patterns)
+        ]);
+
+        return $patterns;
     }
 
     /**

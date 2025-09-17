@@ -269,6 +269,84 @@
     </div>
   </div>
 
+  <!-- 🧠 Pattern di Estrazione Personalizzati -->
+  <div class="border-t pt-6">
+    <h3 class="font-semibold text-gray-800 mb-4">🧠 Pattern di Estrazione Personalizzati</h3>
+    <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+      <div class="text-sm text-blue-800 mb-2">
+        <strong>💡 Che cos'è:</strong> Regole personalizzate per estrarre contenuto da siti specifici
+      </div>
+      <div class="text-xs text-blue-700 space-y-1">
+        <div>• <strong>Automatico:</strong> Il sistema usa pattern intelligenti per la maggior parte dei siti</div>
+        <div>• <strong>Personalizzato:</strong> Aggiungi pattern specifici per CMS non supportati</div>
+        <div>• <strong>Priority:</strong> Pattern con priorità bassa (es. 1) vengono testati per primi</div>
+        <div>• <strong>Override:</strong> Pattern specifici del tenant hanno precedenza su quelli globali</div>
+      </div>
+    </div>
+    
+    <div class="space-y-4">
+      <label class="block">
+        <span class="text-sm font-medium text-gray-700">🎯 Pattern di Estrazione (JSON)</span>
+        <textarea name="extraction_patterns" rows="8" class="w-full border rounded px-3 py-2 font-mono text-sm" placeholder='Configurazione pattern personalizzati...'>{{ old('extraction_patterns', json_encode($config->extraction_patterns ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) }}</textarea>
+      </label>
+      
+      <div class="bg-gray-50 p-4 rounded text-xs">
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <strong>📋 Esempio Pattern Personalizzato:</strong>
+            <pre class="bg-white p-2 rounded mt-1 text-xs overflow-x-auto"><code>[
+  {
+    "name": "contenuto_principale",
+    "regex": "&lt;div[^&gt;]*class=\"[^\"]*main-text[^\"]*\"[^&gt;]*&gt;(.*?)&lt;\/div&gt;",
+    "description": "Contenuto principale CMS comunale",
+    "min_length": 120,
+    "priority": 1
+  },
+  {
+    "name": "articolo_corpo",
+    "regex": "&lt;section[^&gt;]*class=\"[^\"]*article-body[^\"]*\"[^&gt;]*&gt;(.*?)&lt;\/section&gt;",
+    "description": "Corpo articolo news",
+    "min_length": 100,
+    "priority": 2
+  }
+]</code></pre>
+          </div>
+          
+          <div>
+            <strong>🔧 Campi Pattern:</strong>
+            <div class="space-y-1 mt-1">
+              <div><code class="bg-white px-1 rounded">name</code>: Identificatore univoco</div>
+              <div><code class="bg-white px-1 rounded">regex</code>: Espressione regolare per trovare contenuto</div>
+              <div><code class="bg-white px-1 rounded">description</code>: Descrizione del pattern</div>
+              <div><code class="bg-white px-1 rounded">min_length</code>: Lunghezza minima contenuto</div>
+              <div><code class="bg-white px-1 rounded">priority</code>: Priorità (1 = massima)</div>
+            </div>
+            
+            <div class="mt-3">
+              <strong>⚡ Pattern Comuni CMS Italiani:</strong>
+              <div class="space-y-1 text-xs">
+                <div><code class="bg-white px-1 rounded">testolungo</code> - Contenuto lungo</div>
+                <div><code class="bg-white px-1 rounded">descrizione-modulo</code> - Moduli PA</div>
+                <div><code class="bg-white px-1 rounded">content-main</code> - Contenuto principale</div>
+                <div><code class="bg-white px-1 rounded">article-body</code> - Corpo articolo</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+          <strong class="text-yellow-800">⚠️ Importante:</strong>
+          <div class="text-yellow-700 text-xs mt-1">
+            • Testa sempre i pattern su poche pagine prima di fare scraping completo<br>
+            • Usa il formato JSON valido (controlla parentesi e virgole)<br>
+            • Pattern troppo generici possono estrarre contenuto indesiderato<br>
+            • Lascia vuoto per usare solo i pattern globali automatici
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 📎 Documenti collegati -->
   <div class="border-t pt-6">
     <h3 class="font-semibold text-gray-800 mb-4">📎 Documenti collegati</h3>

@@ -75,6 +75,7 @@ class ScraperAdminController extends Controller
             'respect_robots' => $request->boolean('respect_robots'),  // ✅ Fix checkbox  
             'rate_limit_rps' => (int) ($data['rate_limit_rps'] ?? 1),
             'auth_headers' => $this->parseHeaders($data['auth_headers'] ?? ''),
+            'extraction_patterns' => $this->parseExtractionPatterns($data['extraction_patterns'] ?? ''),
             'target_knowledge_base_id' => isset($data['target_knowledge_base_id']) && $data['target_knowledge_base_id'] !== ''
                 ? (int) $data['target_knowledge_base_id']
                 : null,
@@ -172,6 +173,68 @@ class ScraperAdminController extends Controller
     private function toArray(string $multiline): array
     {
         return array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $multiline) ?: [])));
+    }
+
+    /**
+     * Parse and validate extraction patterns JSON
+     */
+    private function parseExtractionPatterns(string $input): array
+    {
+        if (empty(trim($input))) {
+            return [];
+        }
+
+        try {
+            $patterns = json_decode($input, true, 512, JSON_THROW_ON_ERROR);
+            
+            if (!is_array($patterns)) {
+                \Log::warning('Extraction patterns is not an array', ['input' => $input]);
+                return [];
+            }
+
+            // Validate each pattern structure
+            $validatedPatterns = [];
+            foreach ($patterns as $index => $pattern) {
+                if (!is_array($pattern)) {
+                    \Log::warning("Pattern at index {$index} is not an array", ['pattern' => $pattern]);
+                    continue;
+                }
+
+                // Required fields
+                if (!isset($pattern['name']) || !isset($pattern['regex']) || !isset($pattern['description'])) {
+                    \Log::warning("Pattern at index {$index} missing required fields", ['pattern' => $pattern]);
+                    continue;
+                }
+
+                // Validate regex
+                if (@preg_match($pattern['regex'], '') === false) {
+                    \Log::warning("Invalid regex in pattern at index {$index}", ['regex' => $pattern['regex']]);
+                    continue;
+                }
+
+                $validatedPatterns[] = [
+                    'name' => (string) $pattern['name'],
+                    'regex' => (string) $pattern['regex'],
+                    'description' => (string) $pattern['description'],
+                    'min_length' => (int) ($pattern['min_length'] ?? 100),
+                    'priority' => (int) ($pattern['priority'] ?? 999)
+                ];
+            }
+
+            \Log::info('Extraction patterns parsed successfully', [
+                'total_patterns' => count($patterns),
+                'valid_patterns' => count($validatedPatterns)
+            ]);
+
+            return $validatedPatterns;
+            
+        } catch (\JsonException $e) {
+            \Log::error('Failed to parse extraction patterns JSON', [
+                'error' => $e->getMessage(),
+                'input' => $input
+            ]);
+            return [];
+        }
     }
 
     private function parseHeaders(string $multiline): array
