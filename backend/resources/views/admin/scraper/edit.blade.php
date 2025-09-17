@@ -287,7 +287,13 @@
     <div class="space-y-4">
       <label class="block">
         <span class="text-sm font-medium text-gray-700">🎯 Pattern di Estrazione (JSON)</span>
-        <textarea name="extraction_patterns" rows="8" class="w-full border rounded px-3 py-2 font-mono text-sm" placeholder='Configurazione pattern personalizzati...'>{{ old('extraction_patterns', json_encode($config->extraction_patterns ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) }}</textarea>
+        <textarea name="extraction_patterns" rows="8" class="w-full border rounded px-3 py-2 font-mono text-sm {{ session('extraction_patterns_error') ? 'border-red-500 bg-red-50' : '' }}" placeholder='Configurazione pattern personalizzati...'>{{ old('extraction_patterns', json_encode($config->extraction_patterns ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) }}</textarea>
+        
+        @if(session('extraction_patterns_error'))
+          <div class="mt-2 p-3 bg-red-100 border border-red-300 rounded text-red-700 text-sm">
+            <strong>❌ Errore JSON:</strong> {{ session('extraction_patterns_error') }}
+          </div>
+        @endif
       </label>
       
       <div class="bg-gray-50 p-4 rounded text-xs">
@@ -297,15 +303,15 @@
             <pre class="bg-white p-2 rounded mt-1 text-xs overflow-x-auto"><code>[
   {
     "name": "contenuto_principale",
-    "regex": "&lt;div[^&gt;]*class=\"[^\"]*main-text[^\"]*\"[^&gt;]*&gt;(.*?)&lt;\/div&gt;",
+    "regex": "&lt;div[^&gt;]*class=\"[^\"]*contenuto-principale[^\"]*\"[^&gt;]*&gt;(.*?)&lt;\/div&gt;",
     "description": "Contenuto principale CMS comunale",
     "min_length": 120,
     "priority": 1
   },
   {
-    "name": "articolo_corpo",
-    "regex": "&lt;section[^&gt;]*class=\"[^\"]*article-body[^\"]*\"[^&gt;]*&gt;(.*?)&lt;\/section&gt;",
-    "description": "Corpo articolo news",
+    "name": "cms_comuni_it",
+    "regex": "&lt;div[^&gt;]*class=\"[^\"]*main-content[^\"]*\"[^&gt;]*&gt;(.*?)&lt;\/div&gt;",
+    "description": "CMS Comuni italiani",
     "min_length": 100,
     "priority": 2
   }
@@ -337,8 +343,9 @@
         <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
           <strong class="text-yellow-800">⚠️ Importante:</strong>
           <div class="text-yellow-700 text-xs mt-1">
+            • <strong>Sintassi JSON</strong>: Usa <code>"chiave": "valore"</code> NON <code>'chiave' => 'valore'</code><br>
+            • <strong>Virgolette doppie</strong>: Sempre <code>"</code> non <code>'</code> per chiavi e valori<br>
             • Testa sempre i pattern su poche pagine prima di fare scraping completo<br>
-            • Usa il formato JSON valido (controlla parentesi e virgole)<br>
             • Pattern troppo generici possono estrarre contenuto indesiderato<br>
             • Lascia vuoto per usare solo i pattern globali automatici
           </div>

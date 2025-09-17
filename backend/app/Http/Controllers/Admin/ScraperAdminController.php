@@ -50,6 +50,7 @@ class ScraperAdminController extends Controller
             'respect_robots' => ['nullable', 'boolean'],
             'rate_limit_rps' => ['nullable', 'integer', 'min:0', 'max:10'],
             'auth_headers' => ['nullable', 'string'],
+            'extraction_patterns' => ['nullable', 'string'],
             'target_knowledge_base_id' => ['nullable', 'integer', 'exists:knowledge_bases,id'],
             'enabled' => ['nullable', 'boolean'],
             'interval_minutes' => ['nullable', 'integer', 'min:5', 'max:10080'],
@@ -181,14 +182,23 @@ class ScraperAdminController extends Controller
     private function parseExtractionPatterns(string $input): array
     {
         if (empty(trim($input))) {
+            \Log::debug('Empty extraction patterns input');
             return [];
         }
+
+        \Log::info('Parsing extraction patterns', [
+            'input_length' => strlen($input),
+            'input_preview' => substr($input, 0, 200)
+        ]);
 
         try {
             $patterns = json_decode($input, true, 512, JSON_THROW_ON_ERROR);
             
             if (!is_array($patterns)) {
-                \Log::warning('Extraction patterns is not an array', ['input' => $input]);
+                \Log::warning('Extraction patterns is not an array', [
+                    'input' => $input,
+                    'decoded_type' => gettype($patterns)
+                ]);
                 return [];
             }
 
@@ -206,11 +216,22 @@ class ScraperAdminController extends Controller
                     continue;
                 }
 
-                // Validate regex
-                if (@preg_match($pattern['regex'], '') === false) {
-                    \Log::warning("Invalid regex in pattern at index {$index}", ['regex' => $pattern['regex']]);
+                // Validate regex - add modifiers for HTML parsing
+                $regexWithModifiers = '/' . addcslashes($pattern['regex'], '/') . '/is';
+                $regexTest = @preg_match($regexWithModifiers, '');
+                if ($regexTest === false) {
+                    $lastError = error_get_last();
+                    \Log::warning("Invalid regex in pattern at index {$index}", [
+                        'original_regex' => $pattern['regex'],
+                        'with_modifiers' => $regexWithModifiers,
+                        'error' => $lastError['message'] ?? 'Unknown regex error',
+                        'pattern_name' => $pattern['name'] ?? 'unnamed'
+                    ]);
                     continue;
                 }
+                
+                // Store the regex with proper modifiers
+                $pattern['regex'] = $regexWithModifiers;
 
                 $validatedPatterns[] = [
                     'name' => (string) $pattern['name'],
@@ -231,8 +252,15 @@ class ScraperAdminController extends Controller
         } catch (\JsonException $e) {
             \Log::error('Failed to parse extraction patterns JSON', [
                 'error' => $e->getMessage(),
-                'input' => $input
+                'input' => $input,
+                'line' => $e->getLine() ?? 'unknown'
             ]);
+            
+            // Store error for user feedback
+            session()->flash('extraction_patterns_error', 
+                'Errore JSON nei pattern: ' . $e->getMessage() . 
+                '. Usa sintassi JSON valida con "chiave": "valore"');
+            
             return [];
         }
     }
