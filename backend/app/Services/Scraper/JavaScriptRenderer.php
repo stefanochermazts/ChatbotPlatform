@@ -9,6 +9,13 @@ class JavaScriptRenderer
         try {
             $timeoutMs = $timeout * 1000;
             
+            \Log::info("🌐 [JS-RENDER] Starting JavaScript rendering", [
+                'url' => $url,
+                'timeout_seconds' => $timeout,
+                'timeout_ms' => $timeoutMs,
+                'environment' => app()->environment()
+            ]);
+            
             // Path temporaneo per script Node.js
             $tempDir = storage_path('app/temp');
             $scriptPath = $tempDir . '/puppeteer_' . uniqid() . '.cjs';
@@ -74,6 +81,22 @@ class JavaScriptRenderer
             }
             
             $content = file_get_contents($outputPath);
+            
+            // Analisi contenuto per debug
+            $contentLength = strlen($content);
+            $textContent = strip_tags($content);
+            $textLength = strlen($textContent);
+            $hasJsWarning = strpos($content, 'Please enable JavaScript') !== false;
+            $hasPedibus = stripos($textContent, 'pedibus') !== false;
+            
+            \Log::info("🌐 [JS-RENDER] Content analysis", [
+                'url' => $url,
+                'content_length' => $contentLength,
+                'text_length' => $textLength,
+                'has_js_warning' => $hasJsWarning,
+                'has_pedibus' => $hasPedibus,
+                'text_preview' => substr(trim(preg_replace('/\s+/', ' ', $textContent)), 0, 200)
+            ]);
             
             // Cleanup file temporanei
             @unlink($scriptPath);
