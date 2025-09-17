@@ -2034,6 +2034,23 @@ class WebScraperService
     }
 
     /**
+     * ⚡ Check if Node.js is available in the current environment
+     */
+    private function isNodeAvailable(): bool
+    {
+        $result = shell_exec('node --version 2>&1');
+        $isAvailable = $result && str_starts_with(trim($result), 'v');
+        
+        \Log::debug("🔍 [NODE-CHECK] Node.js availability", [
+            'available' => $isAvailable,
+            'version_output' => trim($result ?: 'no output'),
+            'environment' => app()->environment()
+        ]);
+        
+        return $isAvailable;
+    }
+
+    /**
      * Metodo interno per scraping di un singolo URL (usato sia da scrapeSingleUrl che da forceRescrapDocument)
      */
     private function scrapeSingleUrlInternal(string $url, Tenant $tenant, ?int $knowledgeBaseId, bool $force): ?array
@@ -2052,7 +2069,7 @@ class WebScraperService
                     'max_redirects' => 5,
                     'respect_robots' => false,
                     'rate_limit_rps' => 1,
-                    'render_js' => true, // CRITICAL: Enable JavaScript rendering for SPA sites
+                    'render_js' => true, // Always enable JS rendering for SPA sites
                     'target_knowledge_base_id' => $knowledgeBaseId
                 ]);
             } else {
@@ -2060,7 +2077,7 @@ class WebScraperService
                 if ($knowledgeBaseId) {
                     $config->target_knowledge_base_id = $knowledgeBaseId;
                 }
-                // CRITICAL: Ensure JS rendering is enabled for existing configs too
+                // Always enable JS rendering for SPA sites; renderer will resolve Node binary robustly
                 $config->render_js = true;
                 $config->timeout = max($config->timeout, 150); // Ensure sufficient timeout
             }

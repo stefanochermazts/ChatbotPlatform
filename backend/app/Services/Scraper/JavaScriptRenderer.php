@@ -34,9 +34,36 @@ class JavaScriptRenderer
             // Esegui Puppeteer dalla directory corrente (backend)
             $backendDir = base_path(); // Già punta a /backend
             $absoluteScriptPath = $scriptPath;
-            
-            // Comando bash-friendly (Git Bash su Windows)
-            $nodeCmd = "cd \"$backendDir\" && node \"$absoluteScriptPath\"";
+
+            // Risolvi percorso Node.js in modo robusto (Windows/Linux)
+            $envNodePath = env('NODE_BINARY_PATH');
+            $candidateNodes = [];
+            if ($envNodePath) {
+                $candidateNodes[] = $envNodePath;
+            }
+            // Aggiungi path comuni
+            $candidateNodes = array_merge($candidateNodes, [
+                'node',
+                'C:\\Program Files\\nodejs\\node.exe',
+                'C:\\Program Files (x86)\\nodejs\\node.exe',
+                'C:\\Program Files\\Git\\usr\\bin\\node.exe',
+                '/usr/bin/node',
+                '/usr/local/bin/node'
+            ]);
+
+            $nodeBinary = 'node';
+            foreach ($candidateNodes as $candidate) {
+                $versionOutput = null;
+                $exitCodeProbe = 0;
+                @exec("\"$candidate\" --version 2>&1", $versionOutput, $exitCodeProbe);
+                if ($exitCodeProbe === 0 && !empty($versionOutput)) {
+                    $nodeBinary = $candidate;
+                    break;
+                }
+            }
+
+            // Comando bash-friendly (Git Bash su Windows) con path esplicito
+            $nodeCmd = "cd \"$backendDir\" && \"$nodeBinary\" \"$absoluteScriptPath\"";
             
             // Debug: log del comando
             \Log::debug("Executing command: $nodeCmd", [
