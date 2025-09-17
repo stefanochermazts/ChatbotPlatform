@@ -202,25 +202,35 @@ const fs = require('fs');
         const bodyText = body.textContent || '';
         
         // Check for meaningful content indicators (not just JavaScript)
-        const hasRealContent = bodyText.length > 5000; // More content needed
+        const hasRealContent = bodyText.length > 8000; // Much more content needed for complex sites
         const hasSpecificContent = bodyText.toLowerCase().includes('pedibus') ||
                                   bodyText.toLowerCase().includes('attivazione') ||
-                                  bodyText.toLowerCase().includes('servizio');
+                                  bodyText.toLowerCase().includes('servizio') ||
+                                  bodyText.toLowerCase().includes('comune') ||
+                                  bodyText.toLowerCase().includes('palmanova');
         
-        // Avoid JavaScript-heavy content
-        const jsCodeRatio = (bodyText.match(/function|var |const |let |if\s*\(/g) || []).length;
-        const hasLowJsRatio = jsCodeRatio < 50; // Less JS code
+        // More aggressive JavaScript detection
+        const jsCodeRatio = (bodyText.match(/function|var |const |let |if\s*\(|\.prototype\.|addEventListener|querySelector/g) || []).length;
+        const hasLowJsRatio = jsCodeRatio < 20; // Much stricter JS threshold
+        
+        // Check for typical content indicators
+        const hasContentIndicators = bodyText.includes('pubblicato') ||
+                                    bodyText.includes('notizie') ||
+                                    bodyText.includes('data') ||
+                                    bodyText.includes('informazioni') ||
+                                    bodyText.length > 10000;
         
         // Check for navigation/content structure
         const hasNavigation = document.querySelector('nav, .nav, .menu') !== null;
         const hasMainContent = document.querySelector('main, article, .content, .text') !== null;
         
-        const result = hasRealContent && hasLowJsRatio && (hasSpecificContent || hasNavigation || hasMainContent);
+        const result = (hasRealContent || hasContentIndicators) && hasLowJsRatio && (hasSpecificContent || hasNavigation || hasMainContent);
         
         console.log('Enhanced content check:', {
           contentLength: bodyText.length,
           hasRealContent,
           hasSpecificContent,
+          hasContentIndicators,
           jsCodeCount: jsCodeRatio,
           hasLowJsRatio,
           hasNavigation,
@@ -230,7 +240,7 @@ const fs = require('fs');
         });
         
         return result;
-      }, { timeout: 35000 }); // Increased timeout
+      }, { timeout: 60000 }); // Much longer timeout for complex Angular sites
       
       contentFound = true;
       console.log('✅ Real Angular content loaded successfully');
@@ -245,7 +255,7 @@ const fs = require('fs');
           return textContent.toLowerCase().includes('pedibus') && 
                  textContent.toLowerCase().includes('attivazione') &&
                  textContent.length > 2000;
-        }, { timeout: 15000 });
+        }, { timeout: 30000 });
         
         contentFound = true;
         console.log('✅ Found specific Pedibus content');
@@ -253,7 +263,7 @@ const fs = require('fs');
         console.log('⚠️ Specific content not found, trying selectors...');
         
         try {
-          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: 10000 });
+          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: 20000 });
           contentFound = true;
           console.log('✅ Found content container selector');
         } catch (e3) {
@@ -266,21 +276,48 @@ const fs = require('fs');
     if (!contentFound) {
       console.log('🔄 Trying to trigger content loading with interactions...');
       
-      // Try scrolling to different positions
+      // Try aggressive scrolling and interaction to trigger Angular content loading
+      console.log('🔄 Aggressive content loading strategy...');
+      
       await page.evaluate(() => {
         window.scrollTo(0, 0);
       });
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight / 3);
+        window.scrollTo(0, document.body.scrollHeight / 4);
       });
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight / 2);
       });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight * 3/4);
+      });
       await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Try to trigger any lazy loading by clicking potential expanders
+      await page.evaluate(() => {
+        const clickableElements = document.querySelectorAll('button, [role="button"], .btn, .load-more, .expand');
+        clickableElements.forEach((el, index) => {
+          if (index < 3) { // Only click first 3 to avoid too much interaction
+            try {
+              el.click();
+            } catch (e) {
+              // Ignore click errors
+            }
+          }
+        });
+      });
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       // Try clicking on potential navigation elements
       try {
@@ -293,9 +330,9 @@ const fs = require('fs');
       }
     }
     
-    // Final wait for any remaining async content
+    // Final wait for any remaining async content (much longer for Angular)
     console.log('⏳ Final wait for content stabilization...');
-    await new Promise(resolve => setTimeout(resolve, contentFound ? 3000 : 8000));
+    await new Promise(resolve => setTimeout(resolve, contentFound ? 8000 : 15000));
     
     // Estrai contenuto HTML completo con pulizia selettiva
     console.log('📝 Extracting content...');
@@ -312,7 +349,7 @@ const fs = require('fs');
         const styles = document.querySelectorAll('style');
         styles.forEach(style => style.remove());
         
-        // Try to find main content containers
+        // Try to find main content containers (expanded for complex sites)
         const selectors = [
           'main',
           'article', 
@@ -322,7 +359,14 @@ const fs = require('fs');
           '.article-content',
           '[role="main"]',
           '.news-content',
-          '.page-content'
+          '.page-content',
+          '#content',
+          '#main-content', 
+          '.site-content',
+          '.entry-content',
+          '.contenuto',
+          '.testo',
+          '.body-content'
         ];
         
         let mainContent = null;
@@ -338,9 +382,25 @@ const fs = require('fs');
           console.log('Found main content container:', mainContent.tagName);
           return mainContent.outerHTML;
         } else {
-          // Fallback: return body with scripts removed
-          console.log('No main content container found, using cleaned body');
-          return document.body.outerHTML;
+          // Try less restrictive content detection
+          console.log('No main content container found, trying less restrictive approach');
+          
+          // Remove only scripts, but keep more content
+          const bodyClone = document.body.cloneNode(true);
+          
+          // Remove navigation, header, footer that are typically not content
+          const elementsToRemove = bodyClone.querySelectorAll('nav, header, footer, .nav, .navbar, .menu, .sidebar, #sidebar, .header, .footer');
+          elementsToRemove.forEach(el => el.remove());
+          
+          // If body still has reasonable content, return it
+          if (bodyClone.textContent.trim().length > 300) {
+            console.log('Using body with navigation removed');
+            return bodyClone.outerHTML;
+          } else {
+            // Last resort: return full body
+            console.log('Using full cleaned body as last resort');
+            return document.body.outerHTML;
+          }
         }
       });
       
