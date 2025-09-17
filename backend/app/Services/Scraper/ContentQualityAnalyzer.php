@@ -59,7 +59,8 @@ class ContentQualityAnalyzer
         $analysis['quality_score'] = $this->calculateOverallQualityScore($analysis);
         
         // Determina strategia di estrazione ottimale
-        $analysis['extraction_strategy'] = $this->determineExtractionStrategy($analysis);
+        // Strategia verrà determinata dal WebScraperService che ha accesso all'URL
+        $analysis['extraction_strategy'] = 'tbd';
         
         // Determina priorità di processing
         $analysis['processing_priority'] = $this->determineProcessingPriority($analysis);
@@ -358,6 +359,11 @@ class ContentQualityAnalyzer
      */
     private function determineExtractionStrategy(array $analysis): string
     {
+        // Detect if content seems to have semantic containers (suggests manual DOM would work better)
+        if ($this->hasSemanticContentContainers($analysis)) {
+            return 'manual_dom_primary';
+        }
+        
         // Tabelle complesse = metodo manuale
         if ($analysis['has_complex_tables']) {
             return 'manual_dom_primary';
@@ -379,6 +385,36 @@ class ContentQualityAnalyzer
         }
         
         return 'hybrid_default';
+    }
+
+    /**
+     * 🎯 Detect if HTML contains semantic content containers
+     */
+    private function hasSemanticContentContainers(array $analysis): bool
+    {
+        // Check if HTML was passed in analysis
+        if (!isset($analysis['html'])) {
+            return false;
+        }
+        
+        $html = $analysis['html'];
+        
+        // Load semantic patterns from configuration
+        $semanticPatterns = config('scraper-patterns.semantic_indicators', [
+            'testolungo', 'content-main', 'main-content'
+        ]);
+        
+        foreach ($semanticPatterns as $pattern) {
+            if (preg_match('/class="[^"]*' . preg_quote($pattern, '/') . '[^"]*"/i', $html)) {
+                Log::debug("🎯 Semantic container detected", [
+                    'pattern' => $pattern,
+                    'suggests_manual_dom' => true
+                ]);
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     /**

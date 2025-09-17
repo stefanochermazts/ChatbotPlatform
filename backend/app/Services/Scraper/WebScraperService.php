@@ -208,7 +208,8 @@ class WebScraperService
         
         $startTime = microtime(true);
         $renderer = new JavaScriptRenderer();
-        $timeout = max($config->timeout ?? 60, 30);
+        // Use the same timeout as debug command (minimum 90s for Angular sites)
+        $timeout = max($config->timeout ?? 150, 90);
         
         $content = $renderer->renderUrl($url, $timeout);
         
@@ -345,6 +346,12 @@ class WebScraperService
     {
         // 🧠 ENHANCED: Analisi qualità avanzata per strategia ottimale
         $analysis = $this->qualityAnalyzer->analyzeContent($html, $url);
+        // Pass URL and HTML to analysis for intelligent strategy detection
+        $analysis['url'] = $url;
+        $analysis['html'] = $html;
+        
+        // Determine extraction strategy with full context
+        $analysis['extraction_strategy'] = $this->determineExtractionStrategy($analysis);
         
         \Log::debug("🧠 Enhanced Content Analysis", [
             'url' => $url,
@@ -382,6 +389,40 @@ class WebScraperService
         ];
         
         return $extractedContent;
+    }
+
+    /**
+     * 🎯 Determina strategia di estrazione ottimale con context URL
+     */
+    private function determineExtractionStrategy(array $analysis): string
+    {
+        // SPECIAL CASE: Comune di Palmanova - force manual DOM extraction
+        if (isset($analysis['url']) && stripos($analysis['url'], 'comune.palmanova.ud.it') !== false) {
+            \Log::debug("🎯 Using manual DOM for Palmanova site", ['url' => $analysis['url']]);
+            return 'manual_dom_primary';
+        }
+        
+        // Tabelle complesse = metodo manuale
+        if ($analysis['has_complex_tables']) {
+            return 'manual_dom_primary';
+        }
+        
+        // Contenuto testuale di qualità = Readability
+        if ($analysis['content_type'] === 'article_content' && $analysis['quality_score'] > 0.5) {
+            return 'readability_primary';
+        }
+        
+        // Dati strutturati = metodo ibrido
+        if ($analysis['has_structured_data'] && $analysis['business_relevance'] > 0.6) {
+            return 'hybrid_structured';
+        }
+        
+        // Bassa qualità = skip o extraction minimal
+        if ($analysis['quality_score'] < 0.3) {
+            return 'skip_low_quality';
+        }
+        
+        return 'hybrid_default';
     }
     
     /**
@@ -576,9 +617,32 @@ class WebScraperService
      */
     private function extractWithManualDOM(string $html, string $url, $dom, $title, $mainContent): ?array
     {
-        // Parse HTML
+        // SMART CONTENT DETECTION: Try to detect main content containers automatically
+        $smartExtraction = $this->trySmartContentExtraction($html, $url);
+        if ($smartExtraction) {
+            return $smartExtraction;
+        }
+        
+        // Parse HTML with more robust error handling
         $dom = new \DOMDocument();
-        $dom->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
+        libxml_use_internal_errors(true);
+        
+        // Try UTF-8 first, then fallback
+        $loadSuccess = $dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
+        
+        if (!$loadSuccess) {
+            // Fallback: try without encoding conversion
+            $loadSuccess = $dom->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
+        }
+        
+        \Log::debug("🔍 DOM loading result", [
+            'url' => $url,
+            'load_success' => $loadSuccess,
+            'dom_errors' => libxml_get_errors(),
+            'html_length' => strlen($html)
+        ]);
+        
+        libxml_clear_errors();
         
         // Estrai title
         $titleNodes = $dom->getElementsByTagName('title');
@@ -596,13 +660,85 @@ class WebScraperService
         // Prova a estrarre main content
         $mainContent = '';
         
-        // Cerca elementi con content principale
+        // Cerca elementi con content principale - includi selettori CSS specifici per Palmanova
         $contentSelectors = ['main', 'article'];
         foreach ($contentSelectors as $selector) {
                 $elements = $dom->getElementsByTagName($selector);
                 if ($elements->length > 0) {
                 $mainContent = $this->convertToMarkdown($elements->item(0), $url);
                     break;
+            }
+        }
+        
+        // Also check for div with id="main" (common in Angular apps)
+        if (!$mainContent) {
+            $xpath = new \DOMXPath($dom);
+            $mainDivNodes = $xpath->query("//div[@id='main']");
+            if ($mainDivNodes->length > 0) {
+                \Log::debug("🔍 Found div with id='main'", [
+                    'url' => $url,
+                    'nodes_found' => $mainDivNodes->length
+                ]);
+                
+                // For Palmanova, extract specifically the testolungo content from within main
+                $testoLungoInMain = $xpath->query(".//div[contains(@class, 'testolungo')]", $mainDivNodes->item(0));
+                if ($testoLungoInMain->length > 0) {
+                    $mainContent = $this->convertToMarkdown($testoLungoInMain->item(0), $url);
+                    \Log::info("🎯 Extracted testolungo content from within main div", [
+                        'url' => $url,
+                        'content_length' => strlen($mainContent)
+                    ]);
+                } else {
+                    // Fallback: extract full main content
+                    $mainContent = $this->convertToMarkdown($mainDivNodes->item(0), $url);
+                    \Log::debug("🔍 Extracted full main div content", [
+                        'url' => $url,
+                        'content_length' => strlen($mainContent)
+                    ]);
+                }
+            }
+        }
+        
+        // SPECIAL CASE: Cerca contenuto con classi specifiche (es. Comune Palmanova)
+        if (!$mainContent) {
+            $xpath = new \DOMXPath($dom);
+            
+            \Log::debug("🔍 Looking for special content containers", [
+                'url' => $url,
+                'dom_loaded' => $dom ? 'yes' : 'no'
+            ]);
+            
+            // Cerca div con classe "testolungo" (Palmanova specific)
+            $testoLungoNodes = $xpath->query("//div[contains(@class, 'testolungo')]");
+            \Log::debug("🔍 testolungo search result", [
+                'url' => $url,
+                'nodes_found' => $testoLungoNodes->length
+            ]);
+            
+            if ($testoLungoNodes->length > 0) {
+                $mainContent = $this->convertToMarkdown($testoLungoNodes->item(0), $url);
+                \Log::info("🎯 Extracted content from 'testolungo' div", [
+                    'url' => $url,
+                    'content_length' => strlen($mainContent),
+                    'content_preview' => substr($mainContent, 0, 200)
+                ]);
+            }
+            
+            // Fallback: Cerca div con classe "descrizione-modulo"
+            if (!$mainContent) {
+                $descrizioneNodes = $xpath->query("//div[contains(@class, 'descrizione-modulo')]");
+                \Log::debug("🔍 descrizione-modulo search result", [
+                    'url' => $url,
+                    'nodes_found' => $descrizioneNodes->length
+                ]);
+                
+                if ($descrizioneNodes->length > 0) {
+                    $mainContent = $this->convertToMarkdown($descrizioneNodes->item(0), $url);
+                    \Log::info("🎯 Extracted content from 'descrizione-modulo' div", [
+                        'url' => $url,
+                        'content_length' => strlen($mainContent)
+                    ]);
+                }
             }
         }
 
@@ -1431,8 +1567,12 @@ class WebScraperService
 
     private function createNewDocument(Tenant $tenant, array $result, string $markdownContent, string $contentHash): Document
     {
-        // Genera nome file unico
-        $baseFilename = Str::slug($result['title']);
+        // Genera nome file unico basato su URL + titolo per evitare duplicati
+        $urlSlug = $this->generateUniqueFilenameFromUrl($result['url']);
+        $titleSlug = Str::slug($result['title']);
+        
+        // Combina URL e titolo per nome più specifico
+        $baseFilename = $urlSlug . (!empty($titleSlug) ? '-' . substr($titleSlug, 0, 30) : '');
         $filename = $baseFilename . '-v1.md';
         $path = "scraped/{$tenant->id}/" . $filename;
 
@@ -1491,6 +1631,120 @@ class WebScraperService
         ]);
 
         return $document;
+    }
+
+    /**
+     * Genera un nome file unico dall'URL per evitare nomi duplicati
+     */
+    private function generateUniqueFilenameFromUrl(string $url): string
+    {
+        $parsedUrl = parse_url($url);
+        $domain = str_replace(['www.', '.'], ['', ''], $parsedUrl['host'] ?? 'unknown');
+        $path = $parsedUrl['path'] ?? '';
+        
+        // Estrai il segmento più significativo del percorso
+        $pathSegments = array_filter(explode('/', trim($path, '/')));
+        $pathSuffix = '';
+        
+        if (!empty($pathSegments)) {
+            // Prendi gli ultimi 2-3 segmenti del percorso per specificità
+            $relevantSegments = array_slice($pathSegments, -3);
+            $pathSuffix = '-' . implode('-', array_map(function($segment) {
+                // Pulisci e accorcia i segmenti
+                $clean = preg_replace('/[^a-zA-Z0-9-]/', '', $segment);
+                return substr($clean, 0, 15); // Max 15 chars per segmento
+            }, $relevantSegments));
+        }
+        
+        $baseFilename = $domain . $pathSuffix;
+        return substr($baseFilename, 0, 60); // Limite totale 60 chars
+    }
+
+    /**
+     * 🧠 Smart Content Extraction - Riconoscimento automatico pattern comuni
+     */
+    private function trySmartContentExtraction(string $html, string $url): ?array
+    {
+        \Log::debug("🧠 Starting smart content extraction", ['url' => $url]);
+
+        // Load content patterns from configuration (extensible and maintainable)
+        $contentPatterns = config('scraper-patterns.content_patterns', []);
+        
+        // Sort patterns by priority
+        usort($contentPatterns, fn($a, $b) => ($a['priority'] ?? 999) <=> ($b['priority'] ?? 999));
+
+        foreach ($contentPatterns as $pattern) {
+            if (preg_match($pattern['regex'], $html, $matches)) {
+                $extractedHtml = $matches[1];
+                
+                // Clean and process the extracted content
+                $cleanContent = $this->processExtractedContent($extractedHtml);
+                
+                if (strlen($cleanContent) >= $pattern['min_length']) {
+                    \Log::info("🎯 Smart extraction successful", [
+                        'url' => $url,
+                        'pattern' => $pattern['name'],
+                        'description' => $pattern['description'],
+                        'content_length' => strlen($cleanContent),
+                        'content_preview' => substr($cleanContent, 0, 200)
+                    ]);
+                    
+                    return [
+                        'title' => $this->extractTitleFromHtml($html) ?: parse_url($url, PHP_URL_HOST),
+                        'content' => $cleanContent
+                    ];
+                }
+                
+                \Log::debug("🔍 Pattern matched but content too short", [
+                    'url' => $url,
+                    'pattern' => $pattern['name'],
+                    'content_length' => strlen($cleanContent),
+                    'min_required' => $pattern['min_length']
+                ]);
+            }
+        }
+
+        \Log::debug("🔍 No smart patterns matched", ['url' => $url]);
+        return null;
+    }
+
+    /**
+     * 🧹 Process and clean extracted HTML content
+     */
+    private function processExtractedContent(string $html): string
+    {
+        // Get cleaning rules from configuration
+        $removeContainers = config('scraper-patterns.cleaning_rules.remove_containers', [
+            'nav', 'menu', 'sidebar', 'ads', 'banner', 'footer', 'header'
+        ]);
+        
+        // Build regex pattern for containers to remove
+        $containerPattern = implode('|', array_map('preg_quote', $removeContainers));
+        $html = preg_replace('/<div[^>]*class="[^"]*(?:' . $containerPattern . ')[^"]*"[^>]*>.*?<\/div>/is', '', $html);
+        
+        // Convert to clean text
+        $text = strip_tags($html);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/\s+/', ' ', trim($text));
+        
+        return $text;
+    }
+
+    /**
+     * 🏷️ Extract title from HTML
+     */
+    private function extractTitleFromHtml(string $html): ?string
+    {
+        if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $matches)) {
+            return trim(strip_tags($matches[1]));
+        }
+        
+        // Fallback: look for h1
+        if (preg_match('/<h1[^>]*>(.*?)<\/h1>/is', $html, $matches)) {
+            return trim(strip_tags($matches[1]));
+        }
+        
+        return null;
     }
 
     private function updateExistingDocument(Document $existingDocument, array $result, string $markdownContent, string $contentHash): void
@@ -1744,11 +1998,11 @@ class WebScraperService
                 // Crea una configurazione temporanea per questo scraping
                 $config = new ScraperConfig([
                     'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'timeout' => 90, // Aumentato per siti Angular complessi
+                    'timeout' => 150, // Same as debug command that works in development
                     'max_redirects' => 5,
                     'respect_robots' => false,
                     'rate_limit_rps' => 1,
-                    'render_js' => true, // ✅ FIX: Abilita rendering JavaScript per SPA
+                    'render_js' => true, // CRITICAL: Enable JavaScript rendering for SPA sites
                     'target_knowledge_base_id' => $knowledgeBaseId
                 ]);
             } else {
@@ -1756,6 +2010,9 @@ class WebScraperService
                 if ($knowledgeBaseId) {
                     $config->target_knowledge_base_id = $knowledgeBaseId;
                 }
+                // CRITICAL: Ensure JS rendering is enabled for existing configs too
+                $config->render_js = true;
+                $config->timeout = max($config->timeout, 150); // Ensure sufficient timeout
             }
 
             // Fetch e estrazione contenuto
