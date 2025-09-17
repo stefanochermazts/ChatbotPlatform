@@ -159,3 +159,5 @@ class DebugPalmanovaRendering extends Command
         }
     }
 }
+
+

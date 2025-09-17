@@ -76,3 +76,5 @@ class TestScraperLogging extends Command
         return 0;
     }
 }
+
+

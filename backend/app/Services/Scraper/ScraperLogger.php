@@ -183,3 +183,5 @@ class ScraperLogger
         Log::channel(self::CHANNEL)->warning("⚠️ [WARNING] $message", $fullContext);
     }
 }
+
+

@@ -192,45 +192,171 @@ const fs = require('fs');
     // Attendi che Angular/SPA sia completamente caricato
     console.log('⏳ Waiting for JavaScript rendering...');
     
-    // Strategy 1: Wait for main content to appear
+    // Strategy 1: Wait for actual content, not just page load
+    let contentFound = false;
     try {
       await page.waitForFunction(() => {
         const body = document.querySelector('body');
-        const hasMainContent = body && body.textContent.length > 1000; // Sufficient content
-        const noLoadingIndicators = !body.textContent.includes('Loading') && 
-                                   !body.textContent.includes('Caricamento') &&
-                                   !body.textContent.includes('Please enable JavaScript') &&
-                                   !body.textContent.includes('JavaScript to continue');
+        if (!body) return false;
         
-        console.log('Content check:', {
-          contentLength: body ? body.textContent.length : 0,
+        const bodyText = body.textContent || '';
+        
+        // Check for meaningful content indicators (not just JavaScript)
+        const hasRealContent = bodyText.length > 5000; // More content needed
+        const hasSpecificContent = bodyText.toLowerCase().includes('pedibus') ||
+                                  bodyText.toLowerCase().includes('attivazione') ||
+                                  bodyText.toLowerCase().includes('servizio');
+        
+        // Avoid JavaScript-heavy content
+        const jsCodeRatio = (bodyText.match(/function|var |const |let |if\s*\(/g) || []).length;
+        const hasLowJsRatio = jsCodeRatio < 50; // Less JS code
+        
+        // Check for navigation/content structure
+        const hasNavigation = document.querySelector('nav, .nav, .menu') !== null;
+        const hasMainContent = document.querySelector('main, article, .content, .text') !== null;
+        
+        const result = hasRealContent && hasLowJsRatio && (hasSpecificContent || hasNavigation || hasMainContent);
+        
+        console.log('Enhanced content check:', {
+          contentLength: bodyText.length,
+          hasRealContent,
+          hasSpecificContent,
+          jsCodeCount: jsCodeRatio,
+          hasLowJsRatio,
+          hasNavigation,
           hasMainContent,
-          noLoadingIndicators,
-          readyState: document.readyState
+          readyState: document.readyState,
+          finalResult: result
         });
         
-        return hasMainContent && noLoadingIndicators && document.readyState === 'complete';
-      }, { timeout: 25000 });
+        return result;
+      }, { timeout: 35000 }); // Increased timeout
       
-      console.log('✅ Angular content loaded successfully');
+      contentFound = true;
+      console.log('✅ Real Angular content loaded successfully');
     } catch (e) {
-      console.log('⚠️ Timeout waiting for main content, trying fallback...');
+      console.log('⚠️ Timeout waiting for real content, trying specific selectors...');
       
-      // Strategy 2: Wait for specific Angular elements
+      // Strategy 2: Wait for specific content indicators
       try {
-        await page.waitForSelector('main, article, .content, .main-content, [role="main"]', { timeout: 10000 });
-        console.log('✅ Found main content selector');
+        // Try multiple strategies in sequence
+        await page.waitForFunction(() => {
+          const textContent = document.body.textContent || '';
+          return textContent.toLowerCase().includes('pedibus') && 
+                 textContent.toLowerCase().includes('attivazione') &&
+                 textContent.length > 2000;
+        }, { timeout: 15000 });
+        
+        contentFound = true;
+        console.log('✅ Found specific Pedibus content');
       } catch (e2) {
-        console.log('⚠️ No main content selectors found, proceeding with current state...');
+        console.log('⚠️ Specific content not found, trying selectors...');
+        
+        try {
+          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: 10000 });
+          contentFound = true;
+          console.log('✅ Found content container selector');
+        } catch (e3) {
+          console.log('⚠️ No content containers found, proceeding anyway...');
+        }
       }
     }
     
-    // Attendi ulteriori 5 secondi per lazy loading e AJAX calls
-    console.log('⏳ Waiting for lazy loading...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // If content not found with normal waiting, try interaction
+    if (!contentFound) {
+      console.log('🔄 Trying to trigger content loading with interactions...');
+      
+      // Try scrolling to different positions
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight / 3);
+      });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight / 2);
+      });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Try clicking on potential navigation elements
+      try {
+        const navElements = await page.$$('a, button, .nav-item, .menu-item');
+        if (navElements.length > 0) {
+          console.log('Found ' + navElements.length + ' navigation elements');
+        }
+      } catch (e) {
+        console.log('No navigation elements found');
+      }
+    }
     
-    // Estrai contenuto HTML completo
+    // Final wait for any remaining async content
+    console.log('⏳ Final wait for content stabilization...');
+    await new Promise(resolve => setTimeout(resolve, contentFound ? 3000 : 8000));
+    
+    // Estrai contenuto HTML completo con pulizia selettiva
     console.log('📝 Extracting content...');
+    
+    // Try to extract meaningful content first
+    let cleanedContent = null;
+    try {
+      cleanedContent = await page.evaluate(() => {
+        // Remove script tags and their content
+        const scripts = document.querySelectorAll('script');
+        scripts.forEach(script => script.remove());
+        
+        // Remove style tags
+        const styles = document.querySelectorAll('style');
+        styles.forEach(style => style.remove());
+        
+        // Try to find main content containers
+        const selectors = [
+          'main',
+          'article', 
+          '.content',
+          '.main-content',
+          '.post-content',
+          '.article-content',
+          '[role="main"]',
+          '.news-content',
+          '.page-content'
+        ];
+        
+        let mainContent = null;
+        for (const selector of selectors) {
+          const element = document.querySelector(selector);
+          if (element && element.textContent.trim().length > 500) {
+            mainContent = element;
+            break;
+          }
+        }
+        
+        if (mainContent) {
+          console.log('Found main content container:', mainContent.tagName);
+          return mainContent.outerHTML;
+        } else {
+          // Fallback: return body with scripts removed
+          console.log('No main content container found, using cleaned body');
+          return document.body.outerHTML;
+        }
+      });
+      
+      if (cleanedContent && !cleanedContent.includes('var global = window')) {
+        console.log('✅ Using cleaned content extraction');
+        // Save cleaned content
+        fs.writeFileSync('$outputPath', cleanedContent, 'utf8');
+        console.log('✅ Cleaned content extracted successfully');
+        return;
+      }
+    } catch (e) {
+      console.log('⚠️ Cleaned extraction failed:', e.message);
+    }
+    
+    // Fallback to full page content
+    console.log('📄 Using full page content');
     const content = await page.content();
     
     // Salva contenuto
