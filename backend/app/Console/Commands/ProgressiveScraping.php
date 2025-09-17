@@ -9,6 +9,7 @@ use App\Models\Document;
 use App\Services\Scraper\WebScraperService;
 use App\Jobs\IngestUploadedDocumentJob;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class ProgressiveScraping extends Command
 {
@@ -201,22 +202,38 @@ class ProgressiveScraping extends Command
             $result = $scraperService->scrapeSingleUrl($tenantId, $url, false, null);
             
             if ($result && isset($result['success']) && $result['success']) {
-                if (isset($result['document'])) {
-                    $document = $result['document'];
-                    $this->line("   ✅ Scraped successfully (ID: {$document->id})");
+                // For scrapeSingleUrl, we need to find the created document by URL
+                if (isset($result['document']) && is_array($result['document']) && isset($result['document']['url'])) {
+                    $documentUrl = $result['document']['url'];
                     
-                    // Trigger immediate ingestion
-                    IngestUploadedDocumentJob::dispatch($document->id);
-                    $this->line("   🔄 Ingestion job dispatched");
+                    // Find the most recently created document with this URL
+                    $document = Document::where('tenant_id', $tenantId)
+                        ->where('source_url', $documentUrl)
+                        ->orderBy('created_at', 'desc')
+                        ->first();
                     
-                    $this->stats['new']++;
-                    $this->stats['ingested']++;
+                    if ($document) {
+                        $this->line("   ✅ Scraped successfully (ID: {$document->id})");
+                        $this->line("   📄 Title: " . Str::limit($document->title, 50));
+                        
+                        // Trigger immediate ingestion
+                        IngestUploadedDocumentJob::dispatch($document->id);
+                        $this->line("   🔄 Ingestion job dispatched");
+                        
+                        $this->stats['new']++;
+                        $this->stats['ingested']++;
+                    } else {
+                        $this->line("   ⚠️  Document created but not found in database");
+                        $this->line("   🔍 URL: {$documentUrl}");
+                        $this->stats['errors']++;
+                    }
                 } else {
-                    $this->line("   ✅ Processed but no new document created");
+                    $this->line("   ✅ Processed but no document data returned");
+                    $this->line("   🔍 Result keys: " . implode(', ', array_keys($result)));
                     $this->stats['skipped']++;
                 }
             } else {
-                $errorMsg = $result['message'] ?? 'Unknown error';
+                $errorMsg = $result['message'] ?? ($result['error'] ?? 'Unknown error');
                 $this->line("   ❌ Failed: {$errorMsg}");
                 $this->stats['errors']++;
             }
