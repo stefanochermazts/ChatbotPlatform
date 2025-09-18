@@ -126,7 +126,7 @@ const puppeteer = require('puppeteer');
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
   const page = await browser.newPage();
-  await page.goto('https://example.com');
+  await page.goto('https://www.google.com');
   console.log('✅ Puppeteer functional test PASSED');
   await browser.close();
 })().catch(err => {
