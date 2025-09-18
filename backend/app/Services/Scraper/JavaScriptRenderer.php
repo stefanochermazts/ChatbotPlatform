@@ -209,6 +209,32 @@ const fs = require('fs');
         console.log('ℹ️ No browser warning to close');
       }
       
+      // 🚀 ENHANCED: Special handling for homepage navigation
+      if ('$url' === 'https://www.comune.palmanova.ud.it/' || '$url'.endsWith('comune.palmanova.ud.it/')) {
+        console.log('🏠 Homepage detected - waiting for navigation menu...');
+        
+        // Wait longer for Angular router to load navigation
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Try to trigger menu/navigation loading
+        try {
+          await page.evaluate(() => {
+            // Look for hamburger menu or navigation triggers
+            const menuTriggers = document.querySelectorAll('button[aria-label*="menu"], .menu-toggle, .nav-toggle, [role="button"]');
+            menuTriggers.forEach(trigger => trigger.click());
+            
+            // Scroll to trigger lazy loading
+            window.scrollTo(0, document.body.scrollHeight / 4);
+            window.scrollTo(0, document.body.scrollHeight / 2);
+            window.scrollTo(0, 0);
+          });
+          console.log('🎯 Triggered navigation interactions');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (e) {
+          console.log('ℹ️ Navigation interaction failed:', e.message);
+        }
+      }
+      
       // Try to trigger content loading by scrolling
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight / 2);
