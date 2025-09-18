@@ -414,7 +414,14 @@ class ChatCompletionsController extends Controller
     // RIMOSSO: Metodi di prioritizzazione personalizzati - usa logica RAG Tester
 
     /**
-     * Trova il source_url del documento con la confidenza più alta
+     * 🧠 Trova la fonte principale usando algoritmo intelligente multi-fattore
+     * 
+     * Considera:
+     * - Semantic relevance: quanto il contenuto è rilevante alla domanda
+     * - Intent matching: se contiene informazioni specifiche (telefono, email, etc.)
+     * - Content quality: completezza e qualità del contenuto
+     * - Source authority: priorità per tipo documento/fonte
+     * - RAG score: score originale come fattore base
      */
     private function getBestSourceUrl(array $citations): ?string
     {
@@ -422,20 +429,223 @@ class ChatCompletionsController extends Controller
             return null;
         }
 
+        // Se c'è una sola citazione, restituiscila
+        if (count($citations) === 1) {
+            return $citations[0]['document_source_url'] ?? null;
+        }
+
         $bestCitation = null;
         $bestScore = -1;
 
         foreach ($citations as $citation) {
-            // Usa il campo score se disponibile, altrimenti usa 1.0 come default
-            $score = (float) ($citation['score'] ?? 1.0);
+            if (empty($citation['document_source_url'])) {
+                continue; // Skip se non ha URL origine
+            }
+
+            $finalScore = $this->calculateSmartSourceScore($citation, $citations);
             
-            if ($score > $bestScore && !empty($citation['document_source_url'])) {
-                $bestScore = $score;
+            if ($finalScore > $bestScore) {
+                $bestScore = $finalScore;
                 $bestCitation = $citation;
             }
         }
 
+        // Log della selezione per debugging
+        \Log::info("🎯 [SMART-SOURCE] Fonte principale selezionata", [
+            'selected_url' => $bestCitation['document_source_url'] ?? 'none',
+            'selected_score' => round($bestScore, 3),
+            'total_candidates' => count(array_filter($citations, fn($c) => !empty($c['document_source_url']))),
+            'selection_factors' => $bestCitation ? $this->getScoreBreakdown($bestCitation, $citations) : []
+        ]);
+
         return $bestCitation['document_source_url'] ?? null;
+    }
+
+    /**
+     * 🧮 Calcola score intelligente per una citazione considerando tutti i fattori
+     */
+    private function calculateSmartSourceScore(array $citation, array $allCitations): float
+    {
+        $score = 0.0;
+        $weights = [
+            'rag_score' => 0.35,        // Score RAG originale (35%)
+            'content_quality' => 0.25,   // Qualità contenuto (25%)
+            'intent_match' => 0.20,      // Match intent specifico (20%)
+            'source_authority' => 0.15,  // Autorità fonte (15%)
+            'semantic_relevance' => 0.05 // Rilevanza semantica (5%)
+        ];
+
+        // 1. 📊 RAG Score (vettoriale + BM25 fusion)
+        $ragScore = (float) ($citation['score'] ?? 0.0);
+        $score += $ragScore * $weights['rag_score'];
+
+        // 2. 📝 Content Quality Score
+        $contentQualityScore = $this->calculateContentQualityScore($citation);
+        $score += $contentQualityScore * $weights['content_quality'];
+
+        // 3. 🎯 Intent Match Score  
+        $intentMatchScore = $this->calculateIntentMatchScore($citation);
+        $score += $intentMatchScore * $weights['intent_match'];
+
+        // 4. 🏛️ Source Authority Score
+        $sourceAuthorityScore = $this->calculateSourceAuthorityScore($citation);
+        $score += $sourceAuthorityScore * $weights['source_authority'];
+
+        // 5. 🔍 Semantic Relevance Score (basato su posizione nella lista)
+        $semanticRelevanceScore = $this->calculateSemanticRelevanceScore($citation, $allCitations);
+        $score += $semanticRelevanceScore * $weights['semantic_relevance'];
+
+        return $score;
+    }
+
+    /**
+     * 📝 Calcola score qualità contenuto
+     */
+    private function calculateContentQualityScore(array $citation): float
+    {
+        $score = 0.0;
+        
+        // Lunghezza chunk (contenuto più lungo = più informativo)
+        $chunkText = $citation['chunk_text'] ?? $citation['snippet'] ?? '';
+        $textLength = mb_strlen($chunkText);
+        if ($textLength > 800) $score += 0.3;
+        elseif ($textLength > 400) $score += 0.2;
+        elseif ($textLength > 200) $score += 0.1;
+
+        // Completezza snippet
+        $snippet = $citation['snippet'] ?? '';
+        if (mb_strlen($snippet) > 150) $score += 0.2;
+
+        // Presenza title significativo
+        $title = $citation['title'] ?? '';
+        if (!empty($title) && mb_strlen($title) > 10) $score += 0.2;
+
+        // Contenuto strutturato (evidenze di lista, paragrafi, etc.)
+        if (preg_match('/[-•·]\s+|\d+\.\s+|\n\s*\n/', $chunkText)) $score += 0.15;
+
+        // Presenza informazioni specifiche
+        if (preg_match('/\b(?:telefono|email|indirizzo|orari?|contatti?)\b/i', $chunkText)) $score += 0.15;
+
+        return min(1.0, $score); // Cap a 1.0
+    }
+
+    /**
+     * 🎯 Calcola score match intent specifico
+     */
+    private function calculateIntentMatchScore(array $citation): float
+    {
+        $score = 0.0;
+        
+        // Campi intent specifici presenti
+        $intentFields = ['phone', 'email', 'address', 'schedule'];
+        foreach ($intentFields as $field) {
+            if (!empty($citation[$field])) {
+                $score += 0.25; // 25% per ogni tipo intent
+            }
+        }
+
+        // Bonus se ha più tipi di contatto
+        $contactTypes = array_filter($intentFields, fn($f) => !empty($citation[$f]));
+        if (count($contactTypes) >= 2) $score += 0.1;
+
+        // Pattern content matching
+        $chunkText = $citation['chunk_text'] ?? $citation['snippet'] ?? '';
+        
+        // Telefoni
+        if (preg_match('/(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/', $chunkText)) $score += 0.1;
+        
+        // Email
+        if (preg_match('/@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', $chunkText)) $score += 0.1;
+        
+        // Indirizzi
+        if (preg_match('/\b(?:via|viale|piazza|corso|largo)\s+[A-Z]/i', $chunkText)) $score += 0.1;
+        
+        // Orari strutturati
+        if (preg_match('/\d{1,2}[:\.]?\d{0,2}\s*[-–—]\s*\d{1,2}[:\.]?\d{0,2}/', $chunkText)) $score += 0.1;
+
+        return min(1.0, $score); // Cap a 1.0
+    }
+
+    /**
+     * 🏛️ Calcola score autorità fonte
+     */
+    private function calculateSourceAuthorityScore(array $citation): float
+    {
+        $score = 0.0;
+        
+        $sourceUrl = $citation['document_source_url'] ?? '';
+        $documentType = $citation['document_type'] ?? '';
+        $title = $citation['title'] ?? '';
+
+        // Bonus per domini governativi/istituzionali
+        if (preg_match('/\.(gov|edu|org|comune\.|provincia\.|regione\.)/i', $sourceUrl)) {
+            $score += 0.4;
+        }
+
+        // Bonus per tipo documento
+        switch (strtolower($documentType)) {
+            case 'pdf': $score += 0.2; break;  // PDF spesso più formali
+            case 'doc':
+            case 'docx': $score += 0.15; break;
+            case 'txt':
+            case 'md': $score += 0.1; break;
+        }
+
+        // Bonus per URL con path specifici (non homepage)
+        if (preg_match('/\/[^\/]+\/[^\/]+/', $sourceUrl)) {
+            $score += 0.15;
+        }
+
+        // Bonus per titoli istituzionali
+        if (preg_match('/\b(?:comune|provincia|regione|ufficio|servizio|informazioni)\b/i', $title)) {
+            $score += 0.15;
+        }
+
+        // Malus per URL molto lunghe (spesso auto-generate)
+        if (mb_strlen($sourceUrl) > 150) {
+            $score -= 0.1;
+        }
+
+        return max(0.0, min(1.0, $score)); // Tra 0 e 1
+    }
+
+    /**
+     * 🔍 Calcola score rilevanza semantica (basato su posizione)
+     */
+    private function calculateSemanticRelevanceScore(array $citation, array $allCitations): float
+    {
+        $citationId = $citation['id'] ?? 0;
+        $chunkIndex = $citation['chunk_index'] ?? 0;
+        
+        // Trova posizione nella lista (posizioni più alte = più rilevanti)
+        foreach ($allCitations as $index => $c) {
+            if (($c['id'] ?? 0) === $citationId && ($c['chunk_index'] ?? 0) === $chunkIndex) {
+                $position = $index + 1;
+                $totalCitations = count($allCitations);
+                
+                // Score inverso: primi risultati hanno score più alto
+                return max(0.0, 1.0 - ($position - 1) / max(1, $totalCitations - 1));
+            }
+        }
+        
+        return 0.5; // Default se non trovato
+    }
+
+    /**
+     * 📊 Ottieni breakdown dettagliato del score per debugging
+     */
+    private function getScoreBreakdown(array $citation, array $allCitations): array
+    {
+        return [
+            'rag_score' => round((float) ($citation['score'] ?? 0.0), 3),
+            'content_quality' => round($this->calculateContentQualityScore($citation), 3),
+            'intent_match' => round($this->calculateIntentMatchScore($citation), 3),
+            'source_authority' => round($this->calculateSourceAuthorityScore($citation), 3),
+            'semantic_relevance' => round($this->calculateSemanticRelevanceScore($citation, $allCitations), 3),
+            'document_type' => $citation['document_type'] ?? 'unknown',
+            'title_preview' => mb_substr($citation['title'] ?? '', 0, 50),
+            'content_length' => mb_strlen($citation['chunk_text'] ?? $citation['snippet'] ?? ''),
+        ];
     }
 }
 
