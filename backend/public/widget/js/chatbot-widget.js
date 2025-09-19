@@ -424,21 +424,17 @@
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
       // 6a. Fix link markdown malformati (senza parentesi di chiusura)
-      // Cerca pattern come [text](url alla fine di riga o prima di whitespace
-      html = html.replace(/\[([^\]]+)\]\(([^)\s]+)(?=\s|$)/g, (match, text, url) => {
-        // Solo se l'URL sembra valido (non è già completo)
-        if (!url.endsWith(')') && (url.startsWith('http') || url.startsWith('www.'))) {
-          console.info('🔧 Fixing malformed markdown link:', match);
-          return `[${text}](${url})`;
-        }
-        return match;
+      // Pattern più aggressivo: cerca [text](url_senza_parentesi_finale seguita da fine riga o spazio
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)(?=\s|$|\n)/g, (match, text, url) => {
+        console.info('🔧 Fixing malformed markdown link:', match, '→', `[${text}](${url})`);
+        return `[${text}](${url})`;
       });
 
       // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
       // FIXED: Pattern più robusto per evitare malformazioni
       html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
-        // Pulisce l'URL rimuovendo spazi e caratteri finali problematici
-        const cleanUrl = url.trim().replace(/[.,;:!?)"'>]+$/, '');
+        // Pulisce l'URL rimuovendo spazi e caratteri finali problematici (ESCLUSA parentesi)
+        const cleanUrl = url.trim().replace(/[.,;:!?"'>]+$/, ''); // Rimossa ) dal pattern di cleanup
         
         // Validazione URL più robusta
         let finalUrl;

@@ -265,7 +265,7 @@ IMPORTANTE per i link:
             $payload = [
                 'model' => (string) config('openai.chat_model', 'gpt-4o-mini'),
                 'messages' => $messages,
-                'max_tokens' => (int) ($data['max_output_tokens'] ?? config('openai.max_output_tokens', 700)),
+                'max_tokens' => (int) ($data['max_output_tokens'] ?? config('openai.max_output_tokens', 1000)), // ⚡ Increased to prevent link truncation
             ];
             
             // ⏱️ Profiling LLM Generation

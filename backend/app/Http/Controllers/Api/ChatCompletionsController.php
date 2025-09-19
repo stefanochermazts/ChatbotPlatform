@@ -180,7 +180,7 @@ class ChatCompletionsController extends Controller
         
         // Max tokens: da widget config se non specificato
         if (!isset($payload['max_tokens']) && !isset($payload['max_completion_tokens'])) {
-            $payload['max_tokens'] = (int) ($widgetConfig['max_tokens'] ?? 800);
+            $payload['max_tokens'] = (int) ($widgetConfig['max_tokens'] ?? 1000); // ⚡ Increased from 800 to prevent link truncation
         }
 
         // Inserisci system prompt: custom del tenant oppure default migliorato

@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.2.2.' + Date.now(), // 🔧 Fix link markdown malformati + prompt San Cesareo
+        version: '1.2.4.' + Date.now(), // 🔧 FIXED: Regex cleanup rimuoveva ) dagli URL
         
         // Files to load
         files: {
