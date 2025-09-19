@@ -4,7 +4,7 @@ namespace App\Services\Scraper;
 
 class JavaScriptRenderer
 {
-    public function renderUrl(string $url, int $timeout = 60): ?string
+    public function renderUrl(string $url, int $timeout = 30): ?string
     {
         try {
             $timeoutMs = $timeout * 1000;
@@ -291,7 +291,7 @@ const fs = require('fs');
         });
         
         return result;
-      }, { timeout: 60000 }); // Much longer timeout for complex Angular sites
+      }, { timeout: 30000 }); // ⚡ OPTIMIZED: Reduced timeout with improved patterns
       
       contentFound = true;
       console.log('✅ Real Angular content loaded successfully');
@@ -306,7 +306,7 @@ const fs = require('fs');
           return textContent.toLowerCase().includes('pedibus') && 
                  textContent.toLowerCase().includes('attivazione') &&
                  textContent.length > 2000;
-        }, { timeout: 30000 });
+        }, { timeout: 20000 }); // ⚡ OPTIMIZED: Reduced from 30s
         
         contentFound = true;
         console.log('✅ Found specific Pedibus content');
@@ -314,7 +314,7 @@ const fs = require('fs');
         console.log('⚠️ Specific content not found, trying selectors...');
         
         try {
-          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: 20000 });
+          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: 15000 }); // ⚡ OPTIMIZED
           contentFound = true;
           console.log('✅ Found content container selector');
         } catch (e3) {

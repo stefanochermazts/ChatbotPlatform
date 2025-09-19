@@ -30,13 +30,24 @@ trait HandlesFailureGracefully
         $errorType = $this->categorizeError($exception);
         $tenantId = $this->getTenantId();
         
-        Log::warning("Job fallito ma continuando elaborazione", [
-            'job_class' => static::class,
-            'tenant_id' => $tenantId,
-            'error_type' => $errorType,
-            'error_message' => $exception->getMessage(),
-            'attempts' => $this->getJobAttempts(),
-        ]);
+        // 🔑 Gestisci UUID duplicato per failed_jobs
+        try {
+            Log::warning("Job fallito ma continuando elaborazione", [
+                'job_class' => static::class,
+                'tenant_id' => $tenantId,
+                'error_type' => $errorType,
+                'error_message' => $exception->getMessage(),
+                'attempts' => $this->getJobAttempts(),
+            ]);
+        } catch (\Illuminate\Database\QueryException $logException) {
+            // Se anche il log fallisce per UUID duplicate, ignora silenziosamente
+            if (str_contains($logException->getMessage(), 'failed_jobs_uuid_unique')) {
+                // Job già registrato come fallito, continua senza duplicare
+                return;
+            }
+            // Altri errori di DB, rilancia
+            throw $logException;
+        }
 
         // Incrementa contatore errori per questo tenant
         $errorCount = $this->incrementErrorCount($tenantId, $errorType);
@@ -79,6 +90,10 @@ trait HandlesFailureGracefully
         
         if (str_contains($message, 'timeout') || str_contains($message, 'curl')) {
             return 'network_timeout';
+        }
+        
+        if (str_contains($message, 'timed out') || str_contains($class, 'TimeoutExceeded')) {
+            return 'job_timeout';
         }
         
         if (str_contains($message, '404') || str_contains($message, '403')) {

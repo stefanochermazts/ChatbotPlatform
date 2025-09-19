@@ -22,6 +22,8 @@ class WebScraperService
     private array $visitedUrls = [];
     private array $results = [];
     private array $stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
+    private float $startTime;
+    private int $maxExecutionTime = 6000; // 100 minuti (prima del timeout del job)
     private ?ContentQualityAnalyzer $qualityAnalyzer = null;
     private ?ScraperProgress $progress = null;
     private array $urlsQueue = [];
@@ -49,6 +51,7 @@ class WebScraperService
         }
 
         // 🚀 Log avvio sessione di scraping
+        $this->startTime = microtime(true);
         ScraperLogger::sessionStarted($this->sessionId, $tenantId, $config->name);
         
         // Inizializza progress tracking
@@ -95,6 +98,17 @@ class WebScraperService
 
     private function scrapeRecursive(string $url, ScraperConfig $config, Tenant $tenant, int $depth): void
     {
+        // ⏰ Controllo timeout preventivo
+        if (isset($this->startTime) && (microtime(true) - $this->startTime) > $this->maxExecutionTime) {
+            \Log::warning("🕐 Scraping stopped - max execution time reached", [
+                'session_id' => $this->sessionId,
+                'elapsed_seconds' => round(microtime(true) - $this->startTime),
+                'max_seconds' => $this->maxExecutionTime,
+                'urls_processed' => count($this->visitedUrls)
+            ]);
+            return;
+        }
+        
         // Controlli di base
         if ($depth > $config->max_depth) return;
         if (in_array($url, $this->visitedUrls)) return;
@@ -213,8 +227,8 @@ class WebScraperService
         
         $startTime = microtime(true);
         $renderer = new JavaScriptRenderer();
-        // Use the same timeout as debug command (minimum 90s for Angular sites)
-        $timeout = max($config->timeout ?? 150, 90);
+        // ⚡ OPTIMIZED: Reduced timeout now that HTML-to-Markdown conversion is fixed
+        $timeout = max($config->timeout ?? 30, 30);
         
         $content = $renderer->renderUrl($url, $timeout);
         
@@ -2602,7 +2616,7 @@ class WebScraperService
                 // Crea una configurazione temporanea per questo scraping
                 $config = new ScraperConfig([
                     'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'timeout' => 150, // Same as debug command that works in development
+                    'timeout' => 30, // ⚡ OPTIMIZED: Reduced from 150s with improved patterns
                     'max_redirects' => 5,
                     'respect_robots' => false,
                     'rate_limit_rps' => 1,
@@ -2616,7 +2630,7 @@ class WebScraperService
                 }
                 // Always enable JS rendering for SPA sites; renderer will resolve Node binary robustly
                 $config->render_js = true;
-                $config->timeout = max($config->timeout, 150); // Ensure sufficient timeout
+                $config->timeout = max($config->timeout, 30); // ⚡ OPTIMIZED: Reduced timeout
             }
 
             // Fetch e estrazione contenuto
