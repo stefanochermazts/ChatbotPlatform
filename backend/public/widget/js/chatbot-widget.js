@@ -423,7 +423,18 @@
       html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
-      // 6. Links markdown [text](url) - gestisce URL completi e troncati  
+      // 6a. Fix link markdown malformati (senza parentesi di chiusura)
+      // Cerca pattern come [text](url alla fine di riga o prima di whitespace
+      html = html.replace(/\[([^\]]+)\]\(([^)\s]+)(?=\s|$)/g, (match, text, url) => {
+        // Solo se l'URL sembra valido (non è già completo)
+        if (!url.endsWith(')') && (url.startsWith('http') || url.startsWith('www.'))) {
+          console.info('🔧 Fixing malformed markdown link:', match);
+          return `[${text}](${url})`;
+        }
+        return match;
+      });
+
+      // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
       // FIXED: Pattern più robusto per evitare malformazioni
       html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
         // Pulisce l'URL rimuovendo spazi e caratteri finali problematici

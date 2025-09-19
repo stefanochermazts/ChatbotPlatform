@@ -221,10 +221,16 @@ class RagTestController extends Controller
                     if (!empty($c['schedule'])) {
                         $extra .= "\nOrario: ".$c['schedule'];
                     }
+                    // 🔗 Aggiungi URL fonte per evitare allucinazioni nei link  
+                    $sourceInfo = '';
+                    if (!empty($c['document_source_url'])) {
+                        $sourceInfo = "\n[Fonte: ".$c['document_source_url']."]";
+                    }
+                    
                     if ($content !== '') {
-                        $contextParts[] = "[".$title."]\n".$content.$extra;
+                        $contextParts[] = "[".$title."]\n".$content.$extra.$sourceInfo;
                     } elseif ($extra !== '') {
-                        $contextParts[] = "[".$title."]\n".$extra;
+                        $contextParts[] = "[".$title."]\n".$extra.$sourceInfo;
                     }
                 }
                 if ($contextParts !== []) {
@@ -244,7 +250,14 @@ class RagTestController extends Controller
             if ($tenant && !empty($tenant->custom_system_prompt)) {
                 $messages[] = ['role' => 'system', 'content' => $tenant->custom_system_prompt];
             } else {
-                $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". Riporta sempre le fonti (titoli) usate.'];
+                $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
+
+IMPORTANTE per i link:
+- Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
+- Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
+- NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
+- NON creare link se non conosci l\'URL esatto della fonte
+- Usa il titolo originale del documento, non descrizioni generiche'];
             }
             
             $messages[] = ['role' => 'user', 'content' => "Domanda: ".$data['query']."\n".$contextText];

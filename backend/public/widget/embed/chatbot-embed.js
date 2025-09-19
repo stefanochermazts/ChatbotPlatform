@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.2.1.' + Date.now(), // ⚡ Fine-tuned padding: 3px top/bottom/left, no word-wrap
+        version: '1.2.2.' + Date.now(), // 🔧 Fix link markdown malformati + prompt San Cesareo
         
         // Files to load
         files: {

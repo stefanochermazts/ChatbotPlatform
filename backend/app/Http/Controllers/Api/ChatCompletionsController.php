@@ -183,10 +183,17 @@ class ChatCompletionsController extends Controller
             $payload['max_tokens'] = (int) ($widgetConfig['max_tokens'] ?? 800);
         }
 
-        // Inserisci system prompt: custom del tenant oppure default come nel tester
+        // Inserisci system prompt: custom del tenant oppure default migliorato
         $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
             ? $tenant->custom_system_prompt
-            : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se il contesto contiene tabelle, estrai e formatta i dati in modo chiaro e leggibile. Se non sono sufficienti, rispondi: "Non lo so". Riporta sempre le fonti (titoli) usate.';
+            : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se il contesto contiene tabelle, estrai e formatta i dati in modo chiaro e leggibile. Se non sono sufficienti, rispondi: "Non lo so". 
+
+IMPORTANTE per i link:
+- Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
+- Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
+- NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
+- NON creare link se non conosci l\'URL esatto della fonte
+- Usa il titolo originale del documento, non descrizioni generiche';
         $payload['messages'] = array_merge([
             ['role' => 'system', 'content' => $systemPrompt],
         ], $payload['messages']);
@@ -339,10 +346,16 @@ class ChatCompletionsController extends Controller
                 if (!empty($c['schedule'])) {
                     $extra .= "\nOrario: " . $this->cleanUtf8($c['schedule']);
                 }
+                // 🔗 Aggiungi URL fonte per evitare allucinazioni nei link
+                $sourceInfo = '';
+                if (!empty($c['document_source_url'])) {
+                    $sourceInfo = "\n[Fonte: ".$this->cleanUtf8($c['document_source_url'])."]";
+                }
+                
                 if ($content !== '') {
-                    $contextParts[] = "[".$title."]\n".$content.$extra;
+                    $contextParts[] = "[".$title."]\n".$content.$extra.$sourceInfo;
                 } elseif ($extra !== '') {
-                    $contextParts[] = "[".$title."]\n".$extra;
+                    $contextParts[] = "[".$title."]\n".$extra.$sourceInfo;
                 }
             }
             if ($contextParts !== []) {
