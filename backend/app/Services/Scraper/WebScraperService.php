@@ -409,11 +409,7 @@ class WebScraperService
      */
     private function determineExtractionStrategy(array $analysis): string
     {
-        // SPECIAL CASE: Comune di Palmanova - force manual DOM extraction
-        if (isset($analysis['url']) && stripos($analysis['url'], 'comune.palmanova.ud.it') !== false) {
-            \Log::debug("🎯 Using manual DOM for Palmanova site", ['url' => $analysis['url']]);
-            return 'manual_dom_primary';
-        }
+        // Automatic strategy selection based on content analysis (no hardcoded domains)
         
         // Tabelle complesse = metodo manuale
         if ($analysis['has_complex_tables']) {
@@ -673,7 +669,7 @@ class WebScraperService
         // Prova a estrarre main content
         $mainContent = '';
         
-        // Cerca elementi con content principale - includi selettori CSS specifici per Palmanova
+        // Cerca elementi con content principale utilizzando selettori standard
         $contentSelectors = ['main', 'article'];
         foreach ($contentSelectors as $selector) {
                 $elements = $dom->getElementsByTagName($selector);
@@ -693,11 +689,11 @@ class WebScraperService
                     'nodes_found' => $mainDivNodes->length
                 ]);
                 
-                // For Palmanova, extract specifically the testolungo content from within main
-                $testoLungoInMain = $xpath->query(".//div[contains(@class, 'testolungo')]", $mainDivNodes->item(0));
-                if ($testoLungoInMain->length > 0) {
-                    $mainContent = $this->convertToMarkdown($testoLungoInMain->item(0), $url);
-                    \Log::info("🎯 Extracted testolungo content from within main div", [
+                // Extract semantic content containers from within main
+                $semanticContent = $xpath->query(".//div[contains(@class, 'testolungo') or contains(@class, 'content-main') or contains(@class, 'main-content')]", $mainDivNodes->item(0));
+                if ($semanticContent->length > 0) {
+                    $mainContent = $this->convertToMarkdown($semanticContent->item(0), $url);
+                    \Log::info("🎯 Extracted semantic content from within main div", [
                         'url' => $url,
                         'content_length' => strlen($mainContent)
                     ]);
@@ -712,25 +708,25 @@ class WebScraperService
             }
         }
         
-        // SPECIAL CASE: Cerca contenuto con classi specifiche (es. Comune Palmanova)
+        // FALLBACK: Cerca contenuto con classi semantiche comuni
         if (!$mainContent) {
             $xpath = new \DOMXPath($dom);
             
-            \Log::debug("🔍 Looking for special content containers", [
+            \Log::debug("🔍 Looking for semantic content containers", [
                 'url' => $url,
                 'dom_loaded' => $dom ? 'yes' : 'no'
             ]);
             
-            // Cerca div con classe "testolungo" (Palmanova specific)
-            $testoLungoNodes = $xpath->query("//div[contains(@class, 'testolungo')]");
-            \Log::debug("🔍 testolungo search result", [
+            // Cerca div con classi semantiche comuni (testolungo, content-main, article-body, etc.)
+            $semanticNodes = $xpath->query("//div[contains(@class, 'testolungo') or contains(@class, 'content-main') or contains(@class, 'article-body') or contains(@class, 'entry-content')]");
+            \Log::debug("🔍 semantic content search result", [
                 'url' => $url,
-                'nodes_found' => $testoLungoNodes->length
+                'nodes_found' => $semanticNodes->length
             ]);
             
-            if ($testoLungoNodes->length > 0) {
-                $mainContent = $this->convertToMarkdown($testoLungoNodes->item(0), $url);
-                \Log::info("🎯 Extracted content from 'testolungo' div", [
+            if ($semanticNodes->length > 0) {
+                $mainContent = $this->convertToMarkdown($semanticNodes->item(0), $url);
+                \Log::info("🎯 Extracted content from semantic container", [
                     'url' => $url,
                     'content_length' => strlen($mainContent),
                     'content_preview' => substr($mainContent, 0, 200)
@@ -1056,6 +1052,20 @@ class WebScraperService
         // Se non c'è href, restituisci solo il testo
         if (!$href) {
             return $this->escapeMarkdownCharsForLinkText($text);
+        }
+        
+        // 🔗 ENHANCED: Gestione link JavaScript per paginazione e navigazione
+        if (str_starts_with($href, 'javascript:')) {
+            // Per link di paginazione e navigazione, preserva il testo ma senza link
+            if ($text) {
+                $escapedText = $this->escapeMarkdownCharsForLinkText($text);
+                // Se è un numero o ha parole di navigazione, mantieni formattazione speciale
+                if (preg_match('/^\d+$/', $text) || in_array(strtolower($text), ['precedente', 'successivo', 'previous', 'next'])) {
+                    return "**{$escapedText}**"; // Bold per evidenziare elementi di navigazione
+                }
+                return $escapedText;
+            }
+            return '';
         }
         
         // Converti URL relativi in assoluti
@@ -1686,19 +1696,11 @@ class WebScraperService
             }
         }
         
-        // Check for specific domains that we know are SPA
-        $spaDetectionDomains = [
-            'comune.palmanova.ud.it',
-            // Add other known SPA domains here
-        ];
+        // Automatic SPA detection based on content analysis (no hardcoded domains)
+        $potentialSpaIndicators = [];
         
+        // SPA detection based on content, not domain
         $isDomainSpa = false;
-        foreach ($spaDetectionDomains as $domain) {
-            if (stripos($url, $domain) !== false) {
-                $isDomainSpa = true;
-                break;
-            }
-        }
         
         $isJsSite = $jsIndicatorCount >= 2 || $isDomainSpa;
         
@@ -1718,13 +1720,45 @@ class WebScraperService
     private function extractFromJavaScriptSite(string $html, string $url): ?array
     {
         try {
-            // Clean HTML first - remove scripts, styles, navigation
+            // 🚀 STEP 1: Try smart content extraction first (uses our Angular patterns!)
+            \Log::debug("🧠 [JS-EXTRACTION] Trying smart content extraction on JavaScript site", [
+                'url' => $url,
+                'input_html_length' => strlen($html),
+                'html_preview' => substr($html, 0, 300)
+            ]);
+            $smartResult = $this->trySmartContentExtraction($html, $url);
+            
+            if ($smartResult && strlen($smartResult['content']) > 100) {
+                \Log::info("🎯 [JS-EXTRACTION] Smart extraction successful", [
+                    'url' => $url,
+                    'pattern_used' => 'smart_patterns',
+                    'content_length' => strlen($smartResult['content']),
+                    'content_preview' => substr($smartResult['content'], 0, 200),
+                    'extraction_efficiency' => round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%'
+                ]);
+                return $smartResult;
+            }
+            
+            \Log::warning("⚠️ [JS-EXTRACTION] Smart extraction failed/insufficient, falling back to HTML-to-Markdown", [
+                'url' => $url,
+                'smart_content_length' => $smartResult ? strlen($smartResult['content']) : 0,
+                'input_html_length' => strlen($html),
+                'smart_efficiency' => $smartResult ? round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+            ]);
+            
+            // 🚀 STEP 2: Fallback to HTML-to-Markdown conversion
+            \Log::debug("🧹 [JS-EXTRACTION] Starting HTML cleaning phase", [
+                'url' => $url,
+                'original_html_length' => strlen($html)
+            ]);
             $cleanHtml = $this->cleanHtmlForMarkdown($html);
             
-            // 🚀 Use the SAME conversion method as normal sites (works perfectly!)
-            \Log::debug("🔄 Converting HTML to Markdown using existing convertToMarkdown method", [
+            $cleaningLoss = round((1 - (strlen($cleanHtml) / strlen($html))) * 100, 2);
+            \Log::debug("🔄 [JS-EXTRACTION] Converting HTML to Markdown using convertToMarkdown method", [
                 'url' => $url,
+                'original_html_length' => strlen($html),
                 'clean_html_length' => strlen($cleanHtml),
+                'cleaning_loss_percentage' => $cleaningLoss . '%',
                 'clean_html_preview' => substr($cleanHtml, 0, 300)
             ]);
             
@@ -1741,26 +1775,59 @@ class WebScraperService
                 $markdownContent = '';
             }
             
-            \Log::debug("📝 Raw markdown conversion result", [
+            $conversionLoss = round((1 - (strlen($markdownContent) / strlen($cleanHtml))) * 100, 2);
+            \Log::debug("📝 [JS-EXTRACTION] Raw markdown conversion result", [
                 'url' => $url,
+                'clean_html_length' => strlen($cleanHtml),
                 'raw_markdown_length' => strlen($markdownContent),
+                'conversion_loss_percentage' => $conversionLoss . '%',
                 'raw_markdown_preview' => substr($markdownContent, 0, 300)
             ]);
             
             // Clean up the markdown using the same method as normal sites
+            $preCleanupLength = strlen($markdownContent);
             $markdownContent = $this->cleanupContent($markdownContent);
+            $cleanupLoss = round((1 - (strlen($markdownContent) / $preCleanupLength)) * 100, 2);
+            
+            \Log::debug("🧽 [JS-EXTRACTION] Markdown cleanup completed", [
+                'url' => $url,
+                'pre_cleanup_length' => $preCleanupLength,
+                'post_cleanup_length' => strlen($markdownContent),
+                'cleanup_loss_percentage' => $cleanupLoss . '%'
+            ]);
             
             // Fix encoding issues (mojibake) 
+            $preEncodingLength = strlen($markdownContent);
             $markdownContent = $this->normalizeMarkdownEncoding($markdownContent);
+            $encodingChange = strlen($markdownContent) - $preEncodingLength;
+            
+            \Log::debug("🔤 [JS-EXTRACTION] Encoding normalization completed", [
+                'url' => $url,
+                'pre_encoding_length' => $preEncodingLength,
+                'post_encoding_length' => strlen($markdownContent),
+                'encoding_change_chars' => $encodingChange
+            ]);
             
             // Extract title
             $title = $this->extractTitleFromHtml($html) ?: parse_url($url, PHP_URL_HOST);
             
-            \Log::info("🚀 JavaScript site extraction successful", [
+            // 📊 Final comprehensive analysis
+            $totalLoss = round((1 - (strlen($markdownContent) / strlen($html))) * 100, 2);
+            $extractionMethod = strlen($markdownContent) > 100 ? 'html_to_markdown_fallback' : 'failed';
+            
+            \Log::info("🚀 [JS-EXTRACTION] JavaScript site extraction completed", [
                 'url' => $url,
                 'title' => $title,
-                'content_length' => strlen($markdownContent),
-                'content_preview' => substr($markdownContent, 0, 200)
+                'extraction_method' => $extractionMethod,
+                'final_content_length' => strlen($markdownContent),
+                'content_preview' => substr($markdownContent, 0, 200),
+                'total_loss_percentage' => $totalLoss . '%',
+                'process_summary' => [
+                    'original_html' => strlen($html) . ' chars',
+                    'after_cleaning' => strlen($cleanHtml) . ' chars (' . $cleaningLoss . '% loss)',
+                    'after_conversion' => strlen($markdownContent) . ' chars',
+                    'total_efficiency' => (100 - $totalLoss) . '%'
+                ]
             ]);
             
             return [
@@ -2019,7 +2086,7 @@ class WebScraperService
             "lâimposta" => "l'imposta",
             "unâ" => "un'",
             
-            // 🚀 FROM ACTUAL FILE: Additional patterns found in wwwcomunepalmanovaudit-v2.md
+            // Additional common mojibake patterns
             "lâavvio" => "l'avvio",
             "lâAnno" => "l'Anno", 
             "lâingresso" => "l'ingresso",
@@ -2105,16 +2172,7 @@ class WebScraperService
         // Load content patterns from configuration (extensible and maintainable)
         $contentPatterns = config('scraper-patterns.content_patterns', []);
         
-        // 🎯 PRIORITY: Tenant-specific patterns override global ones
-        $tenantPatterns = $this->getTenantExtractionPatterns();
-        if (!empty($tenantPatterns)) {
-            \Log::debug("🎯 Using tenant-specific patterns", [
-                'tenant_patterns_count' => count($tenantPatterns),
-                'global_patterns_count' => count($contentPatterns)
-            ]);
-            // Prepend tenant patterns (higher priority)
-            $contentPatterns = array_merge($tenantPatterns, $contentPatterns);
-        }
+        // ❌ RIMOSSO: Tenant-specific patterns non più supportati
         
         // Sort patterns by priority (ascending)
         usort($contentPatterns, fn($a, $b) => ($a['priority'] ?? 999) <=> ($b['priority'] ?? 999));
@@ -2136,7 +2194,7 @@ class WebScraperService
                             continue;
                         }
                         $extractedHtml = $m[1];
-                        $cleanContent = $this->processExtractedContent($extractedHtml);
+                        $cleanContent = $this->processExtractedContent($extractedHtml, $url);
                         if (strlen($cleanContent) >= max(60, $minLen)) {
                             $collectedParts[] = $cleanContent;
                             $matchedDetails[] = [
@@ -2186,30 +2244,12 @@ class WebScraperService
         return null;
     }
 
-    /**
-     * 🎯 Get tenant-specific extraction patterns from current scraping context
-     */
-    private function getTenantExtractionPatterns(): array
-    {
-        if (!$this->currentConfig || empty($this->currentConfig->extraction_patterns)) {
-            return [];
-        }
-
-        $patterns = $this->currentConfig->extraction_patterns;
-        
-        \Log::debug("🎯 Loading tenant-specific patterns", [
-            'tenant_id' => $this->currentConfig->tenant_id,
-            'config_id' => $this->currentConfig->id,
-            'patterns_count' => count($patterns)
-        ]);
-
-        return $patterns;
-    }
+    // ❌ RIMOSSO: getTenantExtractionPatterns() - metodo non più necessario
 
     /**
      * 🧹 Process and clean extracted HTML content
      */
-    private function processExtractedContent(string $html): string
+    private function processExtractedContent(string $html, string $url = ''): string
     {
         // Get cleaning rules from configuration
         $removeContainers = config('scraper-patterns.cleaning_rules.remove_containers', [
@@ -2220,12 +2260,58 @@ class WebScraperService
         $containerPattern = implode('|', array_map('preg_quote', $removeContainers));
         $html = preg_replace('/<div[^>]*class="[^"]*(?:' . $containerPattern . ')[^"]*"[^>]*>.*?<\/div>/is', '', $html);
         
-        // Convert to clean text
+        // 🔗 PRESERVE LINKS: Convert HTML to markdown to preserve links before stripping tags
+        try {
+            $dom = new \DOMDocument();
+            libxml_use_internal_errors(true);
+            
+            // Ensure proper HTML structure
+            $wrappedHtml = '<html><body>' . $html . '</body></html>';
+            $dom->loadHTML($wrappedHtml, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
+            libxml_clear_errors();
+            
+            $bodyElements = $dom->getElementsByTagName('body');
+            if ($bodyElements->length > 0) {
+                // Convert HTML to markdown preserving links
+                $baseUrl = $url ? $this->extractBaseUrl($url) : '';
+                $markdown = $this->convertToMarkdown($bodyElements->item(0), $baseUrl);
+                
+                // Clean up the markdown
+                $markdown = html_entity_decode($markdown, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $markdown = preg_replace('/\s+/', ' ', trim($markdown));
+                
+                return $markdown;
+            }
+        } catch (\Exception $e) {
+            \Log::warning("🔗 HTML to markdown conversion failed in processExtractedContent", [
+                'error' => $e->getMessage(),
+                'html_length' => strlen($html)
+            ]);
+        }
+        
+        // Fallback: Convert to clean text (old behavior)
         $text = strip_tags($html);
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/\s+/', ' ', trim($text));
         
         return $text;
+    }
+
+    /**
+     * 🌐 Extract base URL from full URL for relative link resolution
+     */
+    private function extractBaseUrl(string $url): string
+    {
+        $parsed = parse_url($url);
+        if (!$parsed) {
+            return '';
+        }
+        
+        $scheme = $parsed['scheme'] ?? 'https';
+        $host = $parsed['host'] ?? '';
+        $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+        
+        return $scheme . '://' . $host . $port;
     }
 
     /**

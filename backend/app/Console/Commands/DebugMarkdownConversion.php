@@ -49,9 +49,6 @@ class DebugMarkdownConversion extends Command
             
             if ($config) {
                 $this->line("✅ Using tenant scraper config: {$config->name}");
-                if (!empty($config->extraction_patterns)) {
-                    $this->line("🎯 Custom extraction patterns found: " . count($config->extraction_patterns));
-                }
             } else {
                 $this->warn("⚠️  No tenant scraper config found - using global patterns only");
             }

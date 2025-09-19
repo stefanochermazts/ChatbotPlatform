@@ -261,11 +261,7 @@ class RagTestController extends Controller
             $llmTime = round((microtime(true) - $llmStart) * 1000, 2);
             $answer = $rawResponse['choices'][0]['message']['content'] ?? '';
             
-            // 🆕 Aggiungi source_url del documento con confidenza più alta se disponibile
-            $bestSourceUrl = $this->getBestSourceUrl($citations);
-            if (!empty(trim($bestSourceUrl)) && count($citations) > 0 && $answer !== '') {
-                $answer .= "\n\n🔗 **Fonte principale**: " . trim($bestSourceUrl);
-            }
+            // ❌ RIMOSSO: Fonte principale eliminata per evitare link sbagliati
             
             if (is_array($trace)) {
                 $trace['llm_context'] = $contextText;
@@ -302,53 +298,7 @@ class RagTestController extends Controller
         return view('admin.rag.index', ['tenants' => $tenants, 'result' => compact('citations', 'answer', 'confidence', 'health', 'trace'), 'query' => $data['query'], 'tenant_id' => $tenantId]);
     }
 
-    /**
-     * 🧠 Trova la fonte principale usando algoritmo intelligente multi-fattore
-     * 
-     * Considera:
-     * - Semantic relevance: quanto il contenuto è rilevante alla domanda
-     * - Intent matching: se contiene informazioni specifiche (telefono, email, etc.)
-     * - Content quality: completezza e qualità del contenuto
-     * - Source authority: priorità per tipo documento/fonte
-     * - RAG score: score originale come fattore base
-     */
-    private function getBestSourceUrl(array $citations): ?string
-    {
-        if (empty($citations)) {
-            return null;
-        }
-
-        // Se c'è una sola citazione, restituiscila
-        if (count($citations) === 1) {
-            return $citations[0]['document_source_url'] ?? null;
-        }
-
-        $bestCitation = null;
-        $bestScore = -1;
-
-        foreach ($citations as $citation) {
-            if (empty($citation['document_source_url'])) {
-                continue; // Skip se non ha URL origine
-            }
-
-            $finalScore = $this->calculateSmartSourceScore($citation, $citations);
-            
-            if ($finalScore > $bestScore) {
-                $bestScore = $finalScore;
-                $bestCitation = $citation;
-            }
-        }
-
-        // Log della selezione per debugging
-        \Log::info("🎯 [RAG-TESTER-SMART-SOURCE] Fonte principale selezionata", [
-            'selected_url' => $bestCitation['document_source_url'] ?? 'none',
-            'selected_score' => round($bestScore, 3),
-            'total_candidates' => count(array_filter($citations, fn($c) => !empty($c['document_source_url']))),
-            'selection_factors' => $bestCitation ? $this->getScoreBreakdown($bestCitation, $citations) : []
-        ]);
-
-        return $bestCitation['document_source_url'] ?? null;
-    }
+    // ❌ RIMOSSO: getBestSourceUrl() - metodo non più necessario
 
     /**
      * 🧮 Calcola score intelligente per una citazione considerando tutti i fattori

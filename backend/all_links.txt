@@ -1,0 +1,9 @@
+<a href="javascript:void(0);" class="page-link" aria-current="page">1</a>
+<a href="javascript:void(0);" class="page-link">2</a>
+<a href="javascript:void(0);" class="page-link">3</a>
+<a href="javascript:void(0);" class="page-link">4</a>
+<a href="javascript:void(0);" class="page-link">5</a>
+<a href="javascript:void(0);" class="page-link">6</a>
+<a title="Avvisi" data-element="news-category-link" href="/it/novita-179021/avvisi-179024"> Avvisi </a>
+<a title="Comunicati" data-element="news-category-link" href="/it/novita-179021/comunicati-179023"> Comunicati </a>
+<a title="Notizie" data-element="news-category-link" href="/it/novita-179021/notizie-179022"> Notizie </a>
