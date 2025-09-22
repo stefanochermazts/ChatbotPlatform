@@ -1008,13 +1008,53 @@ class WebScraperService
                         $markdown .= "\n\n```\n{$innerText}\n```\n\n";
                         break;
                         
-
+                    case 'table':
+                        // Tabella completa - preserva struttura markdown
+                        \Log::info("🔧 [TABLE-CONVERT] Processing <table> tag", [
+                            'baseUrl' => $baseUrl,
+                            'table_innerHTML_preview' => substr($child->textContent, 0, 200)
+                        ]);
+                        $tableMarkdown = $this->convertTableToMarkdown($child, $baseUrl);
+                        if (!empty($tableMarkdown)) {
+                            \Log::info("✅ [TABLE-CONVERT] Table converted successfully", [
+                                'markdown_length' => strlen($tableMarkdown),
+                                'markdown_preview' => substr($tableMarkdown, 0, 300)
+                            ]);
+                            $markdown .= "\n\n" . $tableMarkdown . "\n\n";
+                        } else {
+                            \Log::warning("❌ [TABLE-CONVERT] Table conversion returned empty", [
+                                'baseUrl' => $baseUrl
+                            ]);
+                        }
+                        break;
                         
                     case 'tr':
                         // Riga tabella - separa con | e aggiungi newline
                         $cells = $this->extractTableCells($child, $baseUrl);
                         if (!empty($cells)) {
-                            $markdown .= "\n| " . implode(" | ", $cells) . " |";
+                            $rowMarkdown = "| " . implode(" | ", $cells) . " |";
+                            $markdown .= "\n" . $rowMarkdown;
+                            
+                            // 🔧 Se è una riga header, aggiungi separatore dopo
+                            $isHeaderRow = $this->isTableHeaderRow($cells);
+                            \Log::debug("📊 [TABLE-TR] Processing table row", [
+                                'is_header_row' => $isHeaderRow,
+                                'row_content' => substr($rowMarkdown, 0, 100),
+                                'column_count' => count($cells),
+                                'cells' => array_map(fn($c) => substr(strip_tags($c), 0, 20), $cells)
+                            ]);
+                            
+                            if ($isHeaderRow) {
+                                $columnCount = count($cells);
+                                $separator = "| " . str_repeat("--- | ", $columnCount);
+                                $separator = rtrim($separator);
+                                $markdown .= "\n" . $separator;
+                                
+                                \Log::info("✅ [TABLE-TR] Added header separator", [
+                                    'column_count' => $columnCount,
+                                    'separator' => $separator
+                                ]);
+                            }
                         }
                         break;
                         
@@ -1230,6 +1270,139 @@ class WebScraperService
         ]);
         
         return $cells;
+    }
+
+    /**
+     * 🔧 Converte una tabella HTML completa in Markdown table corretto
+     */
+    private function convertTableToMarkdown(\DOMElement $table, string $baseUrl = ''): string
+    {
+        $rows = $table->getElementsByTagName('tr');
+        if ($rows->length === 0) {
+            return '';
+        }
+        
+        $markdownRows = [];
+        $headerProcessed = false;
+        
+        foreach ($rows as $row) {
+            $cells = $this->extractTableCells($row, $baseUrl);
+            if (!empty($cells)) {
+                $markdownRow = "| " . implode(" | ", $cells) . " |";
+                $markdownRows[] = $markdownRow;
+                
+                // Aggiungi separatore header dopo la prima riga (assumendo sia header)
+                if (!$headerProcessed) {
+                    $columnCount = count($cells);
+                    $separator = "| " . str_repeat("--- | ", $columnCount);
+                    $markdownRows[] = rtrim($separator);
+                    $headerProcessed = true;
+                }
+            }
+        }
+        
+        \Log::info("📊 [TABLE-CONVERSION] Tabella convertita", [
+            'rows_count' => count($markdownRows),
+            'columns_estimated' => $headerProcessed ? (count(explode('|', $markdownRows[0])) - 2) : 0,
+            'preview' => substr(implode("\n", array_slice($markdownRows, 0, 3)), 0, 200)
+        ]);
+        
+        return implode("\n", $markdownRows);
+    }
+
+    /**
+     * 🔧 Preserva la struttura delle tabelle durante la pulizia del markdown
+     */
+    private function preserveTableStructureInMarkdown(string $markdown): string
+    {
+        // Identifica le tabelle markdown e proteggi le loro newlines
+        $lines = explode("\n", $markdown);
+        $cleanedLines = [];
+        $inTable = false;
+        
+        foreach ($lines as $line) {
+            $trimmedLine = trim($line);
+            
+            // Rileva inizio/fine tabella
+            $isTableLine = preg_match('/^\|\s*.*\s*\|$/', $trimmedLine) || 
+                          preg_match('/^\|\s*[-:]+\s*\|/', $trimmedLine); // Header separator
+            
+            if ($isTableLine) {
+                $inTable = true;
+                // Mantieni le righe di tabella esattamente come sono
+                $cleanedLines[] = $trimmedLine;
+            } elseif ($inTable && empty($trimmedLine)) {
+                // Riga vuota dopo tabella = fine tabella
+                $inTable = false;
+                $cleanedLines[] = $trimmedLine;
+            } elseif (!$inTable) {
+                // Fuori dalle tabelle: collassa spazi multipli ma mantieni newlines importanti
+                if (!empty($trimmedLine)) {
+                    $cleanedLine = preg_replace('/\s+/', ' ', $trimmedLine);
+                    $cleanedLines[] = $cleanedLine;
+                } else {
+                    $cleanedLines[] = '';
+                }
+            } else {
+                // Dentro tabella ma non riga tabella = fine tabella
+                $inTable = false;
+                if (!empty($trimmedLine)) {
+                    $cleanedLine = preg_replace('/\s+/', ' ', $trimmedLine);
+                    $cleanedLines[] = $cleanedLine;
+                } else {
+                    $cleanedLines[] = '';
+                }
+            }
+        }
+        
+        // Rimuovi righe vuote eccessive (massimo 2 consecutive)
+        $result = implode("\n", $cleanedLines);
+        $result = preg_replace('/\n{3,}/', "\n\n", $result);
+        
+        return trim($result);
+    }
+
+    /**
+     * 🔧 Verifica se questa è una riga header di tabella
+     */
+    private function isTableHeaderRow(array $cells): bool
+    {
+        if (empty($cells)) {
+            return false;
+        }
+        
+        // Rimuovi HTML e normalizza il contenuto per il controllo
+        $cleanCells = array_map(function($cell) {
+            return strtolower(trim(strip_tags($cell)));
+        }, $cells);
+        
+        // Pattern comuni per header di tabelle
+        $headerPatterns = [
+            'nome', 'name', 'title', 'titolo',
+            'indirizzo', 'address', 'addr',
+            'telefono', 'phone', 'tel', 'cellulare',
+            'email', 'mail', 'e-mail',
+            'descrizione', 'description', 'desc',
+            'servizio', 'service',
+            'ufficio', 'office',
+            'categoria', 'category', 'cat'
+        ];
+        
+        // Conta quante celle contengono pattern header
+        $headerMatches = 0;
+        foreach ($cleanCells as $cell) {
+            foreach ($headerPatterns as $pattern) {
+                if (strpos($cell, $pattern) !== false) {
+                    $headerMatches++;
+                    break; // Una match per cella
+                }
+            }
+        }
+        
+        // È header se almeno la metà delle celle matchano pattern header
+        $isHeader = $headerMatches >= (count($cells) / 2);
+        
+        return $isHeader;
     }
 
     /**
@@ -2290,9 +2463,11 @@ class WebScraperService
                 $baseUrl = $url ? $this->extractBaseUrl($url) : '';
                 $markdown = $this->convertToMarkdown($bodyElements->item(0), $baseUrl);
                 
-                // Clean up the markdown
+                // Clean up the markdown PRESERVANDO la struttura delle tabelle
                 $markdown = html_entity_decode($markdown, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-                $markdown = preg_replace('/\s+/', ' ', trim($markdown));
+                
+                // 🔧 PRESERVE TABLE STRUCTURE: Non collassare newlines nelle tabelle
+                $markdown = $this->preserveTableStructureInMarkdown($markdown);
                 
                 return $markdown;
             }
