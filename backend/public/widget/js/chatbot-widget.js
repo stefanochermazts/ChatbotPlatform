@@ -423,18 +423,12 @@
       html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
-      // 6a. Fix link markdown malformati (senza parentesi di chiusura)
-      // Pattern più aggressivo: cerca [text](url_senza_parentesi_finale seguita da fine riga o spazio
-      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)(?=\s|$|\n)/g, (match, text, url) => {
-        console.info('🔧 Fixing malformed markdown link:', match, '→', `[${text}](${url})`);
-        return `[${text}](${url})`;
-      });
-      
-      // 6a2. Fix specifico per URL che finiscono con numeri (es. idtesto/20247
-      // Questo cattura il caso specifico segnalato dall'utente
-      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]*\/\d+)(?=\s|$|\n)/g, (match, text, url) => {
-        console.warn('🔧 Fixing URL ending with numbers:', match, '→', `[${text}](${url})`);
-        return `[${text}](${url})`;
+      // 6a. CRITICAL FIX: Link markdown senza parentesi di chiusura
+      // Questo è il fix principale per il problema dell'utente
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s\n]+)(?=\s|$|\n)/g, (match, text, url) => {
+        console.warn('🔧 CRITICAL FIX - Missing closing parenthesis:', match);
+        // Convertiamo direttamente in HTML link funzionante
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
       });
 
       // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
