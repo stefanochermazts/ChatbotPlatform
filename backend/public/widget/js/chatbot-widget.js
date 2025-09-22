@@ -442,8 +442,14 @@
       });
 
       // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
-      // FIXED: Pattern più robusto per evitare malformazioni
+      // FIXED: Pattern più robusto per evitare malformazioni + skip URLMASK placeholders
       html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
+        // 🔧 SKIP URLMASK placeholders - questi verranno processati nel step 7
+        if (url.trim().startsWith('###URLMASK') && url.trim().endsWith('###')) {
+          console.log('🔧 Skipping URLMASK placeholder:', match);
+          return match; // Lascia il markdown così com'è per il step 7
+        }
+        
         // 🔧 CRITICAL FIX: Pulisce l'URL ma preserva integrità del link
         let cleanUrl = url.trim();
         
@@ -479,10 +485,21 @@
         // Assicurati che l'URL sia pulito e valido
         const cleanUrl = url.trim();
         const href = cleanUrl.startsWith('www.') ? `http://${cleanUrl}` : cleanUrl;
-        const linkedUrl = `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${cleanUrl}</a>`;
         
-        // Usa replaceAll per sostituire tutte le occorrenze del placeholder
-        html = html.replaceAll ? html.replaceAll(placeholder, linkedUrl) : html.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), linkedUrl);
+        // 🔧 GESTIONE SPECIALE: Converti markdown links con placeholder in HTML
+        // Pattern: [text](###URLMASK0###) → <a href="url">text</a>
+        const markdownPattern = new RegExp(`\\[([^\\]]+)\\]\\(${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g');
+        const markdownMatches = html.match(markdownPattern);
+        
+        if (markdownMatches) {
+          console.log('🔧 Converting markdown link with placeholder:', markdownMatches[0], '→', href);
+          // Sostituisci markdown con HTML link
+          html = html.replace(markdownPattern, `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>`);
+        } else {
+          // Placeholder non in markdown - linkifica normalmente
+          const linkedUrl = `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${cleanUrl}</a>`;
+          html = html.replaceAll ? html.replaceAll(placeholder, linkedUrl) : html.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), linkedUrl);
+        }
       });
       
       // 8. Auto-link Email  
