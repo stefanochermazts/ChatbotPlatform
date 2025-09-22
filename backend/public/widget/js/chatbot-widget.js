@@ -14,8 +14,8 @@
   'use strict';
   
   // Version check log
-  console.log('🤖 Chatbot Widget Loading v1.3.2.FIXED_REGEX...', new Date().toISOString());
-console.warn('🔧 FIXED VERSION: Should see "🔧 URLMASK placeholder found" + "🔧 Converting markdown link"');
+  console.log('🤖 Chatbot Widget Loading v1.3.3.RAW_DEBUG...', new Date().toISOString());
+console.warn('🔧 RAW DEBUG: Look for "🔧 RAW CONTENT" and "🔧 CONTENT AFTER URL MASKING" logs');
 
   // =================================================================
   // 🔌 CONFIGURATION & CONSTANTS
@@ -398,6 +398,9 @@ console.warn('🔧 FIXED VERSION: Should see "🔧 URLMASK placeholder found" + 
       const urlPlaceholders = [];
       let urlCounter = 0;
       
+      // 🔧 DEBUG: Log contenuto grezzo per vedere i markdown con placeholder
+      console.log('🔧 RAW CONTENT BEFORE PROCESSING:', html.substring(0, 1000));
+      
       // Maschera https:// URLs - versione migliorata per evitare malformazioni
       html = html.replace(/(https?:\/\/[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
         // 🔧 CRITICAL FIX: Preserva parentesi per URL che finiscono con numeri (es. idtesto/20247)
@@ -425,6 +428,9 @@ console.warn('🔧 FIXED VERSION: Should see "🔧 URLMASK placeholder found" + 
         return placeholder;
       });
 
+      // 🔧 DEBUG: Log contenuto dopo URL masking per vedere placeholder
+      console.log('🔧 CONTENT AFTER URL MASKING:', html.substring(0, 1000));
+      
       // 4. Bold (**text** o __text__) - ora sicuro dagli URL con nuovo formato placeholder
       html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong class="chatbot-bold">$1</strong>')
                 .replace(/__([^_\n]+)__/g, '<strong class="chatbot-bold">$1</strong>');

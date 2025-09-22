@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.3.2.FIXED_REGEX.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 FIXED: Specific URLMASK regex
+        version: '1.3.3.RAW_DEBUG.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 DEBUG: Raw content inspection
         
         // Files to load
         files: {
