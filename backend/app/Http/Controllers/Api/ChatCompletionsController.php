@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Services\LLM\OpenAIChatService;
 use App\Services\RAG\KbSearchService;
+use App\Services\RAG\LinkConsistencyService;
 use App\Services\RAG\ContextBuilder;
 use App\Services\RAG\ConversationContextEnhancer;
 use App\Services\RAG\TenantRagConfigService;
@@ -18,6 +19,7 @@ class ChatCompletionsController extends Controller
     public function __construct(
         private readonly OpenAIChatService $chat,
         private readonly KbSearchService $kb,
+        private readonly LinkConsistencyService $linkConsistency,
         private readonly ContextBuilder $ctx,
         private readonly ConversationContextEnhancer $conversationEnhancer,
         private readonly TenantRagConfigService $tenantConfig,
@@ -125,10 +127,19 @@ class ChatCompletionsController extends Controller
         ];
         $retrieval['debug'] = $debug;
 
-        // Costruzione contextText come nel RAG tester
+        // 🔗 FILTRO LINK: Migliora coerenza link prima di costruire contesto
         $stepStart = microtime(true);
-        $contextText = $this->buildRagTesterContextText($tenant, $queryText, $citations);
+        $filteredCitations = $this->linkConsistency->filterLinksInContext($citations, $queryText);
+        $profiling['steps']['link_filtering'] = microtime(true) - $stepStart;
+
+        // Costruzione contextText con citazioni filtrate
+        $stepStart = microtime(true);
+        $contextText = $this->buildRagTesterContextText($tenant, $queryText, $filteredCitations);
         $profiling['steps']['context_building'] = microtime(true) - $stepStart;
+
+        // 🔗 ANALISI QUALITÀ LINK: Log statistiche filtro
+        $linkQuality = $this->linkConsistency->analyzeLinkQuality($citations);
+        $linkQualityFiltered = $this->linkConsistency->analyzeLinkQuality($filteredCitations);
 
         // DEBUG: Log citazioni e contesto
         \Log::info("WIDGET RAG CITATIONS", [
@@ -145,10 +156,13 @@ class ChatCompletionsController extends Controller
                     'email' => $c['email'] ?? null,
                     'title' => mb_substr($c['title'] ?? '', 0, 50),
                     'snippet_preview' => mb_substr($c['snippet'] ?? '', 0, 200),
+                    'filtered' => $c['filtered'] ?? false,
                 ];
-            }, array_slice($citations, 0, 8)),
+            }, array_slice($filteredCitations, 0, 8)),
             'context_length' => mb_strlen($contextText),
             'context_preview' => mb_substr($contextText, 0, 500),
+            'link_quality_original' => $linkQuality,
+            'link_quality_filtered' => $linkQualityFiltered,
         ]);
 
         // Costruisci payload partendo dai messaggi forniti, ma inserendo system prompt e context come nel tester
