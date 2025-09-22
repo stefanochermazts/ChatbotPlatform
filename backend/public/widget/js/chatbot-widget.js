@@ -399,8 +399,13 @@
       
       // Maschera https:// URLs - versione migliorata per evitare malformazioni
       html = html.replace(/(https?:\/\/[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
-        // Rimuovi eventuali caratteri finali problematici
-        const cleanUrl = match.replace(/[.,;:!?)\]}"'>]+$/, '');
+        // 🔧 CRITICAL FIX: Preserva parentesi per URL che finiscono con numeri (es. idtesto/20247)
+        let cleanUrl = match;
+        // Rimuovi solo caratteri di punteggiatura finali MA non ) se l'URL finisce con numeri
+        if (/[.,;:!?"'>]$/.test(cleanUrl) && !/\/\d+$/.test(cleanUrl)) {
+          cleanUrl = cleanUrl.replace(/[.,;:!?"'>]+$/, '');
+        }
+        console.log('🔧 URL masking preserving:', match, '→', cleanUrl);
         const placeholder = `###URLMASK${urlCounter++}###`;
         urlPlaceholders.push({ placeholder, url: cleanUrl });
         return placeholder;
@@ -408,8 +413,12 @@
       
       // Maschera www. URLs - versione migliorata
       html = html.replace(/(?<!["\[>])(www\.[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
-        // Rimuovi eventuali caratteri finali problematici
-        const cleanUrl = match.replace(/[.,;:!?)\]}"'>]+$/, '');
+        // 🔧 CRITICAL FIX: Preserva parentesi per URL che finiscono con numeri (es. idtesto/20247)
+        let cleanUrl = match;
+        // Rimuovi solo caratteri di punteggiatura finali MA non ) se l'URL finisce con numeri
+        if (/[.,;:!?"'>]$/.test(cleanUrl) && !/\/\d+$/.test(cleanUrl)) {
+          cleanUrl = cleanUrl.replace(/[.,;:!?"'>]+$/, '');
+        }
         const placeholder = `###URLMASK${urlCounter++}###`;
         urlPlaceholders.push({ placeholder, url: cleanUrl });
         return placeholder;
