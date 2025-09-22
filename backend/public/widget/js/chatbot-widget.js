@@ -14,8 +14,8 @@
   'use strict';
   
   // Version check log
-  console.log('🤖 Chatbot Widget Loading v1.3.1.DEBUG...', new Date().toISOString());
-console.warn('🔧 DEBUG VERSION: Look for "🔧 DEBUG: Markdown regex found" logs to see what regex captures.');
+  console.log('🤖 Chatbot Widget Loading v1.3.2.FIXED_REGEX...', new Date().toISOString());
+console.warn('🔧 FIXED VERSION: Should see "🔧 URLMASK placeholder found" + "🔧 Converting markdown link"');
 
   // =================================================================
   // 🔌 CONFIGURATION & CONSTANTS
@@ -443,15 +443,21 @@ console.warn('🔧 DEBUG VERSION: Look for "🔧 DEBUG: Markdown regex found" lo
       });
 
       // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
-      // FIXED: Pattern più robusto per evitare malformazioni + skip URLMASK placeholders
+      // FIXED: Pattern specifico per URLMASK placeholders + URL normali
+      
+      // Prima gestisci URLMASK placeholders specificamente
+      html = html.replace(/\[([^\]]+)\]\((###URLMASK\d+###)\)/g, (match, text, placeholder) => {
+        console.log('🔧 URLMASK placeholder found:', match);
+        console.log('🔧 Text:', text, 'Placeholder:', placeholder);
+        return match; // Lascia intatto per step 7
+      });
+      
+      // Poi gestisci URL normali (non URLMASK)
       html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
-        console.log('🔧 DEBUG: Markdown regex found:', match);
-        console.log('🔧 DEBUG: Text:', text, 'URL:', url);
-        
-        // 🔧 SKIP URLMASK placeholders - questi verranno processati nel step 7
+        // Skip se è già un URLMASK (non dovrebbe succedere dopo il regex sopra)
         if (url.trim().startsWith('###URLMASK') && url.trim().endsWith('###')) {
-          console.log('🔧 Skipping URLMASK placeholder:', match);
-          return match; // Lascia il markdown così com'è per il step 7
+          console.log('🔧 Skipping remaining URLMASK:', match);
+          return match;
         }
         
         // 🔧 CRITICAL FIX: Pulisce l'URL ma preserva integrità del link

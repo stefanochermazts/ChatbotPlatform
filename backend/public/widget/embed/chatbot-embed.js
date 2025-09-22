@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.3.1.DEBUG.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 DEBUG LOG FOR MARKDOWN REGEX
+        version: '1.3.2.FIXED_REGEX.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 FIXED: Specific URLMASK regex
         
         // Files to load
         files: {
