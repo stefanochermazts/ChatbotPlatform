@@ -74,6 +74,10 @@
                                 class="tab-button whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                             🎭 Intent
                         </button>
+                        <button type="button" onclick="showTab('chunking')" id="tab-chunking"
+                                class="tab-button whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                            📄 Chunking
+                        </button>
                     </nav>
                 </div>
 
@@ -731,6 +735,95 @@
                     </div>
                 </div>
 
+                <!-- Tab: Chunking -->
+                <div id="content-chunking" class="tab-content hidden">
+                    <!-- Help Section for Chunking -->
+                    <div class="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleHelp('chunking-help')">
+                            <h3 class="text-lg font-medium text-orange-900">📄 Guida: Parametri di Chunking</h3>
+                            <span class="text-orange-600">▼</span>
+                        </div>
+                        <div id="chunking-help" class="mt-4 text-sm text-orange-800 hidden">
+                            <div class="space-y-2">
+                                <p><strong>🔧 Chunking:</strong> Suddivisione automatica dei documenti in porzioni più piccole per il processamento RAG.</p>
+                                <p><strong>📏 Max Characters:</strong> Dimensione massima di ogni chunk in caratteri. Valori più alti preservano contesto ma possono superare limiti LLM.</p>
+                                <p><strong>🔄 Overlap Characters:</strong> Sovrapposizione tra chunk consecutivi per mantenere continuità del contenuto.</p>
+                                <p><strong>📊 Table-Aware:</strong> Il sistema preserva automaticamente le tabelle markdown complete ignorando i limiti di dimensione.</p>
+                                <p><strong>⚠️ Importante:</strong> Modificando questi parametri è necessario ri-ingerire i documenti esistenti per applicare le nuove dimensioni.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chunking Configuration -->
+                    <div class="p-4 bg-orange-50 rounded-lg">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">📄 Configurazione Chunking</h3>
+                        <div class="mb-3 text-xs text-orange-700 bg-orange-100 p-2 rounded">
+                            <strong>🎯 Strategia chunking:</strong> Controllo dimensioni e sovrapposizione per ottimizzare qualità retrieval.
+                            <br><strong>📈 Raccomandazioni:</strong> 2200-3500 caratteri per tabelle complesse | 1500-2200 per testo normale | Overlap 10-20% della dimensione chunk
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Max Characters -->
+                            <div>
+                                <label for="chunking_max_chars" class="block text-sm font-medium text-gray-700">Caratteri Massimi per Chunk</label>
+                                <input type="number" name="chunking_max_chars" id="chunking_max_chars" min="500" max="8000" step="100"
+                                       value="{{ $currentConfig['chunking']['max_chars'] ?? 2200 }}"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                                <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                    <p><strong>Dimensione target per ogni chunk di testo</strong></p>
+                                    <p><strong>1500-2200:</strong> Testo normale, paragrafi, articoli</p>
+                                    <p><strong>2500-3500:</strong> Tabelle complesse, contenuto strutturato</p>
+                                    <p><strong>3500+:</strong> Documenti molto tecnici con tabelle estese</p>
+                                    <p><strong>🎯 Default:</strong> 2200 (bilanciato per la maggior parte dei contenuti)</p>
+                                </div>
+                            </div>
+
+                            <!-- Overlap Characters -->
+                            <div>
+                                <label for="chunking_overlap_chars" class="block text-sm font-medium text-gray-700">Caratteri di Sovrapposizione</label>
+                                <input type="number" name="chunking_overlap_chars" id="chunking_overlap_chars" min="50" max="1000" step="25"
+                                       value="{{ $currentConfig['chunking']['overlap_chars'] ?? 250 }}"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500">
+                                <div class="text-xs text-gray-600 mt-1 space-y-1">
+                                    <p><strong>Sovrapposizione tra chunk consecutivi</strong></p>
+                                    <p><strong>100-200:</strong> Overlap minimale per testi lineari</p>
+                                    <p><strong>200-400:</strong> Overlap standard per preservare contesto</p>
+                                    <p><strong>400+:</strong> Overlap alto per contenuti molto connessi</p>
+                                    <p><strong>🎯 Default:</strong> 250 (circa 10-15% del chunk)</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preview Calculation -->
+                        <div class="mt-6 p-3 bg-gray-50 rounded border">
+                            <h4 class="font-medium text-gray-900 mb-2">📊 Calcolo Automatico</h4>
+                            <div class="text-sm text-gray-700 space-y-1" id="chunking-preview">
+                                <p>• <strong>Dimensione chunk:</strong> <span id="preview-max-chars">2200</span> caratteri</p>
+                                <p>• <strong>Sovrapposizione:</strong> <span id="preview-overlap-chars">250</span> caratteri (<span id="preview-overlap-percent">11%</span>)</p>
+                                <p>• <strong>Chunk netto:</strong> <span id="preview-net-chars">1950</span> caratteri per chunk</p>
+                                <p>• <strong>Stima per 10KB:</strong> ~<span id="preview-chunks-10k">5</span> chunk</p>
+                            </div>
+                        </div>
+
+                        <!-- Action Required Notice -->
+                        <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0">
+                                    <span class="text-yellow-600">⚠️</span>
+                                </div>
+                                <div class="ml-3">
+                                    <h4 class="text-sm font-medium text-yellow-800">Azione Richiesta</h4>
+                                    <p class="text-sm text-yellow-700 mt-1">
+                                        Dopo aver modificato questi parametri, sarà necessario <strong>ri-ingerire i documenti esistenti</strong> 
+                                        per applicare le nuove dimensioni di chunking. I documenti con ingestion_status = "completed" 
+                                        dovranno essere ri-processati.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Action Buttons -->
                 <div class="flex justify-between items-center pt-6 border-t border-gray-200">
                     <button type="button" onclick="resetToDefaults()" 
@@ -993,6 +1086,47 @@ document.getElementById('test-config-btn').addEventListener('click', testConfig)
 document.getElementById('test-modal').addEventListener('click', function(e) {
     if (e.target === this) {
         closeTestModal();
+    }
+});
+
+// Chunking Preview Calculation
+function updateChunkingPreview() {
+    const maxChars = parseInt(document.getElementById('chunking_max_chars').value) || 2200;
+    const overlapChars = parseInt(document.getElementById('chunking_overlap_chars').value) || 250;
+    
+    // Calculate values
+    const netChars = Math.max(0, maxChars - overlapChars);
+    const overlapPercent = Math.round((overlapChars / maxChars) * 100);
+    const chunks10k = Math.ceil(10000 / netChars);
+    
+    // Update preview
+    document.getElementById('preview-max-chars').textContent = maxChars;
+    document.getElementById('preview-overlap-chars').textContent = overlapChars;
+    document.getElementById('preview-overlap-percent').textContent = overlapPercent + '%';
+    document.getElementById('preview-net-chars').textContent = netChars;
+    document.getElementById('preview-chunks-10k').textContent = chunks10k;
+    
+    // Warning if overlap is too high
+    const warningThreshold = 50; // 50% overlap is too much
+    if (overlapPercent > warningThreshold) {
+        document.getElementById('preview-overlap-percent').style.color = '#dc2626'; // red
+        document.getElementById('preview-overlap-percent').textContent = overlapPercent + '% ⚠️';
+    } else {
+        document.getElementById('preview-overlap-percent').style.color = '#374151'; // gray
+    }
+}
+
+// Add event listeners for chunking inputs
+document.addEventListener('DOMContentLoaded', function() {
+    const maxCharsInput = document.getElementById('chunking_max_chars');
+    const overlapCharsInput = document.getElementById('chunking_overlap_chars');
+    
+    if (maxCharsInput && overlapCharsInput) {
+        maxCharsInput.addEventListener('input', updateChunkingPreview);
+        overlapCharsInput.addEventListener('input', updateChunkingPreview);
+        
+        // Initial calculation
+        updateChunkingPreview();
     }
 });
 </script>

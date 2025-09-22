@@ -131,6 +131,12 @@ class TenantRagConfigController extends Controller
             'timeout_seconds' => (int) $request->input('widget_timeout_seconds', 30),
         ];
 
+        // Chunking Configuration
+        $settings['chunking'] = [
+            'max_chars' => (int) $request->input('chunking_max_chars', 2200),
+            'overlap_chars' => (int) $request->input('chunking_overlap_chars', 250),
+        ];
+
         // Salva il profilo selezionato sul tenant
         $tenant->rag_profile = (string) $request->input('rag_profile');
         $tenant->save();
@@ -243,6 +249,10 @@ class TenantRagConfigController extends Controller
             'kb_upload_boost' => 'nullable|numeric|min:0.5|max:3',
             'kb_title_keyword_boosts' => 'nullable|string', // JSON
             'kb_location_boosts' => 'nullable|string',      // JSON
+            
+            // Chunking
+            'chunking_max_chars' => 'required|integer|min:500|max:8000',
+            'chunking_overlap_chars' => 'required|integer|min:50|max:1000',
         ], [
             'vector_top_k.max' => 'Vector Top K non può essere superiore a 200',
             'mmr_lambda.between' => 'MMR Lambda deve essere tra 0 e 1',
