@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.3.0.FORCE_REFRESH.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 AGGRESSIVE CACHE BUSTING
+        version: '1.3.1.DEBUG.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 DEBUG LOG FOR MARKDOWN REGEX
         
         // Files to load
         files: {

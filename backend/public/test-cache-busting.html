@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cache Busting - Versione Widget</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .info { background: #d4edda; padding: 15px; border: 1px solid #c3e6cb; border-radius: 5px; margin: 10px 0; }
+        .warning { background: #fff3cd; padding: 15px; border: 1px solid #ffeaa7; border-radius: 5px; margin: 10px 0; }
+        .error { background: #f8d7da; padding: 15px; border: 1px solid #f5c6cb; border-radius: 5px; margin: 10px 0; }
+        .console-output { background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; margin: 10px 0; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Cache Busting - Widget v1.3.0</h1>
+    
+    <div class="info">
+        <strong>Obiettivo:</strong> Verificare che la versione 1.3.0.FORCE_REFRESH del widget venga caricata correttamente.
+    </div>
+    
+    <div class="warning">
+        <strong>Istruzioni:</strong>
+        <ol>
+            <li>Apri la console browser (F12)</li>
+            <li>Clicca "Carica Widget" sotto</li>
+            <li>Cerca il messaggio: <code>🤖 Chatbot Widget Loading v1.3.0.FORCE_REFRESH</code></li>
+            <li>Cerca il warning: <code>🔧 CRITICAL: If you see this message, the new version is loaded</code></li>
+        </ol>
+    </div>
+    
+    <button onclick="loadWidget()">📦 Carica Widget</button>
+    <button onclick="clearConsole()">🧹 Pulisci Console</button>
+    <button onclick="testMarkdown()">🔗 Test Link Markdown</button>
+    
+    <div id="widget-status" class="info" style="display: none;">
+        <strong>Status:</strong> <span id="status-text">Caricamento...</span>
+    </div>
+    
+    <div id="test-result" class="console-output" style="display: none;">
+        <strong>Test Result:</strong><br>
+        <div id="result-text">In attesa...</div>
+    </div>
+
+    <script>
+        function clearConsole() {
+            console.clear();
+            console.log('🧹 Console cleared - ready for widget test');
+        }
+        
+        function loadWidget() {
+            document.getElementById('widget-status').style.display = 'block';
+            document.getElementById('status-text').textContent = 'Caricamento widget...';
+            
+            // Simula il caricamento del widget con cache busting estremo
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substr(2, 9);
+            const scriptUrl = `/widget/js/chatbot-widget.js?cb=${timestamp}${random}`;
+            
+            console.log('🔧 Loading widget from:', scriptUrl);
+            
+            // Carica lo script
+            const script = document.createElement('script');
+            script.src = scriptUrl;
+            script.onload = function() {
+                document.getElementById('status-text').textContent = 'Widget caricato! Verifica console per versione.';
+                document.getElementById('widget-status').className = 'info';
+            };
+            script.onerror = function() {
+                document.getElementById('status-text').textContent = 'ERRORE: Widget non caricato!';
+                document.getElementById('widget-status').className = 'error';
+            };
+            
+            document.head.appendChild(script);
+        }
+        
+        function testMarkdown() {
+            // Simula la funzione di parsing del widget se disponibile
+            if (typeof window.MarkdownParser !== 'undefined') {
+                const testInput = 'Test link: [CIE - Carta di Identità Elettronica](https://www.comune.sancesareo.rm.it/c058119/zf/index.php/servizi-aggiuntivi/index/index/idtesto/20247)';
+                console.log('🧪 Testing markdown parsing:', testInput);
+                
+                const result = window.MarkdownParser.parse(testInput);
+                
+                document.getElementById('test-result').style.display = 'block';
+                document.getElementById('result-text').innerHTML = 
+                    '<strong>Input:</strong><br>' + testInput + '<br><br>' +
+                    '<strong>Output:</strong><br>' + result + '<br><br>' +
+                    '<strong>HTML Generated:</strong><br>' + (result.includes('<a href=') ? '✅ YES' : '❌ NO');
+            } else {
+                alert('❌ Widget non caricato o MarkdownParser non disponibile');
+            }
+        }
+        
+        // Auto-log per verifica iniziale
+        console.log('🧪 Test Cache Busting Page Loaded');
+        console.log('💡 Tip: Clicca "Carica Widget" e verifica che compaia "v1.3.0.FORCE_REFRESH" nella console');
+    </script>
+</body>
+</html>

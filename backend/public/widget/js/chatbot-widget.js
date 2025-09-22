@@ -14,8 +14,8 @@
   'use strict';
   
   // Version check log
-  console.log('🤖 Chatbot Widget Loading v1.3.0.FORCE_REFRESH...', new Date().toISOString());
-console.warn('🔧 CRITICAL: If you see this message, the new version is loaded. Look for URLMASK logs below.');
+  console.log('🤖 Chatbot Widget Loading v1.3.1.DEBUG...', new Date().toISOString());
+console.warn('🔧 DEBUG VERSION: Look for "🔧 DEBUG: Markdown regex found" logs to see what regex captures.');
 
   // =================================================================
   // 🔌 CONFIGURATION & CONSTANTS
@@ -445,6 +445,9 @@ console.warn('🔧 CRITICAL: If you see this message, the new version is loaded.
       // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
       // FIXED: Pattern più robusto per evitare malformazioni + skip URLMASK placeholders
       html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
+        console.log('🔧 DEBUG: Markdown regex found:', match);
+        console.log('🔧 DEBUG: Text:', text, 'URL:', url);
+        
         // 🔧 SKIP URLMASK placeholders - questi verranno processati nel step 7
         if (url.trim().startsWith('###URLMASK') && url.trim().endsWith('###')) {
           console.log('🔧 Skipping URLMASK placeholder:', match);
