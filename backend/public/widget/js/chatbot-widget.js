@@ -14,8 +14,8 @@
   'use strict';
   
   // Version check log
-  console.log('🤖 Chatbot Widget Loading v1.3.3.RAW_DEBUG...', new Date().toISOString());
-console.warn('🔧 RAW DEBUG: Look for "🔧 RAW CONTENT" and "🔧 CONTENT AFTER URL MASKING" logs');
+  console.log('🤖 Chatbot Widget Loading v1.3.4.MARKDOWN_MASKING...', new Date().toISOString());
+console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 Converting markdown link"');
 
   // =================================================================
   // 🔌 CONFIGURATION & CONSTANTS
@@ -402,14 +402,28 @@ console.warn('🔧 RAW DEBUG: Look for "🔧 RAW CONTENT" and "🔧 CONTENT AFTE
       console.log('🔧 RAW CONTENT BEFORE PROCESSING:', html.substring(0, 1000));
       
       // Maschera https:// URLs - versione migliorata per evitare malformazioni
+      // 🔧 CRITICAL FIX: Pattern specifico per markdown links per preservare parentesi
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (match, text, url) => {
+        console.log('🔧 Markdown URL masking:', match, '→', `[${text}](###URLMASK${urlCounter}###)`);
+        const placeholder = `###URLMASK${urlCounter++}###`;
+        urlPlaceholders.push({ placeholder, url });
+        return `[${text}](${placeholder})`;
+      });
+      
+      // Poi maschera URL standalone (non in markdown)
       html = html.replace(/(https?:\/\/[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
+        // Skip se già processato come markdown
+        if (html.includes(`](${match})`)) {
+          return match;
+        }
+        
         // 🔧 CRITICAL FIX: Preserva parentesi per URL che finiscono con numeri (es. idtesto/20247)
         let cleanUrl = match;
         // Rimuovi solo caratteri di punteggiatura finali MA non ) se l'URL finisce con numeri
         if (/[.,;:!?"'>]$/.test(cleanUrl) && !/\/\d+$/.test(cleanUrl)) {
           cleanUrl = cleanUrl.replace(/[.,;:!?"'>]+$/, '');
         }
-        console.log('🔧 URL masking preserving:', match, '→', cleanUrl);
+        console.log('🔧 Standalone URL masking preserving:', match, '→', cleanUrl);
         const placeholder = `###URLMASK${urlCounter++}###`;
         urlPlaceholders.push({ placeholder, url: cleanUrl });
         return placeholder;

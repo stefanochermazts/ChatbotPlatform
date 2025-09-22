@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.3.3.RAW_DEBUG.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 DEBUG: Raw content inspection
+        version: '1.3.4.MARKDOWN_MASKING.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 FIXED: Markdown-aware URL masking
         
         // Files to load
         files: {
