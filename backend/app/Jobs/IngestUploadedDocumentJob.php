@@ -51,7 +51,7 @@ class IngestUploadedDocumentJob implements ShouldQueue
             }
 
             // 2) Chunking
-            $chunks = $this->chunkText($text);
+            $chunks = $this->chunkText($text, $doc);
             if ($chunks === []) {
                 throw new \RuntimeException('Nessun chunk generato');
             }
@@ -243,14 +243,27 @@ class IngestUploadedDocumentJob implements ShouldQueue
     }
 
     /**
-     * Spezza il testo in chunk con overlap, rispettando i limiti da config.
+     * Spezza il testo in chunk con overlap, rispettando i limiti da config tenant.
      * 🚀 TABLE-AWARE CHUNKING: Preserva tabelle complete in chunk dedicati
      * @return array<int, string>
      */
-    private function chunkText(string $text): array
+    private function chunkText(string $text, Document $doc): array
     {
-        $max = (int) config('rag.chunk.max_chars', 1500);
-        $overlap = (int) config('rag.chunk.overlap_chars', 200);
+        // 🎯 TENANT-SPECIFIC CHUNKING: Usa parametri del tenant
+        $tenantRagConfig = app(\App\Services\RAG\TenantRagConfigService::class);
+        $chunkingConfig = $tenantRagConfig->getChunkingConfig($doc->tenant_id);
+        
+        $max = (int) $chunkingConfig['max_chars'];
+        $overlap = (int) $chunkingConfig['overlap_chars'];
+        
+        Log::info("tenant_chunking.parameters", [
+            'tenant_id' => $doc->tenant_id,
+            'document_id' => $doc->id,
+            'max_chars' => $max,
+            'overlap_chars' => $overlap,
+            'text_length' => strlen($text)
+        ]);
+        
         $text = trim($text);
         if ($text === '') {
             return [];

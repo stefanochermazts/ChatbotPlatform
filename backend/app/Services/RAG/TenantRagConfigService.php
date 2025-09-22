@@ -96,6 +96,20 @@ class TenantRagConfigService
     {
         return $this->getConfig($tenantId)['widget'] ?? [];
     }
+    
+    /**
+     * Ottiene parametri di chunking per tenant
+     */
+    public function getChunkingConfig(int $tenantId): array
+    {
+        $config = $this->getConfig($tenantId);
+        
+        // Fallback ai parametri globali se non configurati per tenant
+        return [
+            'max_chars' => $config['chunking']['max_chars'] ?? config('rag.chunk.max_chars', 2200),
+            'overlap_chars' => $config['chunking']['overlap_chars'] ?? config('rag.chunk.overlap_chars', 250),
+        ];
+    }
 
     /**
      * Aggiorna la configurazione RAG per un tenant
