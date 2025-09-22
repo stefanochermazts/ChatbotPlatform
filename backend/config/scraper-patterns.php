@@ -111,6 +111,13 @@ return [
         
         // 🌟 PATTERN SEMANTICI HTML5 (PRIORITÀ ALTA)
         [
+            'name' => 'semantic_main_id',
+            'regex' => '/<div[^>]*id="main"[^>]*>(.*?)<\/div>/is',
+            'description' => 'Contenuto main con ID semantico (comune nei CMS PA italiane)',
+            'min_length' => 200,
+            'priority' => 1.0
+        ],
+        [
             'name' => 'semantic_main_role',
             'regex' => '/<div[^>]*role="main"[^>]*>(.*?)<\/div>/is',
             'description' => 'Contenuto main con ruolo semantico',

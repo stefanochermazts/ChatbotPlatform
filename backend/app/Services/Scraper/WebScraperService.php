@@ -640,149 +640,73 @@ class WebScraperService
      */
     private function extractWithManualDOM(string $html, string $url, $dom, $title, $mainContent): ?array
     {
-        // SMART CONTENT DETECTION: Try to detect main content containers automatically
-        $smartExtraction = $this->trySmartContentExtraction($html, $url);
-        if ($smartExtraction) {
-            return $smartExtraction;
-        }
+        \Log::debug("🎯 Using unified extraction approach (same as JS rendering)", ['url' => $url]);
         
-        // Parse HTML with more robust error handling
+        // 🚀 STEP 1: Clean HTML first (same as JS rendering)
+        $cleanHtml = $this->cleanHtmlForMarkdown($html);
+        
+        $cleaningLoss = round((1 - (strlen($cleanHtml) / strlen($html))) * 100, 2);
+        \Log::debug("🧽 HTML cleaning completed", [
+            'url' => $url,
+            'original_html_length' => strlen($html),
+            'clean_html_length' => strlen($cleanHtml),
+            'cleaning_loss_percentage' => $cleaningLoss . '%'
+        ]);
+        
+        // 🚀 STEP 2: Parse to DOM and use proven convertToMarkdown method
         $dom = new \DOMDocument();
         libxml_use_internal_errors(true);
         
-        // Try UTF-8 first, then fallback
-        $loadSuccess = $dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
-        
-        if (!$loadSuccess) {
-            // Fallback: try without encoding conversion
-            $loadSuccess = $dom->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
-        }
-        
-        \Log::debug("🔍 DOM loading result", [
-            'url' => $url,
-            'load_success' => $loadSuccess,
-            'dom_errors' => libxml_get_errors(),
-            'html_length' => strlen($html)
-        ]);
+        // Load cleaned HTML 
+        $loadSuccess = $dom->loadHTML('<html><body>' . $cleanHtml . '</body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
         
         libxml_clear_errors();
         
-        // Estrai title
-        $titleNodes = $dom->getElementsByTagName('title');
-        $title = $titleNodes->length > 0 ? trim($titleNodes->item(0)->textContent) : parse_url($url, PHP_URL_HOST);
-
-        // Remove script, style, nav, footer, header
-        $tagsToRemove = ['script', 'style', 'nav', 'footer', 'header', 'aside'];
-        foreach ($tagsToRemove as $tag) {
-            $elements = $dom->getElementsByTagName($tag);
-            for ($i = $elements->length - 1; $i >= 0; $i--) {
-                $elements->item($i)->parentNode->removeChild($elements->item($i));
-            }
-        }
-
-        // Prova a estrarre main content
-        $mainContent = '';
-        
-        // Cerca elementi con content principale utilizzando selettori standard
-        $contentSelectors = ['main', 'article'];
-        foreach ($contentSelectors as $selector) {
-                $elements = $dom->getElementsByTagName($selector);
-                if ($elements->length > 0) {
-                $mainContent = $this->convertToMarkdown($elements->item(0), $url);
-                    break;
-            }
+        // Extract title if not provided
+        if (!$title) {
+            $titleNodes = $dom->getElementsByTagName('title');
+            $title = $titleNodes->length > 0 ? trim($titleNodes->item(0)->textContent) : parse_url($url, PHP_URL_HOST);
         }
         
-        // Also check for div with id="main" (common in Angular apps)
-        if (!$mainContent) {
-            $xpath = new \DOMXPath($dom);
-            $mainDivNodes = $xpath->query("//div[@id='main']");
-            if ($mainDivNodes->length > 0) {
-                \Log::debug("🔍 Found div with id='main'", [
-                    'url' => $url,
-                    'nodes_found' => $mainDivNodes->length
-                ]);
-                
-                // Extract semantic content containers from within main
-                $semanticContent = $xpath->query(".//div[contains(@class, 'testolungo') or contains(@class, 'content-main') or contains(@class, 'main-content')]", $mainDivNodes->item(0));
-                if ($semanticContent->length > 0) {
-                    $mainContent = $this->convertToMarkdown($semanticContent->item(0), $url);
-                    \Log::info("🎯 Extracted semantic content from within main div", [
-                        'url' => $url,
-                        'content_length' => strlen($mainContent)
-                    ]);
-                } else {
-                    // Fallback: extract full main content
-                    $mainContent = $this->convertToMarkdown($mainDivNodes->item(0), $url);
-                    \Log::debug("🔍 Extracted full main div content", [
-                        'url' => $url,
-                        'content_length' => strlen($mainContent)
-                    ]);
-                }
-            }
+        // 🚀 STEP 3: Use proven convertToMarkdown method on the body
+        $bodyElements = $dom->getElementsByTagName('body');
+        if ($bodyElements->length > 0) {
+            $markdownContent = $this->convertToMarkdown($bodyElements->item(0), $url);
+        } else {
+            $markdownContent = '';
         }
         
-        // FALLBACK: Cerca contenuto con classi semantiche comuni
-        if (!$mainContent) {
-            $xpath = new \DOMXPath($dom);
-            
-            \Log::debug("🔍 Looking for semantic content containers", [
+        $conversionLoss = round((1 - (strlen($markdownContent) / strlen($cleanHtml))) * 100, 2);
+        \Log::debug("📝 Markdown conversion completed", [
+            'url' => $url,
+            'clean_html_length' => strlen($cleanHtml),
+            'markdown_length' => strlen($markdownContent),
+            'conversion_loss_percentage' => $conversionLoss . '%'
+        ]);
+        
+        // 🚀 STEP 4: Clean up the markdown (same as JS rendering)
+        $preCleanupLength = strlen($markdownContent);
+        $markdownContent = $this->cleanupContent($markdownContent);
+        $cleanupLoss = round((1 - (strlen($markdownContent) / $preCleanupLength)) * 100, 2);
+        
+        \Log::debug("🧽 Markdown cleanup completed", [
+            'url' => $url,
+            'pre_cleanup_length' => $preCleanupLength,
+            'final_markdown_length' => strlen($markdownContent),
+            'cleanup_loss_percentage' => $cleanupLoss . '%'
+        ]);
+        
+        if (strlen($markdownContent) < 50) {
+            \Log::warning("⚠️ Extracted content too short", [
                 'url' => $url,
-                'dom_loaded' => $dom ? 'yes' : 'no'
+                'final_length' => strlen($markdownContent)
             ]);
-            
-            // Cerca div con classi semantiche comuni (testolungo, content-main, article-body, etc.)
-            $semanticNodes = $xpath->query("//div[contains(@class, 'testolungo') or contains(@class, 'content-main') or contains(@class, 'article-body') or contains(@class, 'entry-content')]");
-            \Log::debug("🔍 semantic content search result", [
-                'url' => $url,
-                'nodes_found' => $semanticNodes->length
-            ]);
-            
-            if ($semanticNodes->length > 0) {
-                $mainContent = $this->convertToMarkdown($semanticNodes->item(0), $url);
-                \Log::info("🎯 Extracted content from semantic container", [
-                    'url' => $url,
-                    'content_length' => strlen($mainContent),
-                    'content_preview' => substr($mainContent, 0, 200)
-                ]);
-            }
-            
-            // Fallback: Cerca div con classe "descrizione-modulo"
-            if (!$mainContent) {
-                $descrizioneNodes = $xpath->query("//div[contains(@class, 'descrizione-modulo')]");
-                \Log::debug("🔍 descrizione-modulo search result", [
-                    'url' => $url,
-                    'nodes_found' => $descrizioneNodes->length
-                ]);
-                
-                if ($descrizioneNodes->length > 0) {
-                    $mainContent = $this->convertToMarkdown($descrizioneNodes->item(0), $url);
-                    \Log::info("🎯 Extracted content from 'descrizione-modulo' div", [
-                        'url' => $url,
-                        'content_length' => strlen($mainContent)
-                    ]);
-                }
-            }
-        }
-
-        // Fallback: usa body se non abbiamo main content
-        if (!$mainContent) {
-            $bodyElements = $dom->getElementsByTagName('body');
-            if ($bodyElements->length > 0) {
-                $mainContent = $this->convertToMarkdown($bodyElements->item(0), $url);
-            }
-        }
-
-        // Cleanup content
-        $mainContent = $this->cleanupContent($mainContent);
-        
-        if (strlen($mainContent) < 80) { // Soglia più bassa per il fallback
             return null;
         }
-
+        
         return [
             'title' => $title ?: 'Untitled',
-            'content' => $mainContent
+            'content' => $markdownContent
         ];
     }
 
