@@ -423,10 +423,11 @@
       html = html.replace(/\*([^*\n]+)\*/g, '<em class="chatbot-italic">$1</em>')
                 .replace(/_([^_\n]+)_/g, '<em class="chatbot-italic">$1</em>');
 
-      // 6a. CRITICAL FIX: Link markdown senza parentesi di chiusura
-      // Questo è il fix principale per il problema dell'utente
+      // 6a. CRITICAL FIX: Link markdown senza parentesi di chiusura (v1.2.7)
+      // Questo è il fix principale per il problema dell'utente CIE
       html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s\n]+)(?=\s|$|\n)/g, (match, text, url) => {
-        console.warn('🔧 CRITICAL FIX - Missing closing parenthesis:', match);
+        console.warn('🔧 CRITICAL FIX v1.2.7 APPLIED - Missing closing parenthesis:', match);
+        console.log('🔧 Converting to HTML:', text, '→', url);
         // Convertiamo direttamente in HTML link funzionante
         return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
       });

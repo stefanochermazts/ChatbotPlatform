@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Widget Debug - Caso CIE</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-case { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #ccc; 
+            border-radius: 5px; 
+            background: #f9f9f9;
+        }
+        .input { 
+            background: #fff3cd; 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-left: 4px solid #ffc107;
+        }
+        .output { 
+            background: #d4edda; 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-left: 4px solid #28a745;
+        }
+        .result { font-weight: bold; margin-top: 10px; }
+        pre { background: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Test Widget Debug - Caso CIE</h1>
+    <p><strong>Obiettivo:</strong> Verificare se il fix CRITICAL per i link malformati funziona.</p>
+    
+    <div class="test-case">
+        <h2>📋 Test: Caso Specifico Utente</h2>
+        <div class="input">
+            <strong>Input problematico:</strong><br>
+            <code>Per ulteriori dettagli, puoi consultare la pagina ufficiale del Comune di San Cesareo [qui](http://www.comune.sancesareo.rm.it/c058119/zf/index.php/servizi-aggiuntivi/index/index/idtesto/20247</code>
+        </div>
+        <div class="output">
+            <strong>Output atteso:</strong><br>
+            Link HTML funzionante: <code>&lt;a href="http://www.comune.sancesareo.rm.it/c058119/zf/index.php/servizi-aggiuntivi/index/index/idtesto/20247"&gt;qui&lt;/a&gt;</code>
+        </div>
+        <div id="test-result" class="result">In elaborazione...</div>
+        <div id="processed-content"><!-- Contenuto processato apparirà qui --></div>
+    </div>
+
+    <div class="test-case">
+        <h2>🔍 Debug Info</h2>
+        <div id="debug-info">
+            <pre id="debug-log">Caricamento debug...</pre>
+        </div>
+    </div>
+
+    <script>
+        // Replicazione esatta della logica del widget per test isolato
+        function testMarkdownParser(text) {
+            let html = text;
+            let debugLog = [];
+            
+            debugLog.push('INPUT: ' + text);
+            
+            // Step 1: Escape HTML 
+            html = html.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;');
+            debugLog.push('Dopo HTML escape: ' + html);
+            
+            // Step 2: CRITICAL FIX - Link senza parentesi di chiusura
+            let criticalFixApplied = false;
+            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s\n]+)(?=\s|$|\n)/g, (match, text, url) => {
+                debugLog.push('🔧 CRITICAL FIX applicato a: ' + match);
+                debugLog.push('   → Testo: "' + text + '"');
+                debugLog.push('   → URL: "' + url + '"');
+                criticalFixApplied = true;
+                
+                const result = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
+                debugLog.push('   → HTML: ' + result);
+                return result;
+            });
+            
+            if (!criticalFixApplied) {
+                debugLog.push('❌ CRITICAL FIX non applicato - nessun match trovato');
+            }
+            
+            debugLog.push('Dopo CRITICAL FIX: ' + html);
+            
+            // Step 3: Link completi (non dovrebbe matchare dopo il fix)
+            html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
+                debugLog.push('🔗 Link completo processato: ' + match);
+                
+                let cleanUrl = url.trim();
+                if (/[.,;:!?"'>]$/.test(cleanUrl) && !/\/\d+$/.test(cleanUrl)) {
+                  cleanUrl = cleanUrl.replace(/[.,;:!?"'>]+$/, '');
+                  debugLog.push('   🧹 URL pulito: "' + url + '" → "' + cleanUrl + '"');
+                }
+                
+                let finalUrl;
+                if (cleanUrl.match(/^https?:\/\//)) {
+                  finalUrl = cleanUrl;
+                } else {
+                  debugLog.push('   ⚠️ URL non valido: ' + cleanUrl);
+                  return `${text} (${cleanUrl})`;
+                }
+                
+                const result = `<a href="${finalUrl}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
+                debugLog.push('   → HTML: ' + result);
+                return result;
+            });
+            
+            debugLog.push('FINALE: ' + html);
+            
+            return { html, debugLog };
+        }
+
+        // Test con il caso specifico dell'utente
+        function runTest() {
+            const problematicInput = "Per ulteriori dettagli, puoi consultare la pagina ufficiale del Comune di San Cesareo [qui](http://www.comune.sancesareo.rm.it/c058119/zf/index.php/servizi-aggiuntivi/index/index/idtesto/20247";
+            
+            const result = testMarkdownParser(problematicInput);
+            
+            // Aggiorna UI con risultati
+            document.getElementById('processed-content').innerHTML = '<strong>Risultato processato:</strong><br>' + result.html;
+            document.getElementById('debug-log').textContent = result.debugLog.join('\n');
+            
+            // Verifica successo
+            const linkCount = (result.html.match(/<a href=/g) || []).length;
+            const hasCompleteUrl = result.html.includes('idtesto/20247');
+            
+            const success = linkCount > 0 && hasCompleteUrl;
+            const resultElement = document.getElementById('test-result');
+            
+            if (success) {
+                resultElement.innerHTML = '✅ <span style="color: green;">SUCCESS! Il fix ha funzionato.</span>';
+                resultElement.innerHTML += '<br>• Link HTML generati: ' + linkCount;
+                resultElement.innerHTML += '<br>• URL completo: ' + (hasCompleteUrl ? 'SÌ' : 'NO');
+            } else {
+                resultElement.innerHTML = '❌ <span style="color: red;">FAIL! Il fix non ha funzionato.</span>';
+                resultElement.innerHTML += '<br>• Link HTML generati: ' + linkCount;
+                resultElement.innerHTML += '<br>• URL completo: ' + (hasCompleteUrl ? 'SÌ' : 'NO');
+            }
+        }
+
+        // Esegui test quando la pagina è caricata
+        document.addEventListener('DOMContentLoaded', runTest);
+    </script>
+</body>
+</html>
