@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.2.9.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 FIXED: Markdown links with URL placeholders
+        version: '1.3.0.FORCE_REFRESH.' + Date.now() + Math.random().toString(36).substr(2, 9), // 🔧 AGGRESSIVE CACHE BUSTING
         
         // Files to load
         files: {
@@ -64,7 +64,7 @@
                 '/widget/js/chatbot-fallback-manager.js',
                 '/widget/js/chatbot-form-renderer.js',
                 '/widget/js/chatbot-theme-toggle.js',
-                '/widget/js/chatbot-widget.js',
+                '/widget/js/chatbot-widget.js?cb=' + Date.now() + Math.random().toString(36).substr(2, 9),
                 '/widget/js/chatbot-theming.js'
             ]
         },

@@ -14,7 +14,8 @@
   'use strict';
   
   // Version check log
-  console.log('🤖 Chatbot Widget Loading...', new Date().toISOString());
+  console.log('🤖 Chatbot Widget Loading v1.3.0.FORCE_REFRESH...', new Date().toISOString());
+console.warn('🔧 CRITICAL: If you see this message, the new version is loaded. Look for URLMASK logs below.');
 
   // =================================================================
   // 🔌 CONFIGURATION & CONSTANTS
