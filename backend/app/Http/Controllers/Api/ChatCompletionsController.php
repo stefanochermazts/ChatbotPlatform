@@ -207,7 +207,9 @@ IMPORTANTE per i link:
 - Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
 - NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
 - NON creare link se non conosci l\'URL esatto della fonte
-- Usa il titolo originale del documento, non descrizioni generiche';
+- Usa il titolo originale del documento, non descrizioni generiche
+- CRITICO: Assicurati che ogni link markdown sia correttamente chiuso con parentesi: [testo](url) - mai link incompleti
+- Se metti un link alla fine di una frase, aggiungi sempre uno spazio prima del punto finale: [link](url) .';
         $payload['messages'] = array_merge([
             ['role' => 'system', 'content' => $systemPrompt],
         ], $payload['messages']);

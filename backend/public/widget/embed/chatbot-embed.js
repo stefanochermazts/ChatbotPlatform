@@ -37,7 +37,7 @@
     })(),
     
         // Version per forzare cache refresh dopo aggiornamenti (UPDATED)
-        version: '1.2.4.' + Date.now(), // 🔧 FIXED: Regex cleanup rimuoveva ) dagli URL
+        version: '1.2.5.' + Date.now(), // 🔧 FIXED: Regex cleanup rimuoveva ) dagli URL
         
         // Files to load
         files: {

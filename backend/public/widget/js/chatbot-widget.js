@@ -429,12 +429,25 @@
         console.info('🔧 Fixing malformed markdown link:', match, '→', `[${text}](${url})`);
         return `[${text}](${url})`;
       });
+      
+      // 6a2. Fix specifico per URL che finiscono con numeri (es. idtesto/20247
+      // Questo cattura il caso specifico segnalato dall'utente
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]*\/\d+)(?=\s|$|\n)/g, (match, text, url) => {
+        console.warn('🔧 Fixing URL ending with numbers:', match, '→', `[${text}](${url})`);
+        return `[${text}](${url})`;
+      });
 
       // 6b. Links markdown [text](url) - gestisce URL completi e troncati  
       // FIXED: Pattern più robusto per evitare malformazioni
       html = html.replace(/\[([^\]]+)\]\(([^)\s]+(?:\s[^)]*)?)\)/g, (match, text, url) => {
-        // Pulisce l'URL rimuovendo spazi e caratteri finali problematici (ESCLUSA parentesi)
-        const cleanUrl = url.trim().replace(/[.,;:!?"'>]+$/, ''); // Rimossa ) dal pattern di cleanup
+        // 🔧 CRITICAL FIX: Pulisce l'URL ma preserva integrità del link
+        let cleanUrl = url.trim();
+        
+        // Rimuovi solo caratteri di punteggiatura finali MA solo se l'URL non finisce con numeri/lettere valide
+        // Questo evita di rimuovere parentesi da URL che finiscono con ID numerici come "idtesto/20247"
+        if (/[.,;:!?"'>]$/.test(cleanUrl) && !/\/\d+$/.test(cleanUrl)) {
+          cleanUrl = cleanUrl.replace(/[.,;:!?"'>]+$/, '');
+        }
         
         // Validazione URL più robusta
         let finalUrl;
