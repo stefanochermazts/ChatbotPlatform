@@ -25,7 +25,6 @@ class Tenant extends Model
         'extra_intent_keywords',
         'custom_synonyms',
         'multi_kb_search',
-        'js_rendering_enabled',
         'rag_settings',
         'rag_profile',
         'whatsapp_config',
@@ -38,7 +37,6 @@ class Tenant extends Model
         'extra_intent_keywords' => 'array',
         'custom_synonyms' => 'array',
         'multi_kb_search' => 'boolean',
-        'js_rendering_enabled' => 'boolean',
         'rag_settings' => 'array',
     ];
 

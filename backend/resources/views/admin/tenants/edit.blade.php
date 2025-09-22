@@ -194,20 +194,6 @@
         </div>
       </label>
       
-      <label class="flex items-center gap-3">
-        <input type="hidden" name="js_rendering_enabled" value="0">
-        <input type="checkbox" name="js_rendering_enabled" value="1" 
-               {{ old('js_rendering_enabled', $tenant->js_rendering_enabled) ? 'checked' : '' }} 
-               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-        <div>
-          <span class="text-sm font-medium">🌐 Abilita JavaScript Rendering (Scraper Avanzato)</span>
-          <div class="text-xs text-gray-600">
-            Permette al scraper di elaborare siti JavaScript/SPA (Angular, React, Vue). 
-            <strong>⚠️ Aumenta tempi e costi di scraping</strong>
-          </div>
-        </div>
-      </label>
-      
       <div class="flex justify-end pt-2">
         <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Salva Configurazione KB</button>
       </div>

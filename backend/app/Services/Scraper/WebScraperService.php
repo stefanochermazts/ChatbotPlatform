@@ -125,7 +125,7 @@ class WebScraperService
         }
 
         try {
-            $content = $this->fetchUrl($url, $config, $tenant);
+            $content = $this->fetchUrl($url, $config);
             if (!$content) return;
 
             // Determina se questa pagina è "link-only" in base alla configurazione
@@ -188,26 +188,12 @@ class WebScraperService
         }
     }
 
-    private function fetchUrl(string $url, ScraperConfig $config, Tenant $tenant): ?string
+    private function fetchUrl(string $url, ScraperConfig $config): ?string
     {
-        // 🚀 SECURITY: JavaScript rendering richiede autorizzazione tenant E configurazione scraper
-        $jsRenderingAllowed = $config->render_js && $tenant->js_rendering_enabled;
-        
-        if ($jsRenderingAllowed) {
-            \Log::info("🌐 [JS-RENDER] Using JavaScript rendering for SPA", [
-                'url' => $url,
-                'tenant_id' => $tenant->id,
-                'config_render_js' => $config->render_js,
-                'tenant_js_enabled' => $tenant->js_rendering_enabled
-            ]);
+        // 🚀 NEW: JavaScript rendering support per SPA (Angular, React, Vue)
+        if ($config->render_js) {
+            \Log::info("🌐 [JS-RENDER] Using JavaScript rendering for SPA", ['url' => $url]);
             return $this->fetchUrlWithJS($url, $config);
-        } elseif ($config->render_js && !$tenant->js_rendering_enabled) {
-            \Log::warning("🚫 [JS-RENDER-DENIED] JavaScript rendering configurato ma non autorizzato dal tenant", [
-                'url' => $url,
-                'tenant_id' => $tenant->id,
-                'config_render_js' => $config->render_js,
-                'tenant_js_enabled' => $tenant->js_rendering_enabled
-            ]);
         }
 
         // Metodo standard HTTP per siti statici
@@ -2823,7 +2809,7 @@ class WebScraperService
             }
 
             // Fetch e estrazione contenuto
-            $content = $this->fetchUrl($url, $config, $tenant);
+            $content = $this->fetchUrl($url, $config);
             if (!$content) {
                 \Log::warning("❌ [SINGLE-URL-INTERNAL] Fetch fallito", ['url' => $url]);
                 return null;

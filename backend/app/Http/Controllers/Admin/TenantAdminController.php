@@ -67,7 +67,6 @@ class TenantAdminController extends Controller
             'extra_intent_keywords' => ['sometimes', 'nullable', 'string'],
             'custom_synonyms' => ['sometimes', 'nullable', 'string'],
             'multi_kb_search' => ['sometimes', 'boolean'],
-            'js_rendering_enabled' => ['sometimes', 'boolean'],
             'api_key_plain' => ['sometimes', 'nullable', 'string', 'min:20'],
         ]);
         
