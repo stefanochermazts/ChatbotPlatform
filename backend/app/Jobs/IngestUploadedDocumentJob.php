@@ -81,7 +81,7 @@ class IngestUploadedDocumentJob implements ShouldQueue
                         'tenant_id' => (int) $doc->tenant_id,
                         'document_id' => (int) $doc->id,
                         'chunk_index' => (int) $i,
-                        'content' => (string) $content,
+                        'content' => $this->sanitizeUtf8Content((string) $content),
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
@@ -640,9 +640,56 @@ class IngestUploadedDocumentJob implements ShouldQueue
             $zip->close();
             return trim($text);
         } catch (\Throwable $e) {
-            Log::warning('pptx.zip_extract_failed', ['path' => $filePath, 'error' => $e->getMessage()]);
+            Log::warning('pptx.zip_extract_failed', ['path' => $filePath, 'error' => $e->getMessage()]);                                                        
             return '';
         }
+    }
+
+    /**
+     * 🧹 Sanitizza contenuto rimuovendo caratteri non UTF-8 validi
+     * Risolve errore PostgreSQL: "invalid byte sequence for encoding UTF8"
+     */
+    private function sanitizeUtf8Content(string $content): string
+    {
+        // 🚀 STEP 1: Rimuovi byte non UTF-8 validi
+        $clean = mb_convert_encoding($content, 'UTF-8', 'UTF-8');
+        
+        // 🚀 STEP 2: Correggi caratteri comuni malformati dai PDF
+        $replacements = [
+            // Caratteri di sostituzione comuni da OCR
+            '!' => 't',           // spesso i e t diventano !
+            '�' => '',            // carattere di replacement generico
+            chr(0x81) => '',      // byte problematico specifico
+            chr(0x8F) => '',      // altro byte non UTF-8
+            chr(0x90) => '',      // altro byte non UTF-8
+            chr(0x9D) => '',      // altro byte non UTF-8
+            
+            // Pattern comuni di OCR errato
+            'plas!ca' => 'plastica',
+            'riﬁu!' => 'rifiuti',
+            'u!lizzare' => 'utilizzare',
+            'bo%glie' => 'bottiglie',
+            'pia%' => 'piatti',
+            'sacche$o' => 'sacchetto',
+        ];
+        
+        // Applica sostituzioni
+        $clean = strtr($clean, $replacements);
+        
+        // 🚀 STEP 3: Verifica finale e fallback
+        if (!mb_check_encoding($clean, 'UTF-8')) {
+            // Se ancora non valido, forza pulizia aggressiva
+            $clean = mb_convert_encoding($clean, 'UTF-8', 'UTF-8');
+            $clean = preg_replace('/[\x00-\x1F\x7F\x81\x8D\x8F\x90\x9D]/u', '', $clean);
+        }
+        
+        Log::debug('pdf.content_sanitized', [
+            'original_length' => strlen($content),
+            'clean_length' => strlen($clean),
+            'has_replacements' => $content !== $clean
+        ]);
+        
+        return $clean;
     }
 }
 
