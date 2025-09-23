@@ -25,7 +25,11 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     // API Configuration
     apiEndpoint: '/api/v1/chat/completions',
     analyticsEndpoint: '/api/v1/widget/events/public',
-    version: '1.0.1-fix-events', // Debug version
+    // 🎯 Agent Console API endpoints
+    conversationEndpoint: '/api/v1/conversations',
+    messageEndpoint: '/api/v1/conversations/messages',
+    handoffEndpoint: '/api/v1/handoffs',
+    version: '1.0.1-agent-console', // Updated version
     maxRetries: 3,
     retryDelay: 1000,
     requestTimeout: 45000,
@@ -48,6 +52,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     conversationKey: 'conversation_history',
     preferencesKey: 'user_preferences',
     sessionKey: 'session_id',
+    // 🎯 Agent Console storage keys
+    agentSessionKey: 'agent_session_id',
+    handoffStatusKey: 'handoff_status',
     
     // Events
     events: {
@@ -57,7 +64,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       MESSAGE_RECEIVED: 'chatbot:message:received',
       ERROR_OCCURRED: 'chatbot:error',
       TYPING_START: 'chatbot:typing:start',
-      TYPING_END: 'chatbot:typing:end'
+      TYPING_END: 'chatbot:typing:end',
+      // 🎯 Agent Console events
+      HANDOFF_REQUESTED: 'chatbot:handoff:requested',
+      HANDOFF_ACCEPTED: 'chatbot:handoff:accepted',
+      OPERATOR_JOINED: 'chatbot:operator:joined',
+      OPERATOR_TYPING: 'chatbot:operator:typing'
     },
     
     // Analytics event types
@@ -683,7 +695,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         sendBtn: document.getElementById('chatbot-send-btn'),
         charCounter: document.getElementById('chatbot-char-counter'),
         charCount: document.getElementById('chatbot-char-count'),
-        status: document.getElementById('chatbot-status')
+        status: document.getElementById('chatbot-status'),
+        // 🎯 Agent Console elements
+        handoffBtn: document.getElementById('chatbot-handoff-btn'),
+        handoffStatus: document.getElementById('chatbot-handoff-status'),
+        handoffIndicator: document.getElementById('chatbot-handoff-indicator'),
+        handoffText: document.getElementById('chatbot-handoff-text')
       };
       
       // Debug log for missing elements
@@ -774,6 +791,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       // Input handling
       this.elements.input?.addEventListener('input', () => this.handleInputChange());
       this.elements.input?.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+      // 🎯 Agent Console handoff button
+      this.elements.handoffBtn?.addEventListener('click', () => this.handleHandoffRequest());
 
       // Global keyboard shortcuts
       document.addEventListener('keydown', (e) => this.handleGlobalKeyDown(e));
@@ -1845,6 +1865,78 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       }, CONFIG.autoScrollDelay);
     }
 
+    // 🎯 Agent Console Handoff Methods
+    async handleHandoffRequest() {
+      try {
+        // Emit event to main widget to request handoff
+        this.events.emit('handoff-requested', {
+          reason: 'user_request',
+          priority: 'normal'
+        });
+        
+        // Show feedback to user
+        this.showHandoffStatus('pending', '🤝 Richiesta di assistenza in corso...');
+        
+        console.log('🎯 Handoff requested by user');
+      } catch (error) {
+        console.error('🚨 Error requesting handoff:', error);
+        this.showHandoffStatus('error', '❌ Errore nella richiesta di assistenza');
+      }
+    }
+
+    showHandoffStatus(status, message) {
+      if (!this.elements.handoffStatus || !this.elements.handoffText) return;
+      
+      this.elements.handoffText.textContent = message;
+      
+      // Update indicator based on status
+      switch (status) {
+        case 'pending':
+          this.elements.handoffIndicator.textContent = '🤝';
+          this.elements.handoffStatus.className = 'chatbot-handoff-status pending';
+          break;
+        case 'accepted':
+          this.elements.handoffIndicator.textContent = '👨‍💼';
+          this.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+          break;
+        case 'error':
+          this.elements.handoffIndicator.textContent = '❌';
+          this.elements.handoffStatus.className = 'chatbot-handoff-status error';
+          break;
+        default:
+          this.elements.handoffStatus.className = 'chatbot-handoff-status';
+      }
+      
+      // Show/hide status bar
+      if (status === 'hidden') {
+        this.elements.handoffStatus.style.display = 'none';
+      } else {
+        this.elements.handoffStatus.style.display = 'block';
+      }
+    }
+
+    updateHandoffButton(handoffStatus) {
+      if (!this.elements.handoffBtn) return;
+      
+      switch (handoffStatus) {
+        case 'bot_only':
+          this.elements.handoffBtn.style.display = 'block';
+          this.elements.handoffBtn.disabled = false;
+          this.elements.handoffBtn.title = 'Parla con un operatore';
+          break;
+        case 'handoff_pending':
+          this.elements.handoffBtn.disabled = true;
+          this.elements.handoffBtn.title = 'Richiesta in corso...';
+          break;
+        case 'operator_active':
+          this.elements.handoffBtn.style.display = 'none';
+          break;
+        default:
+          this.elements.handoffBtn.style.display = 'block';
+          this.elements.handoffBtn.disabled = false;
+      }
+    }
+
     // Utility methods
     prefersReducedMotion() {
       return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2117,6 +2209,175 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
   }
 
   // =================================================================
+  // 🎯 AGENT CONSOLE CONVERSATION TRACKER
+  // =================================================================
+
+  class ConversationTracker {
+    constructor(options = {}) {
+      this.baseURL = options.baseURL || '';
+      this.apiKey = options.apiKey || '';
+      this.tenantId = options.tenantId || '';
+      this.widgetConfigId = options.widgetConfigId || 1;
+      
+      // Session management
+      this.agentSessionId = null;
+      this.handoffStatus = 'bot_only'; // bot_only, handoff_pending, operator_active
+      this.operatorInfo = null;
+      
+      // Event emitter for real-time updates
+      this.events = new EventEmitter();
+      
+      console.log('🎯 ConversationTracker initialized', {
+        tenantId: this.tenantId,
+        widgetConfigId: this.widgetConfigId
+      });
+    }
+
+    async startSession() {
+      try {
+        const response = await fetch(`${this.baseURL}${CONFIG.conversationEndpoint}/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            tenant_id: parseInt(this.tenantId),
+            widget_config_id: parseInt(this.widgetConfigId),
+            channel: 'widget',
+            user_agent: navigator.userAgent,
+            referrer_url: document.referrer || window.location.href
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        this.agentSessionId = data.session.session_id;
+        this.handoffStatus = data.session.handoff_status || 'bot_only';
+        
+        // Store session in localStorage for persistence
+        localStorage.setItem(CONFIG.storagePrefix + CONFIG.agentSessionKey, this.agentSessionId);
+        localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, this.handoffStatus);
+        
+        console.log('🎯 Agent session started:', this.agentSessionId);
+        
+        return {
+          sessionId: this.agentSessionId,
+          status: this.handoffStatus
+        };
+      } catch (error) {
+        console.error('🚨 Failed to start agent session:', error);
+        // Fallback to local session management
+        this.agentSessionId = 'fallback_' + Date.now();
+        return { sessionId: this.agentSessionId, status: 'bot_only' };
+      }
+    }
+
+    async sendMessage(content, senderType = 'user') {
+      if (!this.agentSessionId) {
+        console.warn('🚨 No agent session active, starting one...');
+        await this.startSession();
+      }
+
+      try {
+        const response = await fetch(`${this.baseURL}${CONFIG.messageEndpoint}/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            session_id: this.agentSessionId,
+            content: content,
+            sender_type: senderType,
+            content_type: 'text'
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🎯 Message sent to agent console:', data.message);
+          return data.message;
+        } else {
+          console.warn('🚨 Failed to send message to agent console:', response.status);
+        }
+      } catch (error) {
+        console.error('🚨 Error sending message to agent console:', error);
+      }
+      
+      return null;
+    }
+
+    async requestHandoff(reason = 'user_request', priority = 'normal') {
+      if (!this.agentSessionId) {
+        console.warn('🚨 Cannot request handoff: no active session');
+        return false;
+      }
+
+      try {
+        const response = await fetch(`${this.baseURL}${CONFIG.handoffEndpoint}/request`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            session_id: this.agentSessionId,
+            trigger_type: 'user_request',
+            reason: reason,
+            priority: priority
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          this.handoffStatus = 'handoff_pending';
+          localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, this.handoffStatus);
+          
+          this.events.emit(CONFIG.events.HANDOFF_REQUESTED, {
+            handoffId: data.handoff_request.id,
+            priority: priority,
+            reason: reason
+          });
+          
+          console.log('🎯 Handoff requested:', data.handoff_request);
+          return data.handoff_request;
+        }
+      } catch (error) {
+        console.error('🚨 Error requesting handoff:', error);
+      }
+      
+      return false;
+    }
+
+    getSessionInfo() {
+      return {
+        agentSessionId: this.agentSessionId,
+        handoffStatus: this.handoffStatus,
+        operatorInfo: this.operatorInfo
+      };
+    }
+
+    isHandoffActive() {
+      return this.handoffStatus === 'operator_active';
+    }
+
+    isPendingHandoff() {
+      return this.handoffStatus === 'handoff_pending';
+    }
+
+    // Restore session from localStorage
+    restoreSession() {
+      this.agentSessionId = localStorage.getItem(CONFIG.storagePrefix + CONFIG.agentSessionKey);
+      this.handoffStatus = localStorage.getItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey) || 'bot_only';
+      
+      if (this.agentSessionId) {
+        console.log('🎯 Restored agent session:', this.agentSessionId, 'Status:', this.handoffStatus);
+      }
+    }
+  }
+
+  // =================================================================
   // 🤖 MAIN CHATBOT CLASS
   // =================================================================
 
@@ -2214,6 +2475,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       this.api = new ChatbotAPI(this.options.apiKey, this.options.baseURL);
       this.analytics = new Analytics(this.options.apiKey, this.options.tenantId, this.options.baseURL);
       
+      // 🎯 Agent Console integration
+      this.conversationTracker = new ConversationTracker({
+        baseURL: this.options.baseURL,
+        apiKey: this.options.apiKey,
+        tenantId: this.options.tenantId,
+        widgetConfigId: this.options.widgetConfigId || 1
+      });
+      
       // Initialize dark mode manager
       this.darkMode = null;
       if (window.ChatbotDarkModeManager) {
@@ -2271,6 +2540,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       // Apply configuration AFTER UI is initialized
       this.applyConfiguration();
       
+      // 🎯 Initialize Agent Console session
+      this.initializeAgentConsole();
+      
+      // Initialize handoff UI state
+      setTimeout(() => this.initializeHandoffUI(), 500);
+      
       // Attach managers to widget container if available
       if (this.fallbackManager && this.container) {
         this.fallbackManager.attachToWidget();
@@ -2284,9 +2559,33 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       window.chatbotWidget = this;
     }
 
+    async initializeAgentConsole() {
+      try {
+        // Restore previous session if available
+        this.conversationTracker.restoreSession();
+        
+        // Start new session if needed
+        if (!this.conversationTracker.agentSessionId) {
+          await this.conversationTracker.startSession();
+        }
+        
+        // Setup handoff event listeners
+        this.conversationTracker.events.on(CONFIG.events.HANDOFF_REQUESTED, (data) => {
+          this.handleHandoffAccepted(data);
+        });
+        
+        console.log('🎯 Agent Console initialized:', this.conversationTracker.getSessionInfo());
+      } catch (error) {
+        console.warn('🚨 Failed to initialize Agent Console:', error);
+      }
+    }
+
     setupEventHandlers() {
       this.events.on('send-message', (message) => this.sendMessage(message));
       this.events.on('retry-last-message', () => this.retryLastMessage());
+      
+      // 🎯 Agent Console handoff events
+      this.events.on('handoff-requested', (data) => this.handleHandoffFromUI(data));
       
       // Manual retry handler
       document.addEventListener('chatbot:manual:retry', () => {
@@ -2365,6 +2664,11 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       this.ui.addUserMessage(content);
       this.state.addMessage({ role: 'user', content });
       
+      // 🎯 Track message in Agent Console
+      if (this.conversationTracker) {
+        this.conversationTracker.sendMessage(content, 'user');
+      }
+      
       // Show typing indicator
       setTimeout(() => this.ui.showTyping(), CONFIG.typingIndicatorDelay);
       
@@ -2441,6 +2745,11 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         content: response.content,
         citations: response.citations
       });
+      
+      // 🎯 Track bot response in Agent Console
+      if (this.conversationTracker) {
+        this.conversationTracker.sendMessage(response.content, 'system');
+      }
       
       // Check for form triggers after bot response (per trigger non keyword-based)
       await this.checkFormTriggers(content);
@@ -2936,6 +3245,87 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         this.ui.appendMessage(element);
       } else {
         console.error('ChatbotWidget: UI not available for custom message');
+      }
+    }
+
+    // =================================================================
+    // 🎯 AGENT CONSOLE HANDOFF METHODS
+    // =================================================================
+
+    async handleHandoffFromUI(data) {
+      try {
+        console.log('🎯 Handoff requested from UI:', data);
+        
+        // Request handoff via ConversationTracker
+        const handoffRequest = await this.conversationTracker.requestHandoff(
+          data.reason || 'user_request',
+          data.priority || 'normal'
+        );
+        
+        if (handoffRequest) {
+          // Update UI state
+          this.ui.updateHandoffButton('handoff_pending');
+          this.ui.showHandoffStatus('pending', '🤝 Richiesta di assistenza in corso...');
+          
+          // Add system message
+          this.ui.addBotMessage(
+            'Ho inoltrato la tua richiesta a un operatore. Ti risponderà al più presto!',
+            [],
+            false
+          );
+          
+          console.log('🎯 Handoff request successful:', handoffRequest);
+        } else {
+          throw new Error('Failed to create handoff request');
+        }
+      } catch (error) {
+        console.error('🚨 Failed to request handoff:', error);
+        this.ui.showHandoffStatus('error', '❌ Errore nella richiesta di assistenza');
+        
+        // Add error message
+        this.ui.addBotMessage(
+          'Mi dispiace, non è stato possibile contattare un operatore al momento. Riprova più tardi.',
+          [],
+          false
+        );
+      }
+    }
+
+    handleHandoffAccepted(data) {
+      console.log('🎯 Handoff accepted:', data);
+      
+      // Update UI
+      this.ui.updateHandoffButton('operator_active');
+      this.ui.showHandoffStatus('accepted', '👨‍💼 Operatore connesso');
+      
+      // Add system message
+      this.ui.addBotMessage(
+        'Un operatore si è unito alla conversazione. Ora puoi parlare direttamente con lui!',
+        [],
+        false
+      );
+      
+      // Update conversation tracker status
+      this.conversationTracker.handoffStatus = 'operator_active';
+      localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, 'operator_active');
+    }
+
+    getHandoffStatus() {
+      return this.conversationTracker ? this.conversationTracker.getSessionInfo() : null;
+    }
+
+    initializeHandoffUI() {
+      // Initialize handoff button state based on current session
+      const sessionInfo = this.getHandoffStatus();
+      if (sessionInfo) {
+        this.ui.updateHandoffButton(sessionInfo.handoffStatus);
+        
+        // Show status if handoff is active
+        if (sessionInfo.handoffStatus === 'handoff_pending') {
+          this.ui.showHandoffStatus('pending', '🤝 Richiesta di assistenza in corso...');
+        } else if (sessionInfo.handoffStatus === 'operator_active') {
+          this.ui.showHandoffStatus('accepted', '👨‍💼 Operatore connesso');
+        }
       }
     }
   }

@@ -444,6 +444,14 @@
           </main>
           
           <footer class="chatbot-input-container">
+            <!-- 🎯 Handoff Status Bar -->
+            <div id="chatbot-handoff-status" class="chatbot-handoff-status" style="display: none;">
+              <div class="chatbot-handoff-content">
+                <span id="chatbot-handoff-indicator" class="chatbot-handoff-indicator">🤝</span>
+                <span id="chatbot-handoff-text" class="chatbot-handoff-text">Richiesta di assistenza in corso...</span>
+              </div>
+            </div>
+            
             <form id="chatbot-form" class="chatbot-input-wrapper">
               <textarea
                 id="chatbot-input"
@@ -452,12 +460,25 @@
                 rows="1"
                 maxlength="2000"
               ></textarea>
-              <button id="chatbot-send-btn" class="chatbot-send-button" type="submit" disabled>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22,2 15,22 11,13 2,9"></polygon>
-                </svg>
-              </button>
+              
+              <!-- 🎯 Agent Console Action Buttons -->
+              <div class="chatbot-action-buttons">
+                <button id="chatbot-handoff-btn" class="chatbot-action-button" type="button" title="Parla con un operatore">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                </button>
+                
+                <button id="chatbot-send-btn" class="chatbot-send-button" type="submit" disabled>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                  </svg>
+                </button>
+              </div>
             </form>
           </footer>
         </div>
