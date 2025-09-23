@@ -3,7 +3,7 @@
 @section('title', 'Configurazione Widget - '.$tenant->name)
 
 @section('content')
-<div class="container mx-auto px-4 py-6">
+<div class="w-full py-6">
   @include('admin.widget-config.partials.header')
 
   @include('admin.widget-config.partials.overview')

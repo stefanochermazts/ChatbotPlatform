@@ -3,7 +3,7 @@
 @section('title', 'Configurazioni Widget')
 
 @section('content')
-<div class="container mx-auto px-4 py-6">
+<div class="w-full py-6">
   <div class="flex justify-between items-center mb-6">
     <h1 class="text-3xl font-bold text-gray-900">🤖 Configurazioni Widget</h1>
     <div class="flex gap-3">

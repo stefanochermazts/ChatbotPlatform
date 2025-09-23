@@ -36,7 +36,7 @@
 .param-flag { background: #f3e8ff; color: #7c3aed; }
 </style>
 
-<div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+<div class="w-full py-6">
   <!-- Header -->
   <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
     <div class="p-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white">

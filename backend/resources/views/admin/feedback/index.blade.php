@@ -1,7 +1,7 @@
 @extends('admin.layout')
 
 @section('content')
-<div class="max-w-7xl mx-auto py-6">
+<div class="w-full py-6">
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
