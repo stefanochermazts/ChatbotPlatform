@@ -79,16 +79,16 @@ Route::prefix('v1/vonage/whatsapp')->group(function () {
 // 🎯 Agent Console - Conversation Management
 Route::prefix('v1/conversations')->group(function () {
     // 🚀 Session Management
-    Route::post('/start', [ConversationController::class, 'start']);
-    Route::get('/{sessionId}', [ConversationController::class, 'show']);
-    Route::post('/{sessionId}/end', [ConversationController::class, 'end']);
-    Route::get('/{sessionId}/status', [ConversationController::class, 'status']);
+    Route::post('/start', [\App\Http\Controllers\Api\ConversationController::class, 'start']);
+    Route::get('/{sessionId}', [\App\Http\Controllers\Api\ConversationController::class, 'show']);
+    Route::post('/{sessionId}/end', [\App\Http\Controllers\Api\ConversationController::class, 'end']);
+    Route::get('/{sessionId}/status', [\App\Http\Controllers\Api\ConversationController::class, 'status']);
     
     // 💬 Message Management  
-    Route::get('/{sessionId}/messages', [MessageController::class, 'index']);
-    Route::post('/messages/send', [MessageController::class, 'send']);
-    Route::post('/messages/{messageId}/feedback', [MessageController::class, 'feedback']);
-    Route::put('/messages/{messageId}/edit', [MessageController::class, 'edit']);
+    Route::get('/{sessionId}/messages', [\App\Http\Controllers\Api\MessageController::class, 'index']);
+    Route::post('/messages/send', [\App\Http\Controllers\Api\MessageController::class, 'send']);
+    Route::post('/messages/{messageId}/feedback', [\App\Http\Controllers\Api\MessageController::class, 'feedback']);
+    Route::put('/messages/{messageId}/edit', [\App\Http\Controllers\Api\MessageController::class, 'edit']);
 });
 
 // 🤝 Agent Console - Handoff Management (require auth)

@@ -32,13 +32,11 @@ class ConversationController extends Controller
                 'metadata' => 'nullable|array'
             ]);
 
-            // 🔒 Verifica tenant attivo
-            $tenant = Tenant::where('id', $validated['tenant_id'])
-                           ->where('is_active', true)
-                           ->first();
+            // 🔒 Verifica tenant esistente
+            $tenant = Tenant::find($validated['tenant_id']);
             
             if (!$tenant) {
-                return response()->json(['error' => 'Tenant not found or inactive'], 404);
+                return response()->json(['error' => 'Tenant not found'], 404);
             }
 
             // 🔒 Verifica widget config abilitato
@@ -61,9 +59,9 @@ class ConversationController extends Controller
                 'session_id' => $sessionId,
                 'user_identifier' => $validated['user_identifier'] ?? $this->generateUserIdentifier($request),
                 'channel' => $validated['channel'] ?? 'widget',
-                'user_agent' => $validated['user_agent'],
-                'referrer_url' => $validated['referrer_url'],
-                'browser_info' => $validated['browser_info'],
+                'user_agent' => $validated['user_agent'] ?? null,
+                'referrer_url' => $validated['referrer_url'] ?? null,
+                'browser_info' => $validated['browser_info'] ?? null,
                 'status' => 'active',
                 'handoff_status' => 'bot_only',
                 'started_at' => now(),
