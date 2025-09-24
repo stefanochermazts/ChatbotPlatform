@@ -102,6 +102,20 @@ class IngestUploadedDocumentJob implements ShouldQueue
 
             // 5) Indicizzazione vettori su Milvus
             $milvus->upsertVectors((int) $doc->tenant_id, (int) $doc->id, $chunks, $vectors);
+
+            // 6) Salvataggio Markdown estratto per preview/download
+            try {
+                $mdPath = $this->saveExtractedMarkdown($doc, $chunks);
+                $this->updateDoc($doc, [
+                    'extracted_path' => $mdPath,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('extracted_md.save_failed', [
+                    'document_id' => $doc->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             $this->updateDoc($doc, ['ingestion_status' => 'completed', 'ingestion_progress' => 100]);
         } catch (\Throwable $e) {
             Log::error('ingestion.failed', ['document_id' => $doc->id, 'error' => $e->getMessage()]);
@@ -690,6 +704,45 @@ class IngestUploadedDocumentJob implements ShouldQueue
         ]);
         
         return $clean;
+    }
+
+    /**
+     * Salva un file Markdown concatenando i chunk estratti
+     * in percorso pubblico segregato per tenant/KB.
+     */
+    private function saveExtractedMarkdown(Document $doc, array $chunks): string
+    {
+        $safeTitle = preg_replace('/[^a-zA-Z0-9_-]+/u', '-', strtolower($doc->title ?? 'documento'));
+        $fileName = $doc->id . '-' . $safeTitle . '.md';
+        $dir = 'kb/' . (int) $doc->tenant_id . '/extracted';
+        $fullPath = $dir . '/' . $fileName;
+
+        // Header con metadati minimi
+        $header = "# " . ($doc->title ?? 'Documento') . "\n\n";
+        $header .= "_Tenant ID_: " . (int) $doc->tenant_id . "  \n";
+        if ($doc->knowledge_base_id) {
+            $header .= "_KB ID_: " . (int) $doc->knowledge_base_id . "  \n";
+        }
+        if (!empty($doc->source_url)) {
+            $header .= "_Source URL_: " . $doc->source_url . "  \n";
+        }
+        $header .= "\n---\n\n";
+
+        // Concatena i chunk con separatori
+        $body = '';
+        foreach ($chunks as $i => $c) {
+            $body .= $c;
+            if ($i < count($chunks) - 1) {
+                $body .= "\n\n---\n\n"; // separatore visivo
+            }
+        }
+
+        $markdown = $header . $body;
+
+        // Salva su disco pubblico per poterlo servire come link
+        Storage::disk('public')->put($fullPath, $markdown);
+
+        return $fullPath; // da memorizzare in documents.extracted_path
     }
 }
 

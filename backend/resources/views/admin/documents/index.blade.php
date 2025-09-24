@@ -204,13 +204,20 @@
           @endif
         </td>
         <td class="p-2">
-          @if($d->path)
-            <a href="{{ \Storage::url($d->path) }}" target="_blank" class="text-blue-600 hover:underline text-xs" title="Visualizza contenuto processato">
-              {{ \Illuminate\Support\Str::limit($d->path, 40) }}
-            </a>
-          @else
-            <span class="text-gray-400 text-xs">-</span>
-          @endif
+          <div class="flex flex-col gap-1">
+            @if($d->path)
+              <a href="{{ \Storage::url($d->path) }}" target="_blank" class="text-blue-600 hover:underline text-xs" title="File originale / processato">
+                {{ \Illuminate\Support\Str::limit($d->path, 40) }}
+              </a>
+            @endif
+            @if(!empty($d->extracted_path))
+              <a href="{{ \Storage::url($d->extracted_path) }}" target="_blank" class="text-emerald-600 hover:underline text-xs" title="Testo estratto (Markdown)">Testo estratto (.md)</a>
+            @endif
+            <a href="{{ route('admin.documents.chunks', [$tenant, $d]) }}" class="text-xs text-purple-700 hover:underline">Vedi chunk</a>
+            @if(empty($d->path) && empty($d->extracted_path))
+              <span class="text-gray-400 text-xs">-</span>
+            @endif
+          </div>
         </td>
         <td class="p-2">
           @if($d->source_url)

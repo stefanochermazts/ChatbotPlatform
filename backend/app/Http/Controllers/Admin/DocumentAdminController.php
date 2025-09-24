@@ -10,6 +10,7 @@ use App\Models\Document;
 use App\Models\Tenant;
 use App\Models\ScraperConfig;
 use App\Services\RAG\MilvusClient;
+use Illuminate\Support\Facades\DB;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -61,6 +62,26 @@ class DocumentAdminController extends Controller
         
         $docs = $query->orderByDesc('id')->paginate(20)->withQueryString();
         return view('admin.documents.index', compact('tenant', 'docs', 'kbId', 'sourceUrlSearch', 'qualityFilter'));
+    }
+
+    /**
+     * Anteprima chunk di un documento (admin + scoping tenant/KB)
+     */
+    public function chunks(Request $request, Tenant $tenant, Document $document)
+    {
+        abort_unless($document->tenant_id === $tenant->id, 404);
+
+        $chunks = DB::table('document_chunks')
+            ->where('tenant_id', $tenant->id)
+            ->where('document_id', $document->id)
+            ->orderBy('chunk_index')
+            ->get(['chunk_index','content']);
+
+        return view('admin.documents.chunks', [
+            'tenant' => $tenant,
+            'document' => $document,
+            'chunks' => $chunks,
+        ]);
     }
 
     public function upload(Request $request, Tenant $tenant)
@@ -208,6 +229,10 @@ class DocumentAdminController extends Controller
         if ($document->path && Storage::disk('public')->exists($document->path)) {
             Storage::disk('public')->delete($document->path);
         }
+        // Elimina file estratti e originali
+        if ($document->extracted_path && Storage::disk('public')->exists($document->extracted_path)) {
+            Storage::disk('public')->delete($document->extracted_path);
+        }
         // Elimina righe chunks e documento
         \DB::table('document_chunks')->where('document_id', $document->id)->delete();
         $document->delete();
@@ -249,6 +274,9 @@ class DocumentAdminController extends Controller
         foreach ($docs as $d) {
             if ($d->path && Storage::disk('public')->exists($d->path)) {
                 Storage::disk('public')->delete($d->path);
+            }
+            if ($d->extracted_path && Storage::disk('public')->exists($d->extracted_path)) {
+                Storage::disk('public')->delete($d->extracted_path);
             }
         }
         Document::whereIn('id', $docs->pluck('id'))->delete();

@@ -16,6 +16,7 @@ class Document extends Model
         'title',
         'source',
         'path',
+        'extracted_path',
         'source_url',
         'content_hash',
         'last_scraped_at',

@@ -110,7 +110,10 @@
               <td class="p-3">{{ $doc->source }}</td>
               <td class="p-3">{{ $doc->ingestion_status }}</td>
               <td class="p-3">
-                <a class="text-indigo-600 hover:underline" href="{{ url('storage/'.$doc->path) }}" target="_blank">Apri</a>
+                <a class="text-indigo-600 hover:underline mr-3" href="{{ url('storage/'.$doc->path) }}" target="_blank">Apri</a>
+                @if(!empty($doc->extracted_path))
+                  <a class="text-emerald-600 hover:underline" href="{{ url('storage/'.$doc->extracted_path) }}" target="_blank" title="Testo estratto (Markdown)">Testo estratto</a>
+                @endif
               </td>
             </tr>
           @endforeach
