@@ -2642,6 +2642,11 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         this.initializeHandoffUI();
         // 🎯 Ensure handoff button is enabled by default
         this.ensureHandoffButtonEnabled();
+        // Avvia polling SOLO se già in stato di handoff
+        const status = this.conversationTracker?.handoffStatus || localStorage.getItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey);
+        if (status === 'handoff_requested' || status === 'handoff_active' || status === 'operator_active') {
+          this.enablePollingFallback();
+        }
       }, 500);
       
       // Attach managers to widget container if available
@@ -3700,6 +3705,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
 
     // 🔄 Enable polling fallback for real-time messaging
     enablePollingFallback() {
+      // Abilita polling solo quando una richiesta di assistenza è attiva o accettata
+      const status = this.conversationTracker?.handoffStatus || localStorage.getItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey);
+      if (status !== 'handoff_requested' && status !== 'handoff_active' && status !== 'operator_active') {
+        console.log('📡 Polling non attivato: handoff non richiesto/attivo (status:', status, ')');
+        return;
+      }
       if (this.pollingInterval) {
         return; // Already enabled
       }
@@ -3810,6 +3821,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
                 this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
               }
             } catch (e) { console.warn('⚠️ Cannot enable handoff button:', e.message); }
+            // Stop polling quando torna al bot
+            if (this.pollingInterval) {
+              clearInterval(this.pollingInterval);
+              this.pollingInterval = null;
+              console.log('📡 Polling disattivato: status bot_only');
+            }
             console.log('✅ Conversation released - bot active');
             break;
           case 'handoff_requested':
@@ -3840,6 +3857,10 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
               }
             } catch (e) { console.warn('⚠️ Cannot disable handoff button:', e.message); }
             break;
+        }
+        // Avvia polling quando entra in stato di handoff
+        if ((newHandoffStatus === 'handoff_requested' || newHandoffStatus === 'handoff_active' || newHandoffStatus === 'operator_active') && !this.pollingInterval) {
+          this.enablePollingFallback();
         }
       }
     }
