@@ -89,11 +89,13 @@ Route::prefix('v1/conversations')->group(function () {
     Route::post('/messages/send', [\App\Http\Controllers\Api\MessageController::class, 'send']);
     Route::post('/messages/{messageId}/feedback', [\App\Http\Controllers\Api\MessageController::class, 'feedback']);
     Route::put('/messages/{messageId}/edit', [\App\Http\Controllers\Api\MessageController::class, 'edit']);
+    
+    // 🤝 Handoff request (public - called by widget)
+    Route::post('/handoff/request', [\App\Http\Controllers\Api\HandoffController::class, 'request']);
 });
 
 // 🤝 Agent Console - Handoff Management (require auth)
 Route::prefix('v1/handoffs')->middleware('auth.apikey')->group(function () {
-    Route::post('/request', [\App\Http\Controllers\Api\HandoffController::class, 'request']);
     Route::post('/{handoffId}/assign', [\App\Http\Controllers\Api\HandoffController::class, 'assign']);
     Route::post('/{handoffId}/resolve', [\App\Http\Controllers\Api\HandoffController::class, 'resolve']);
     Route::post('/{handoffId}/escalate', [\App\Http\Controllers\Api\HandoffController::class, 'escalate']);

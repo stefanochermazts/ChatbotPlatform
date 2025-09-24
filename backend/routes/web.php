@@ -214,6 +214,22 @@ Route::post('/tenants/{tenant}/documents/rescrape-all', [DocumentAdminController
     Route::get('/tenants/{tenant}/whatsapp-config', [WhatsAppConfigController::class, 'show'])->name('whatsapp-config.show');
     Route::put('/tenants/{tenant}/whatsapp-config', [WhatsAppConfigController::class, 'update'])->name('whatsapp-config.update');
     Route::post('/tenants/{tenant}/whatsapp-config/test', [WhatsAppConfigController::class, 'test'])->name('whatsapp-config.test');
+
+    // 👨‍💼 Operator Console - Agent & Human Handoff
+    Route::prefix('operator-console')->name('operator-console.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'index'])->name('index');
+        Route::get('/conversations', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'conversations'])->name('conversations');
+        Route::get('/conversations/{session}', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'showConversation'])->name('conversations.show');
+        Route::post('/conversations/{session}/takeover', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'takeOverConversation'])->name('conversations.takeover');
+        Route::post('/conversations/{session}/release', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'releaseConversation'])->name('conversations.release');
+        Route::post('/conversations/{session}/send-message', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'sendMessage'])->name('conversations.send-message');
+        Route::delete('/conversations/{session}', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'deleteConversation'])->name('conversations.delete');
+        Route::get('/handoffs', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'handoffs'])->name('handoffs');
+        Route::post('/handoffs/{handoff}/assign', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'assignHandoff'])->name('handoffs.assign');
+        Route::post('/handoffs/{handoff}/resolve', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'resolveHandoff'])->name('handoffs.resolve');
+        Route::get('/operators', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'operators'])->name('operators');
+        Route::post('/operators/{user}/status', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'updateOperatorStatus'])->name('operators.status');
+    });
 });
 
 // Public routes - accessible without authentication

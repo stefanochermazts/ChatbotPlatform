@@ -84,6 +84,11 @@ class MessageController extends Controller
      */
     public function index(Request $request, string $sessionId): JsonResponse
     {
+        \Log::info('message.index.called', [
+            'session_id' => $sessionId,
+            'headers' => $request->headers->all()
+        ]);
+        
         try {
             $validated = $request->validate([
                 'limit' => 'integer|min:1|max:100',
@@ -126,7 +131,14 @@ class MessageController extends Controller
                 'pagination' => [
                     'limit' => $limit,
                     'offset' => $offset,
-                    'total' => $session->total_messages
+                    'total' => $session->message_count_total ?? 0
+                ],
+                // 🎯 Agent Console: Include conversation status for widget sync
+                'conversation' => [
+                    'status' => $session->status,
+                    'handoff_status' => $session->handoff_status,
+                    'assigned_operator_id' => $session->assigned_operator_id,
+                    'last_activity_at' => $session->last_activity_at?->toISOString()
                 ]
             ]);
 

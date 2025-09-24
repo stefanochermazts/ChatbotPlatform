@@ -7,6 +7,10 @@
   <title>Admin - ChatbotPlatform</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <!-- Laravel Echo for WebSocket -->
+  <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
   <nav class="bg-white border-b border-gray-200">
@@ -27,6 +31,7 @@
         <a class="hover:text-blue-600" href="{{ route('admin.whatsapp-config.index') }}">📱 WhatsApp</a>
         <a class="hover:text-blue-600" href="{{ route('admin.widget-analytics.index') }}">Analytics</a>
         <a class="hover:text-blue-600" href="{{ route('admin.rag.index') }}">RAG Tester</a>
+        <a class="hover:text-blue-600" href="{{ route('admin.operator-console.index') }}">👨‍💼 Operator Console</a>
         @if(auth()->user()->isAdmin())
           <a class="hover:text-blue-600" href="{{ route('admin.utilities.index') }}">⚡ Utilities</a>
         @endif
@@ -52,6 +57,39 @@
     @endif
     @yield('content')
   </main>
+  
+  <!-- Laravel Echo Initialization -->
+  <script>
+    window.Pusher = Pusher;
+    
+    // Configure Pusher directly for Reverb
+    const wsHost = window.location.hostname === 'chatbotplatform.test' ? 'chatbotplatform.test' : 'localhost';
+    const pusher = new Pusher('jhvdpovyh6wrarhlucxh', {
+        wsHost: wsHost,
+        wsPort: 8080,
+        enabledTransports: ['ws'],
+        forceTLS: false,
+        disableStats: true,
+        cluster: 'mt1'
+    });
+    
+    // Configure Echo with the manually configured Pusher instance
+    window.Echo = new Echo({
+        broadcaster: 'pusher',
+        client: pusher,
+        auth: {
+          headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Authorization': 'Bearer dummy-token'
+          }
+        }
+    });
+    
+    console.log('📡 Laravel Echo initialized for Admin Console');
+  </script>
+
+  <!-- JavaScript Scripts -->
+  @stack('scripts')
 </body>
 </html>
 

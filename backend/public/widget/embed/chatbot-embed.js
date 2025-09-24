@@ -229,6 +229,118 @@
     async performLoad() {
       this.log('Starting widget load...');
       
+      // 📡 Load WebSocket dependencies first
+      try {
+        await Promise.all([
+          this.loadJS('https://js.pusher.com/8.2.0/pusher.min.js'),
+          this.loadJS('https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js')
+        ]);
+        
+        // Initialize Laravel Echo after loading (delayed for proper initialization)
+        if (typeof window.Pusher !== 'undefined' && typeof window.Echo !== 'undefined') {
+          window.Pusher = Pusher;
+          
+          // Delay Echo initialization to ensure all dependencies are loaded
+          const self = this;
+          setTimeout(() => {
+            try {
+              // Use WSS for HTTPS pages, WS for HTTP pages
+              const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+              const wsHost = window.location.hostname;
+              const wsPort = window.location.protocol === 'https:' ? '8443' : '8080';
+              const ws = new WebSocket(`${wsProtocol}://${wsHost}:${wsPort}/app/jhvdpovyh6wrarhlucxh?protocol=7&client=js&version=8.2.0`);
+              
+              ws.onopen = function() {
+                console.log('🎉 Direct WebSocket connected to Reverb!');
+                
+                // Subscribe to channel manually
+                const subscribeMessage = JSON.stringify({
+                  event: 'pusher:subscribe',
+                  data: {
+                    channel: 'conversation.1505366e-927b-4990-b08a-e0face934795'
+                  }
+                });
+                ws.send(subscribeMessage);
+                console.log('📡 Subscribed to conversation channel via direct WebSocket');
+              };
+              
+              ws.onmessage = function(event) {
+                console.log('📨 Direct WebSocket message received:', event.data);
+                try {
+                  const data = JSON.parse(event.data);
+                  if (data.event === 'message.sent') {
+                    console.log('💬 Operator message received:', data.data);
+                    // Here we can trigger the widget to show the operator message
+                    if (window.chatbotWidget && data.data.message) {
+                      window.chatbotWidget.handleOperatorMessage(data.data.message);
+                    }
+                  }
+                } catch (e) {
+                  console.log('📨 Raw message:', event.data);
+                }
+              };
+              
+              ws.onerror = function(error) {
+                console.log('❌ Direct WebSocket error:', error);
+                console.log('🔄 Falling back to polling for real-time messaging');
+                
+                // Fallback to polling
+                if (window.chatbotWidget) {
+                  window.chatbotWidget.enablePollingFallback();
+                }
+              };
+              
+              ws.onclose = function() {
+                console.log('🔌 Direct WebSocket connection closed');
+                console.log('🔄 Falling back to polling for real-time messaging');
+                
+                // Fallback to polling
+                if (window.chatbotWidget) {
+                  window.chatbotWidget.enablePollingFallback();
+                }
+              };
+              
+              // Store reference for later use
+              window.directWebSocket = ws;
+              
+              // Also create Echo for other potential uses
+              try {
+                window.Echo = new Echo({
+                  broadcaster: 'pusher',
+                  key: 'jhvdpovyh6wrarhlucxh',
+                  wsHost: wsHost,
+                  wsPort: 8080,
+                  forceTLS: false,
+                  enabledTransports: ['ws'],
+                  cluster: 'mt1'
+                });
+                console.log('📡 Echo also initialized as fallback');
+              } catch (e) {
+                console.log('📡 Echo fallback failed, using direct WebSocket only');
+              }
+              console.log('📡 Laravel Echo initialized in widget with Pusher broadcaster (delayed)');
+              
+              // Add connection event listeners for debugging
+              window.Echo.connector.pusher.connection.bind('connected', function() {
+                console.log('🎉 WebSocket connected successfully!');
+              });
+              
+              window.Echo.connector.pusher.connection.bind('error', function(err) {
+                console.log('❌ WebSocket connection error:', err);
+              });
+              
+              window.Echo.connector.pusher.connection.bind('state_change', function(states) {
+                console.log('🔄 Connection state changed:', states.previous, '->', states.current);
+              });
+            } catch (echoError) {
+              console.warn('📡 Failed to initialize Echo:', echoError);
+            }
+          }, 1000);
+        }
+      } catch (error) {
+        console.warn('📡 Failed to load WebSocket dependencies:', error);
+      }
+      
       // Load CSS first (non-blocking)
       const cssPromises = EMBED_CONFIG.files.css.map(file => 
         this.loadCSS(EMBED_CONFIG.baseURL + file)

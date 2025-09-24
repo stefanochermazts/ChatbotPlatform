@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
+use App\Models\ConversationSession;
 use App\Services\LLM\OpenAIChatService;
 use App\Services\RAG\KbSearchService;
 use App\Services\RAG\LinkConsistencyService;
@@ -13,6 +14,7 @@ use App\Services\RAG\TenantRagConfigService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 
 class ChatCompletionsController extends Controller
 {
@@ -43,6 +45,47 @@ class ChatCompletionsController extends Controller
 
         $tenant = Tenant::query()->find($tenantId);
         $queryText = $this->extractUserQuery($validated['messages']);
+        
+        // 🚫 Agent Console: Blocca bot se operatore ha preso controllo
+        $sessionId = $request->header('X-Session-ID');
+        Log::info('🔍 Chat request received', [
+            'session_id_header' => $sessionId,
+            'query' => substr($queryText, 0, 50) . '...'
+        ]);
+        
+        if ($sessionId) {
+            $session = ConversationSession::where('session_id', $sessionId)->first();
+            Log::info('🔍 Session check result', [
+                'session_found' => $session ? 'YES' : 'NO',
+                'handoff_status' => $session?->handoff_status,
+                'session_id' => $session?->session_id
+            ]);
+            
+            if ($session && $session->handoff_status === 'handoff_active') {
+                Log::info('🚫 Bot blocked - operator active');
+                return response()->json([
+                    'id' => 'chatcmpl-agent-handoff-' . uniqid(),
+                    'object' => 'chat.completion',
+                    'created' => time(),
+                    'model' => $validated['model'],
+                    'choices' => [
+                        [
+                            'index' => 0,
+                            'message' => [
+                                'role' => 'assistant',
+                                'content' => '🤝 **Operatore connesso**: Un operatore umano ha preso il controllo di questa conversazione. Il bot è temporaneamente disattivato.'
+                            ],
+                            'finish_reason' => 'stop'
+                        ]
+                    ],
+                    'usage' => [
+                        'prompt_tokens' => 0,
+                        'completion_tokens' => 0,
+                        'total_tokens' => 0
+                    ]
+                ], 200);
+            }
+        }
         
         // Conversational enhancement solo per retrieval (come nel tester)
         $conversationContext = null;

@@ -27,8 +27,8 @@ class ConversationMessageSent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            // 🎯 Channel privato per la sessione specifica
-            new PrivateChannel('conversation.' . $this->message->conversationSession->session_id),
+            // 🎯 Channel pubblico per testing (temporary)
+            new Channel('conversation.' . $this->message->conversationSession->session_id),
             // 👨‍💼 Channel per operatori del tenant
             new PrivateChannel('tenant.' . $this->message->tenant_id . '.operators'),
         ];
