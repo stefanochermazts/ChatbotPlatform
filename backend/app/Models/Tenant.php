@@ -142,6 +142,77 @@ class Tenant extends Model
             ]
         ];
     }
+
+    // 🎯 Agent Console Relationships
+
+    /**
+     * Sessioni di conversazione del tenant
+     */
+    public function conversationSessions(): HasMany
+    {
+        return $this->hasMany(ConversationSession::class);
+    }
+
+    /**
+     * Messaggi delle conversazioni del tenant
+     */
+    public function conversationMessages(): HasMany
+    {
+        return $this->hasMany(ConversationMessage::class);
+    }
+
+    /**
+     * Richieste di handoff del tenant
+     */
+    public function handoffRequests(): HasMany
+    {
+        return $this->hasMany(HandoffRequest::class);
+    }
+
+    // 🎯 Agent Console Scopes & Helpers
+
+    /**
+     * Ottieni le conversazioni attive del tenant
+     */
+    public function getActiveConversations()
+    {
+        return $this->conversationSessions()
+                   ->whereIn('status', ['active', 'assigned'])
+                   ->with(['messages' => function($query) {
+                       $query->latest('sent_at')->limit(1);
+                   }, 'assignedOperator']);
+    }
+
+    /**
+     * Ottieni le richieste di handoff pendenti del tenant
+     */
+    public function getPendingHandoffRequests()
+    {
+        return $this->handoffRequests()
+                   ->where('status', 'pending')
+                   ->orderBy('priority')
+                   ->orderBy('requested_at');
+    }
+
+    /**
+     * Ottieni le metriche conversazioni del tenant
+     */
+    public function getConversationMetrics(): array
+    {
+        $totalSessions = $this->conversationSessions()->count();
+        $activeSessions = $this->conversationSessions()->where('status', 'active')->count();
+        $resolvedSessions = $this->conversationSessions()->where('status', 'resolved')->count();
+        $pendingHandoffs = $this->handoffRequests()->where('status', 'pending')->count();
+
+        return [
+            'total_sessions' => $totalSessions,
+            'active_sessions' => $activeSessions,
+            'resolved_sessions' => $resolvedSessions,
+            'pending_handoffs' => $pendingHandoffs,
+            'resolution_rate' => $totalSessions > 0 ? ($resolvedSessions / $totalSessions) * 100 : 0,
+            'handoff_rate' => $totalSessions > 0 ? ($this->handoffRequests()->count() / $totalSessions) * 100 : 0
+        ];
+    }
 }
 
 

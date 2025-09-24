@@ -1241,3 +1241,155 @@
     color: white;
   }
 }
+
+/* =================================================================
+ * 🎯 AGENT CONSOLE HANDOFF STYLES
+ * ================================================================= */
+
+/* Handoff Status Bar */
+.chatbot-handoff-status {
+  padding: var(--chatbot-space-2) var(--chatbot-space-4);
+  background: var(--chatbot-bg-secondary);
+  border-bottom: 1px solid var(--chatbot-border-primary);
+  font-size: var(--chatbot-text-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--chatbot-space-2);
+  animation: slideDown 0.3s ease-out;
+}
+
+.chatbot-handoff-status.pending {
+  background: var(--chatbot-warning-50);
+  border-bottom-color: var(--chatbot-warning-200);
+  color: var(--chatbot-warning-800);
+}
+
+.chatbot-handoff-status.accepted {
+  background: var(--chatbot-success-50);
+  border-bottom-color: var(--chatbot-success-200);
+  color: var(--chatbot-success-800);
+}
+
+.chatbot-handoff-status.error {
+  background: var(--chatbot-error-50);
+  border-bottom-color: var(--chatbot-error-200);
+  color: var(--chatbot-error-800);
+}
+
+.chatbot-handoff-content {
+  display: flex;
+  align-items: center;
+  gap: var(--chatbot-space-2);
+}
+
+.chatbot-handoff-indicator {
+  font-size: var(--chatbot-text-lg);
+  flex-shrink: 0;
+}
+
+.chatbot-handoff-text {
+  flex: 1;
+  font-weight: 500;
+}
+
+/* Action Buttons Container */
+.chatbot-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--chatbot-space-2);
+  flex-shrink: 0;
+}
+
+/* Handoff Action Button */
+.chatbot-action-button {
+  /* Dimensions */
+  width: var(--chatbot-min-touch-target);
+  height: var(--chatbot-min-touch-target);
+  
+  /* Visual */
+  background: var(--chatbot-bg-primary);
+  color: var(--chatbot-text-secondary);
+  border: 1px solid var(--chatbot-border-primary);
+  border-radius: var(--chatbot-radius-lg);
+  cursor: pointer;
+  
+  /* Layout */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  /* Animation */
+  transition: 
+    background-color var(--chatbot-transition-fast),
+    border-color var(--chatbot-transition-fast),
+    color var(--chatbot-transition-fast),
+    transform var(--chatbot-transition-fast);
+  
+  /* Flex */
+  flex-shrink: 0;
+}
+
+.chatbot-action-button:hover:not(:disabled) {
+  background: var(--chatbot-primary-50);
+  border-color: var(--chatbot-primary-200);
+  color: var(--chatbot-primary-600);
+  transform: scale(1.05);
+}
+
+.chatbot-action-button:focus-visible {
+  outline: var(--chatbot-focus-ring-width) solid var(--chatbot-focus-ring-color);
+  outline-offset: var(--chatbot-focus-ring-offset);
+}
+
+.chatbot-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Update input wrapper for new layout */
+.chatbot-input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--chatbot-space-2);
+  padding: var(--chatbot-space-3);
+  background: var(--chatbot-bg-primary);
+  border-top: 1px solid var(--chatbot-border-primary);
+}
+
+/* Animations */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode adjustments */
+[data-chatbot-theme="dark"] .chatbot-handoff-status.pending {
+  background: var(--chatbot-warning-900);
+  border-bottom-color: var(--chatbot-warning-700);
+  color: var(--chatbot-warning-200);
+}
+
+[data-chatbot-theme="dark"] .chatbot-handoff-status.accepted {
+  background: var(--chatbot-success-900);
+  border-bottom-color: var(--chatbot-success-700);
+  color: var(--chatbot-success-200);
+}
+
+[data-chatbot-theme="dark"] .chatbot-handoff-status.error {
+  background: var(--chatbot-error-900);
+  border-bottom-color: var(--chatbot-error-700);
+  color: var(--chatbot-error-200);
+}
+
+[data-chatbot-theme="dark"] .chatbot-action-button:hover:not(:disabled) {
+  background: var(--chatbot-primary-900);
+  border-color: var(--chatbot-primary-700);
+  color: var(--chatbot-primary-300);
+}

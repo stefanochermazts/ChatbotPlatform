@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class WidgetConfig extends Model
 {
@@ -435,5 +436,44 @@ class WidgetConfig extends Model
             'auto_open' => false,
             'enabled' => true
         ]);
+    }
+
+    // 🎯 Agent Console Relationships
+
+    /**
+     * Sessioni di conversazione associate a questo widget
+     */
+    public function conversationSessions(): HasMany
+    {
+        return $this->hasMany(ConversationSession::class);
+    }
+
+    /**
+     * Ottieni le conversazioni attive per questo widget
+     */
+    public function getActiveConversations()
+    {
+        return $this->conversationSessions()
+                   ->whereIn('status', ['active', 'assigned'])
+                   ->with(['messages' => function($query) {
+                       $query->latest('sent_at')->limit(1);
+                   }, 'assignedOperator']);
+    }
+
+    /**
+     * Ottieni le metriche delle conversazioni per questo widget
+     */
+    public function getConversationMetrics(): array
+    {
+        $totalSessions = $this->conversationSessions()->count();
+        $activeSessions = $this->conversationSessions()->where('status', 'active')->count();
+        $resolvedSessions = $this->conversationSessions()->where('status', 'resolved')->count();
+
+        return [
+            'total_sessions' => $totalSessions,
+            'active_sessions' => $activeSessions,
+            'resolved_sessions' => $resolvedSessions,
+            'resolution_rate' => $totalSessions > 0 ? ($resolvedSessions / $totalSessions) * 100 : 0
+        ];
     }
 }

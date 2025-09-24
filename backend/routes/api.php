@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\WidgetEventController;
 use App\Http\Controllers\Api\DocumentViewController;
 use App\Http\Controllers\Api\FormController;
 use App\Http\Controllers\Api\WidgetThemeController;
+use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\MessageController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -72,6 +74,42 @@ Route::post('/v1/widget/events/public', [WidgetEventController::class, 'trackPub
 Route::prefix('v1/vonage/whatsapp')->group(function () {
     Route::post('/inbound', [VonageWhatsAppController::class, 'inbound']);
     Route::post('/status', [VonageWhatsAppController::class, 'status']);
+});
+
+// 🎯 Agent Console - Conversation Management
+Route::prefix('v1/conversations')->group(function () {
+    // 🚀 Session Management
+    Route::post('/start', [\App\Http\Controllers\Api\ConversationController::class, 'start']);
+    Route::get('/{sessionId}', [\App\Http\Controllers\Api\ConversationController::class, 'show']);
+    Route::post('/{sessionId}/end', [\App\Http\Controllers\Api\ConversationController::class, 'end']);
+    Route::get('/{sessionId}/status', [\App\Http\Controllers\Api\ConversationController::class, 'status']);
+    
+    // 💬 Message Management  
+    Route::get('/{sessionId}/messages', [\App\Http\Controllers\Api\MessageController::class, 'index']);
+    Route::post('/messages/send', [\App\Http\Controllers\Api\MessageController::class, 'send']);
+    Route::post('/messages/{messageId}/feedback', [\App\Http\Controllers\Api\MessageController::class, 'feedback']);
+    Route::put('/messages/{messageId}/edit', [\App\Http\Controllers\Api\MessageController::class, 'edit']);
+    
+    // 🤝 Handoff request (public - called by widget)
+    Route::post('/handoff/request', [\App\Http\Controllers\Api\HandoffController::class, 'request']);
+});
+
+// 🤝 Agent Console - Handoff Management (require auth)
+Route::prefix('v1/handoffs')->middleware('auth.apikey')->group(function () {
+    Route::post('/{handoffId}/assign', [\App\Http\Controllers\Api\HandoffController::class, 'assign']);
+    Route::post('/{handoffId}/resolve', [\App\Http\Controllers\Api\HandoffController::class, 'resolve']);
+    Route::post('/{handoffId}/escalate', [\App\Http\Controllers\Api\HandoffController::class, 'escalate']);
+    Route::get('/pending', [\App\Http\Controllers\Api\HandoffController::class, 'pending']);
+    Route::get('/metrics', [\App\Http\Controllers\Api\HandoffController::class, 'metrics']);
+});
+
+// 👨‍💼 Agent Console - Operator Management (require auth)
+Route::prefix('v1/operators')->middleware('auth.apikey')->group(function () {
+    Route::get('/available', [\App\Http\Controllers\Api\OperatorController::class, 'available']);
+    Route::post('/status', [\App\Http\Controllers\Api\OperatorController::class, 'updateStatus']);
+    Route::get('/{operatorId}/conversations', [\App\Http\Controllers\Api\OperatorController::class, 'conversations']);
+    Route::get('/{operatorId}/metrics', [\App\Http\Controllers\Api\OperatorController::class, 'metrics']);
+    Route::post('/heartbeat', [\App\Http\Controllers\Api\OperatorController::class, 'heartbeat']);
 });
 
 // Health check endpoint

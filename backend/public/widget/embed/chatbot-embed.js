@@ -229,6 +229,118 @@
     async performLoad() {
       this.log('Starting widget load...');
       
+      // 📡 Load WebSocket dependencies first
+      try {
+        await Promise.all([
+          this.loadJS('https://js.pusher.com/8.2.0/pusher.min.js'),
+          this.loadJS('https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js')
+        ]);
+        
+        // Initialize Laravel Echo after loading (delayed for proper initialization)
+        if (typeof window.Pusher !== 'undefined' && typeof window.Echo !== 'undefined') {
+          window.Pusher = Pusher;
+          
+          // Delay Echo initialization to ensure all dependencies are loaded
+          const self = this;
+          setTimeout(() => {
+            try {
+              // Use WSS for HTTPS pages, WS for HTTP pages
+              const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+              const wsHost = window.location.hostname;
+              const wsPort = window.location.protocol === 'https:' ? '8443' : '8080';
+              const ws = new WebSocket(`${wsProtocol}://${wsHost}:${wsPort}/app/jhvdpovyh6wrarhlucxh?protocol=7&client=js&version=8.2.0`);
+              
+              ws.onopen = function() {
+                console.log('🎉 Direct WebSocket connected to Reverb!');
+                
+                // Subscribe to channel manually
+                const subscribeMessage = JSON.stringify({
+                  event: 'pusher:subscribe',
+                  data: {
+                    channel: 'conversation.1505366e-927b-4990-b08a-e0face934795'
+                  }
+                });
+                ws.send(subscribeMessage);
+                console.log('📡 Subscribed to conversation channel via direct WebSocket');
+              };
+              
+              ws.onmessage = function(event) {
+                console.log('📨 Direct WebSocket message received:', event.data);
+                try {
+                  const data = JSON.parse(event.data);
+                  if (data.event === 'message.sent') {
+                    console.log('💬 Operator message received:', data.data);
+                    // Here we can trigger the widget to show the operator message
+                    if (window.chatbotWidget && data.data.message) {
+                      window.chatbotWidget.handleOperatorMessage(data.data.message);
+                    }
+                  }
+                } catch (e) {
+                  console.log('📨 Raw message:', event.data);
+                }
+              };
+              
+              ws.onerror = function(error) {
+                console.log('❌ Direct WebSocket error:', error);
+                console.log('🔄 Falling back to polling for real-time messaging');
+                
+                // Fallback to polling
+                if (window.chatbotWidget) {
+                  window.chatbotWidget.enablePollingFallback();
+                }
+              };
+              
+              ws.onclose = function() {
+                console.log('🔌 Direct WebSocket connection closed');
+                console.log('🔄 Falling back to polling for real-time messaging');
+                
+                // Fallback to polling
+                if (window.chatbotWidget) {
+                  window.chatbotWidget.enablePollingFallback();
+                }
+              };
+              
+              // Store reference for later use
+              window.directWebSocket = ws;
+              
+              // Also create Echo for other potential uses
+              try {
+                window.Echo = new Echo({
+                  broadcaster: 'pusher',
+                  key: 'jhvdpovyh6wrarhlucxh',
+                  wsHost: wsHost,
+                  wsPort: 8080,
+                  forceTLS: false,
+                  enabledTransports: ['ws'],
+                  cluster: 'mt1'
+                });
+                console.log('📡 Echo also initialized as fallback');
+              } catch (e) {
+                console.log('📡 Echo fallback failed, using direct WebSocket only');
+              }
+              console.log('📡 Laravel Echo initialized in widget with Pusher broadcaster (delayed)');
+              
+              // Add connection event listeners for debugging
+              window.Echo.connector.pusher.connection.bind('connected', function() {
+                console.log('🎉 WebSocket connected successfully!');
+              });
+              
+              window.Echo.connector.pusher.connection.bind('error', function(err) {
+                console.log('❌ WebSocket connection error:', err);
+              });
+              
+              window.Echo.connector.pusher.connection.bind('state_change', function(states) {
+                console.log('🔄 Connection state changed:', states.previous, '->', states.current);
+              });
+            } catch (echoError) {
+              console.warn('📡 Failed to initialize Echo:', echoError);
+            }
+          }, 1000);
+        }
+      } catch (error) {
+        console.warn('📡 Failed to load WebSocket dependencies:', error);
+      }
+      
       // Load CSS first (non-blocking)
       const cssPromises = EMBED_CONFIG.files.css.map(file => 
         this.loadCSS(EMBED_CONFIG.baseURL + file)
@@ -444,6 +556,14 @@
           </main>
           
           <footer class="chatbot-input-container">
+            <!-- 🎯 Handoff Status Bar -->
+            <div id="chatbot-handoff-status" class="chatbot-handoff-status" style="display: none;">
+              <div class="chatbot-handoff-content">
+                <span id="chatbot-handoff-indicator" class="chatbot-handoff-indicator">🤝</span>
+                <span id="chatbot-handoff-text" class="chatbot-handoff-text">Richiesta di assistenza in corso...</span>
+              </div>
+            </div>
+            
             <form id="chatbot-form" class="chatbot-input-wrapper">
               <textarea
                 id="chatbot-input"
@@ -452,12 +572,25 @@
                 rows="1"
                 maxlength="2000"
               ></textarea>
-              <button id="chatbot-send-btn" class="chatbot-send-button" type="submit" disabled>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22,2 15,22 11,13 2,9"></polygon>
-                </svg>
-              </button>
+              
+              <!-- 🎯 Agent Console Action Buttons -->
+              <div class="chatbot-action-buttons">
+                <button id="chatbot-handoff-btn" class="chatbot-action-button" type="button" title="Parla con un operatore">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                </button>
+                
+                <button id="chatbot-send-btn" class="chatbot-send-button" type="submit" disabled>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                  </svg>
+                </button>
+              </div>
             </form>
           </footer>
         </div>

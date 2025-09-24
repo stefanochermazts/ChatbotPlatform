@@ -10,11 +10,13 @@
         "firebase/php-jwt": "^6.11",
         "fivefilters/readability.php": "^3.3",
         "laravel/framework": "^12.0",
+        "laravel/reverb": "^1.6",
         "laravel/tinker": "^2.10.1",
         "league/html-to-markdown": "^5.1",
         "patrickschur/language-detection": "5.3",
         "phpoffice/phpspreadsheet": "2.0",
         "phpoffice/phpword": "1.1",
+        "pusher/pusher-php-server": "^7.2",
         "smalot/pdfparser": "^2.6",
         "spatie/pdf-to-text": "^1.3"
     },

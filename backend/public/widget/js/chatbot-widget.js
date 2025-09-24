@@ -25,7 +25,11 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     // API Configuration
     apiEndpoint: '/api/v1/chat/completions',
     analyticsEndpoint: '/api/v1/widget/events/public',
-    version: '1.0.1-fix-events', // Debug version
+    // 🎯 Agent Console API endpoints
+    conversationEndpoint: '/api/v1/conversations',
+    messageEndpoint: '/api/v1/conversations/messages',
+    handoffEndpoint: '/api/v1/handoffs',
+    version: '1.0.1-agent-console', // Updated version
     maxRetries: 3,
     retryDelay: 1000,
     requestTimeout: 45000,
@@ -48,6 +52,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     conversationKey: 'conversation_history',
     preferencesKey: 'user_preferences',
     sessionKey: 'session_id',
+    // 🎯 Agent Console storage keys
+    agentSessionKey: 'agent_session_id',
+    handoffStatusKey: 'handoff_status',
     
     // Events
     events: {
@@ -57,7 +64,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       MESSAGE_RECEIVED: 'chatbot:message:received',
       ERROR_OCCURRED: 'chatbot:error',
       TYPING_START: 'chatbot:typing:start',
-      TYPING_END: 'chatbot:typing:end'
+      TYPING_END: 'chatbot:typing:end',
+      // 🎯 Agent Console events
+      HANDOFF_REQUESTED: 'chatbot:handoff:requested',
+      HANDOFF_ACCEPTED: 'chatbot:handoff:accepted',
+      OPERATOR_JOINED: 'chatbot:operator:joined',
+      OPERATOR_TYPING: 'chatbot:operator:typing'
     },
     
     // Analytics event types
@@ -256,6 +268,24 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         ...options.additionalParams
       };
 
+      // 🔍 Debug session ID and context
+      console.log('🔍 sendMessage context debug:', {
+        thisType: typeof this,
+        hasConversationTracker: !!this.conversationTracker,
+        conversationTracker: this.conversationTracker,
+        thisKeys: this ? Object.keys(this).filter(k => !k.startsWith('_')) : 'null',
+        thisKeysAll: this ? Object.keys(this) : 'null',
+        constructor: this?.constructor?.name || 'unknown'
+      });
+      
+      // 🎯 Use session ID from options (passed by ChatbotWidget)
+      const sessionId = options.sessionId || '';
+      console.log('🔍 Sending chat request with session ID:', {
+        sessionId: sessionId,
+        sessionIdSource: options.sessionId ? 'from_options' : 'empty',
+        hasOptions: !!options
+      });
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), CONFIG.requestTimeout);
 
@@ -266,7 +296,8 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`,
             'Accept': 'application/json', // 🔧 FIX: Header necessario per evitare redirect 302
-            'X-Requested-With': 'ChatbotWidget'
+            'X-Requested-With': 'ChatbotWidget',
+            'X-Session-ID': sessionId // 🎯 Agent Console: Session ID per check handoff
           },
           body: JSON.stringify(payload),
           signal: controller.signal
@@ -683,7 +714,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         sendBtn: document.getElementById('chatbot-send-btn'),
         charCounter: document.getElementById('chatbot-char-counter'),
         charCount: document.getElementById('chatbot-char-count'),
-        status: document.getElementById('chatbot-status')
+        status: document.getElementById('chatbot-status'),
+        // 🎯 Agent Console elements
+        handoffBtn: document.getElementById('chatbot-handoff-btn'),
+        handoffStatus: document.getElementById('chatbot-handoff-status'),
+        handoffIndicator: document.getElementById('chatbot-handoff-indicator'),
+        handoffText: document.getElementById('chatbot-handoff-text')
       };
       
       // Debug log for missing elements
@@ -774,6 +810,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       // Input handling
       this.elements.input?.addEventListener('input', () => this.handleInputChange());
       this.elements.input?.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+      // 🎯 Agent Console handoff button
+      this.elements.handoffBtn?.addEventListener('click', () => this.handleHandoffRequest());
 
       // Global keyboard shortcuts
       document.addEventListener('keydown', (e) => this.handleGlobalKeyDown(e));
@@ -1845,6 +1884,145 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       }, CONFIG.autoScrollDelay);
     }
 
+    // 🎯 Agent Console Handoff Methods
+    async handleHandoffRequest() {
+      try {
+        // Emit event to main widget to request handoff
+        this.events.emit('handoff-requested', {
+          reason: 'user_request',
+          priority: 'normal'
+        });
+        
+        // Show feedback to user (inline safe)
+        try {
+          if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+            this.ui.elements.handoffText.textContent = '🤝 Richiesta di assistenza in corso...';
+            this.ui.elements.handoffStatus.className = 'chatbot-handoff-status pending';
+            this.ui.elements.handoffStatus.style.display = 'block';
+          }
+        } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+        
+        console.log('🎯 Handoff requested by user');
+      } catch (error) {
+        console.error('🚨 Error requesting handoff:', error);
+        try {
+          if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+            this.ui.elements.handoffText.textContent = '❌ Errore nella richiesta di assistenza';
+            this.ui.elements.handoffStatus.className = 'chatbot-handoff-status error';
+            this.ui.elements.handoffStatus.style.display = 'block';
+          }
+        } catch (e) { console.warn('⚠️ Cannot show error status:', e.message); }
+      }
+    }
+
+    showHandoffStatus(status, message) {
+      if (!this.ui || !this.ui.elements || !this.ui.elements.handoffStatus || !this.ui.elements.handoffText) return;
+      
+      this.ui.elements.handoffText.textContent = message;
+      
+      // Update indicator based on status
+      switch (status) {
+        case 'pending':
+          if (this.ui.elements.handoffIndicator) this.ui.elements.handoffIndicator.textContent = '🤝';
+          this.ui.elements.handoffStatus.className = 'chatbot-handoff-status pending';
+          break;
+        case 'accepted':
+          if (this.ui.elements.handoffIndicator) this.ui.elements.handoffIndicator.textContent = '👨‍💼';
+          this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+          break;
+        case 'error':
+          if (this.ui.elements.handoffIndicator) this.ui.elements.handoffIndicator.textContent = '❌';
+          this.ui.elements.handoffStatus.className = 'chatbot-handoff-status error';
+          break;
+        default:
+          this.ui.elements.handoffStatus.className = 'chatbot-handoff-status';
+      }
+      
+      // Show/hide status bar
+      if (status === 'hidden') {
+        this.ui.elements.handoffStatus.style.display = 'none';
+      } else {
+        this.ui.elements.handoffStatus.style.display = 'block';
+      }
+    }
+
+    // 🎯 Agent Console: Hide handoff status bar
+    hideHandoffStatus() {
+      if (this.ui && this.ui.elements && this.ui.elements.handoffStatus) {
+        this.ui.elements.handoffStatus.style.display = 'none';
+      }
+    }
+
+    // 🎯 Agent Console: Enable handoff button
+    enableHandoffButton() {
+      if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+        this.ui.elements.handoffBtn.disabled = false;
+        this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+      }
+    }
+
+    // 🎯 Agent Console: Disable handoff button
+    disableHandoffButton() {
+      if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+        this.ui.elements.handoffBtn.disabled = true;
+      }
+    }
+
+    // 🛡️ Safe wrapper methods that never throw errors
+    safeEnableHandoffButton() {
+      try {
+        this.enableHandoffButton();
+      } catch (error) {
+        console.warn('⚠️ Cannot enable handoff button:', error.message);
+      }
+    }
+
+    safeDisableHandoffButton() {
+      try {
+        this.disableHandoffButton();
+      } catch (error) {
+        console.warn('⚠️ Cannot disable handoff button:', error.message);
+      }
+    }
+
+    safeShowHandoffStatus(status, message) {
+      try {
+        this.showHandoffStatus(status, message);
+      } catch (error) {
+        console.warn('⚠️ Cannot show handoff status:', error.message);
+      }
+    }
+
+    safeHideHandoffStatus() {
+      try {
+        this.hideHandoffStatus();
+      } catch (error) {
+        console.warn('⚠️ Cannot hide handoff status:', error.message);
+      }
+    }
+
+    updateHandoffButton(handoffStatus) {
+      if (!this.elements.handoffBtn) return;
+      
+      switch (handoffStatus) {
+        case 'bot_only':
+          this.elements.handoffBtn.style.display = 'block';
+          this.elements.handoffBtn.disabled = false;
+          this.elements.handoffBtn.title = 'Parla con un operatore';
+          break;
+        case 'handoff_pending':
+          this.elements.handoffBtn.disabled = true;
+          this.elements.handoffBtn.title = 'Richiesta in corso...';
+          break;
+        case 'operator_active':
+          this.elements.handoffBtn.style.display = 'none';
+          break;
+        default:
+          this.elements.handoffBtn.style.display = 'block';
+          this.elements.handoffBtn.disabled = false;
+      }
+    }
+
     // Utility methods
     prefersReducedMotion() {
       return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2117,6 +2295,180 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
   }
 
   // =================================================================
+  // 🎯 AGENT CONSOLE CONVERSATION TRACKER
+  // =================================================================
+
+  class ConversationTracker {
+    constructor(options = {}) {
+      this.baseURL = options.baseURL || '';
+      this.apiKey = options.apiKey || '';
+      this.tenantId = options.tenantId || '';
+      this.widgetConfigId = options.widgetConfigId || 1;
+      
+      // Session management
+      this.agentSessionId = null;
+      this.handoffStatus = 'bot_only'; // bot_only, handoff_pending, operator_active
+      this.operatorInfo = null;
+      
+      // Event emitter for real-time updates
+      this.events = new EventEmitter();
+      
+      console.log('🎯 ConversationTracker initialized', {
+        tenantId: this.tenantId,
+        widgetConfigId: this.widgetConfigId
+      });
+    }
+
+    async startSession() {
+      try {
+        const response = await fetch(`${this.baseURL}${CONFIG.conversationEndpoint}/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            tenant_id: parseInt(this.tenantId),
+            widget_config_id: parseInt(this.widgetConfigId),
+            channel: 'widget',
+            user_agent: navigator.userAgent,
+            referrer_url: document.referrer || window.location.href
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        this.agentSessionId = data.session.session_id;
+        this.handoffStatus = data.session.handoff_status || 'bot_only';
+        
+        // Store session in localStorage for persistence
+        localStorage.setItem(CONFIG.storagePrefix + CONFIG.agentSessionKey, this.agentSessionId);
+        localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, this.handoffStatus);
+        
+        console.log('🎯 Agent session started:', this.agentSessionId);
+        
+        return {
+          sessionId: this.agentSessionId,
+          status: this.handoffStatus
+        };
+      } catch (error) {
+        console.error('🚨 Failed to start agent session:', error);
+        // Fallback to local session management
+        this.agentSessionId = 'fallback_' + Date.now();
+        return { sessionId: this.agentSessionId, status: 'bot_only' };
+      }
+    }
+
+    async sendMessage(content, senderType = 'user') {
+      if (!this.agentSessionId) {
+        console.warn('🚨 No agent session active, starting one...');
+        await this.startSession();
+      }
+
+      try {
+        const response = await fetch(`${this.baseURL}${CONFIG.messageEndpoint}/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            session_id: this.agentSessionId,
+            content: content,
+            sender_type: senderType,
+            content_type: 'text'
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🎯 Message sent to agent console:', data.message);
+          return data.message;
+        } else {
+          console.warn('🚨 Failed to send message to agent console:', response.status);
+        }
+      } catch (error) {
+        console.error('🚨 Error sending message to agent console:', error);
+      }
+      
+      return null;
+    }
+
+    async requestHandoff(reason = 'user_request', priority = 'normal') {
+      // 🎯 Se non c'è una sessione attiva, creala prima
+      if (!this.agentSessionId) {
+        console.log('🎯 No active session, starting new session for handoff...');
+        const sessionStarted = await this.startSession();
+        if (!sessionStarted) {
+          console.warn('🚨 Failed to start session for handoff');
+          return false;
+        }
+      }
+
+      try {
+        const response = await fetch(`${this.baseURL}${CONFIG.conversationEndpoint}/handoff/request`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            session_id: this.agentSessionId,
+            trigger_type: 'user_explicit',
+            reason: reason,
+            priority: priority
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          this.handoffStatus = 'handoff_pending';
+          localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, this.handoffStatus);
+          
+          this.events.emit(CONFIG.events.HANDOFF_REQUESTED, {
+            handoffId: data.handoff_request.id,
+            priority: priority,
+            reason: reason
+          });
+          
+          console.log('🎯 Handoff requested:', data.handoff_request);
+          return data.handoff_request;
+        }
+      } catch (error) {
+        console.error('🚨 Error requesting handoff:', error);
+      }
+      
+      return false;
+    }
+
+    getSessionInfo() {
+      return {
+        agentSessionId: this.agentSessionId,
+        handoffStatus: this.handoffStatus,
+        operatorInfo: this.operatorInfo
+      };
+    }
+
+    isHandoffActive() {
+      return this.handoffStatus === 'operator_active';
+    }
+
+    isPendingHandoff() {
+      return this.handoffStatus === 'handoff_pending';
+    }
+
+    // Restore session from localStorage
+    restoreSession() {
+      this.agentSessionId = localStorage.getItem(CONFIG.storagePrefix + CONFIG.agentSessionKey);
+      this.handoffStatus = localStorage.getItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey) || 'bot_only';
+      
+      if (this.agentSessionId) {
+        console.log('🎯 Restored agent session:', this.agentSessionId, 'Status:', this.handoffStatus);
+      }
+    }
+  }
+
+  // =================================================================
   // 🤖 MAIN CHATBOT CLASS
   // =================================================================
 
@@ -2127,6 +2479,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         analyticsEndpoint: CONFIG.analyticsEndpoint,
         requestTimeout: CONFIG.requestTimeout
       });
+      
+      // Expose globally for WebSocket access
+      window.chatbotWidget = this;
       
       this.options = {
         // Core configuration
@@ -2214,6 +2569,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       this.api = new ChatbotAPI(this.options.apiKey, this.options.baseURL);
       this.analytics = new Analytics(this.options.apiKey, this.options.tenantId, this.options.baseURL);
       
+      // 🎯 Agent Console integration
+      this.conversationTracker = new ConversationTracker({
+        baseURL: this.options.baseURL,
+        apiKey: this.options.apiKey,
+        tenantId: this.options.tenantId,
+        widgetConfigId: this.options.widgetConfigId || 1
+      });
+      
       // Initialize dark mode manager
       this.darkMode = null;
       if (window.ChatbotDarkModeManager) {
@@ -2271,6 +2634,16 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       // Apply configuration AFTER UI is initialized
       this.applyConfiguration();
       
+      // 🎯 Initialize Agent Console session
+      this.initializeAgentConsole();
+      
+      // Initialize handoff UI state
+      setTimeout(() => {
+        this.initializeHandoffUI();
+        // 🎯 Ensure handoff button is enabled by default
+        this.ensureHandoffButtonEnabled();
+      }, 500);
+      
       // Attach managers to widget container if available
       if (this.fallbackManager && this.container) {
         this.fallbackManager.attachToWidget();
@@ -2284,9 +2657,40 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       window.chatbotWidget = this;
     }
 
+    async initializeAgentConsole() {
+      try {
+        // Restore previous session if available
+        this.conversationTracker.restoreSession();
+        
+        // Start new session if needed
+        if (!this.conversationTracker.agentSessionId) {
+          await this.conversationTracker.startSession();
+        }
+        
+        // Setup handoff event listeners
+        this.conversationTracker.events.on(CONFIG.events.HANDOFF_REQUESTED, (data) => {
+          this.handleHandoffAccepted(data);
+        });
+        
+        console.log('🎯 Agent Console initialized:', this.conversationTracker.getSessionInfo());
+        
+        // 📡 Setup WebSocket listeners for real-time operator messages
+        this.setupWebSocketListeners();
+      } catch (error) {
+        console.warn('🚨 Failed to initialize Agent Console:', error);
+      }
+    }
+
     setupEventHandlers() {
       this.events.on('send-message', (message) => this.sendMessage(message));
       this.events.on('retry-last-message', () => this.retryLastMessage());
+      
+      // 🎯 Agent Console handoff events
+      this.events.on('handoff-requested', (data) => {
+        this.handleHandoffFromUI(data).catch(error => {
+          console.error('🚨 Error in handoff handler:', error);
+        });
+      });
       
       // Manual retry handler
       document.addEventListener('chatbot:manual:retry', () => {
@@ -2365,6 +2769,11 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       this.ui.addUserMessage(content);
       this.state.addMessage({ role: 'user', content });
       
+      // 🎯 Track message in Agent Console
+      if (this.conversationTracker) {
+        this.conversationTracker.sendMessage(content, 'user');
+      }
+      
       // Show typing indicator
       setTimeout(() => this.ui.showTyping(), CONFIG.typingIndicatorDelay);
       
@@ -2425,22 +2834,41 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       // Prepare messages for API (conversation context)
       const messages = this.prepareMessagesForAPI();
       
-      // Send to API
+      // Send to API with session ID for handoff control
+      const sessionId = this.conversationTracker?.agentSessionId || '';
+      console.log('🔍 ChatbotWidget.sendMessage - passing session ID:', sessionId);
+      
       const response = await this.api.sendMessage(messages, {
         model: this.options.model,
         temperature: this.options.temperature,
-        maxTokens: this.options.maxTokens
+        maxTokens: this.options.maxTokens,
+        sessionId: sessionId // 🎯 Pass session ID to API
       });
       
       const responseTime = performance.now() - startTime;
       
-      // Add bot response to UI and state
-      this.ui.addBotMessage(response.content, response.citations);
+      // Add bot response to UI and state (safe)
+      try {
+        if (typeof this.addBotMessage === 'function') {
+          this.addBotMessage(response.content, response.citations);
+        } else {
+          console.warn('⚠️ addBotMessage not available, using direct DOM fallback');
+          this.addBotMessageDirectly?.(response.content, response.citations);
+        }
+      } catch (e) {
+        console.error('🚨 Failed to render bot message:', e);
+        this.addBotMessageDirectly?.(response.content, response.citations);
+      }
       this.state.addMessage({ 
         role: 'assistant', 
         content: response.content,
         citations: response.citations
       });
+      
+      // 🎯 Track bot response in Agent Console
+      if (this.conversationTracker) {
+        this.conversationTracker.sendMessage(response.content, 'system');
+      }
       
       // Check for form triggers after bot response (per trigger non keyword-based)
       await this.checkFormTriggers(content);
@@ -2898,6 +3326,115 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     }
 
     /**
+     * 🚨 Emergency fallback: Add operator message via direct DOM manipulation
+     */
+    addOperatorMessageDirectly(content) {
+      try {
+        console.log('🚨 Using emergency DOM manipulation to add operator message');
+        
+        // Find the messages container
+        const messagesContainer = document.querySelector('.chatbot-messages') || 
+                                 document.querySelector('#chatbot-messages') ||
+                                 document.querySelector('[class*="messages"]');
+        
+        if (!messagesContainer) {
+          console.error('🚨 No messages container found for emergency fallback');
+          return;
+        }
+        
+        // Create a simple bot message element
+        const messageEl = document.createElement('div');
+        messageEl.className = 'chatbot-message bot-message';
+        messageEl.innerHTML = `
+          <div class="message-content">
+            <div class="message-bubble bot">
+              ${content}
+            </div>
+            <div class="message-info">
+              <span class="sender">👨‍💼 Operatore</span>
+              <time>${new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})}</time>
+            </div>
+          </div>
+        `;
+        
+        // Append to container
+        messagesContainer.appendChild(messageEl);
+        
+        // Scroll to bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        console.log('✅ Emergency operator message added via DOM manipulation');
+      } catch (error) {
+        console.error('🚨 Emergency fallback also failed:', error);
+      }
+    }
+
+    /**
+     * 🚨 Emergency fallback: Add bot message via direct DOM manipulation
+     */
+    addBotMessageDirectly(content, citations = []) {
+      try {
+        console.log('🚨 Using emergency DOM manipulation to add bot message');
+        const messagesContainer = document.querySelector('.chatbot-messages') ||
+                                 document.querySelector('#chatbot-messages') ||
+                                 document.querySelector('[class*="messages"]');
+        if (!messagesContainer) {
+          console.error('🚨 No messages container found for bot fallback');
+          return;
+        }
+        const messageEl = document.createElement('div');
+        messageEl.className = 'chatbot-message bot-message';
+        messageEl.innerHTML = `
+          <div class="message-content">
+            <div class="message-bubble bot">${content}</div>
+            <div class="message-info">
+              <span class="sender">🤖 Assistente</span>
+              <time>${new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})}</time>
+            </div>
+          </div>`;
+        messagesContainer.appendChild(messageEl);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        console.log('✅ Emergency bot message added via DOM manipulation');
+      } catch (error) {
+        console.error('🚨 Emergency bot fallback failed:', error);
+      }
+    }
+
+    /**
+     * 🎯 Ensure handoff button is enabled by default
+     */
+    ensureHandoffButtonEnabled() {
+      console.log('🎯 Ensuring handoff button is enabled...');
+      
+      try {
+        if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+          const handoffStatus = this.getHandoffStatus()?.handoffStatus;
+          
+          // Enable button if no active handoff
+          if (!handoffStatus || handoffStatus === 'bot_only') {
+            this.ui.elements.handoffBtn.disabled = false;
+            this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+            this.ui.elements.handoffBtn.style.display = 'block';
+            this.ui.elements.handoffBtn.style.opacity = '1';
+            console.log('✅ Handoff button enabled successfully');
+          } else {
+            console.log('ℹ️ Handoff button not enabled due to status:', handoffStatus);
+          }
+        } else {
+          console.warn('⚠️ Handoff button elements not available yet');
+          
+          // Retry after additional delay
+          setTimeout(() => {
+            console.log('🔄 Retrying handoff button enablement...');
+            this.ensureHandoffButtonEnabled();
+          }, 1000);
+        }
+      } catch (error) {
+        console.error('🚨 Error enabling handoff button:', error);
+      }
+    }
+
+    /**
      * Reset stato form (per debugging)
      */
     resetFormState() {
@@ -2936,6 +3473,501 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         this.ui.appendMessage(element);
       } else {
         console.error('ChatbotWidget: UI not available for custom message');
+      }
+    }
+
+    // =================================================================
+    // 🎯 AGENT CONSOLE HANDOFF METHODS
+    // =================================================================
+
+    async handleHandoffFromUI(data) {
+      try {
+        console.log('🎯 Handoff requested from UI:', data);
+        
+        // Request handoff via ConversationTracker
+        const handoffRequest = await this.conversationTracker.requestHandoff(
+          data.reason || 'user_request',
+          data.priority || 'normal'
+        );
+        
+        if (handoffRequest) {
+          // Update UI state (inline safe)
+          try {
+            if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+              this.ui.elements.handoffBtn.disabled = true;
+            }
+          } catch (e) { console.warn('⚠️ Cannot disable handoff button:', e.message); }
+          
+          try {
+            if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+              this.ui.elements.handoffText.textContent = '🤝 Richiesta di assistenza in corso...';
+              this.ui.elements.handoffStatus.className = 'chatbot-handoff-status pending';
+              this.ui.elements.handoffStatus.style.display = 'block';
+            }
+          } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+          
+          // Add system message (safe check)
+          try {
+            if (typeof this.addBotMessage === 'function') {
+              this.addBotMessage(
+                'Ho inoltrato la tua richiesta a un operatore. Ti risponderà al più presto!',
+                [],
+                false
+              );
+            } else {
+              console.warn('⚠️ addBotMessage method not available in handleHandoffFromUI');
+            }
+          } catch (error) {
+            console.error('🚨 Error adding system message in handoff:', error);
+          }
+          
+          console.log('🎯 Handoff request successful:', handoffRequest);
+        } else {
+          throw new Error('Failed to create handoff request');
+        }
+      } catch (error) {
+        console.error('🚨 Failed to request handoff:', error);
+        try {
+          if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+            this.ui.elements.handoffText.textContent = '❌ Errore nella richiesta di assistenza';
+            this.ui.elements.handoffStatus.className = 'chatbot-handoff-status error';
+            this.ui.elements.handoffStatus.style.display = 'block';
+          }
+        } catch (e) { console.warn('⚠️ Cannot show error status:', e.message); }
+        
+        // Add error message (safe check)
+        try {
+          if (typeof this.addBotMessage === 'function') {
+            this.addBotMessage(
+              'Mi dispiace, non è stato possibile contattare un operatore al momento. Riprova più tardi.',
+              [],
+              false
+            );
+          } else {
+            console.warn('⚠️ addBotMessage method not available in error handler');
+          }
+        } catch (error) {
+          console.error('🚨 Error adding error message:', error);
+        }
+      }
+    }
+
+    handleHandoffAccepted(data) {
+      console.log('🎯 Handoff accepted:', data);
+      
+      // Update UI (inline safe)
+      try {
+        if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+          this.ui.elements.handoffBtn.disabled = true;
+        }
+      } catch (e) { console.warn('⚠️ Cannot disable handoff button:', e.message); }
+      
+      try {
+        if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+          this.ui.elements.handoffText.textContent = '👨‍💼 Operatore connesso';
+          this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+          this.ui.elements.handoffStatus.style.display = 'block';
+        }
+      } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+      
+      // Add system message (safe check)
+      try {
+        if (typeof this.addBotMessage === 'function') {
+          this.addBotMessage(
+            'Un operatore si è unito alla conversazione. Ora puoi parlare direttamente con lui!',
+            [],
+            false
+          );
+        } else {
+          console.warn('⚠️ addBotMessage method not available in handleHandoffAccepted');
+        }
+      } catch (error) {
+        console.error('🚨 Error adding system message in accepted:', error);
+      }
+      
+      // Update conversation tracker status
+      this.conversationTracker.handoffStatus = 'operator_active';
+      localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, 'operator_active');
+    }
+
+    getHandoffStatus() {
+      return this.conversationTracker ? this.conversationTracker.getSessionInfo() : null;
+    }
+
+    initializeHandoffUI() {
+      // Initialize handoff button state based on current session
+      const sessionInfo = this.getHandoffStatus();
+      if (sessionInfo) {
+        // Update button based on handoff status (inline safe)
+        if (sessionInfo.handoffStatus === 'handoff_pending' || sessionInfo.handoffStatus === 'operator_active') {
+          try {
+            if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+              this.ui.elements.handoffBtn.disabled = true;
+            }
+          } catch (e) { console.warn('⚠️ Cannot disable handoff button:', e.message); }
+        } else {
+          try {
+            if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+              this.ui.elements.handoffBtn.disabled = false;
+              this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+            }
+          } catch (e) { console.warn('⚠️ Cannot enable handoff button:', e.message); }
+        }
+        
+        // Show status if handoff is active (inline safe)
+        if (sessionInfo.handoffStatus === 'handoff_pending') {
+          try {
+            if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+              this.ui.elements.handoffText.textContent = '🤝 Richiesta di assistenza in corso...';
+              this.ui.elements.handoffStatus.className = 'chatbot-handoff-status pending';
+              this.ui.elements.handoffStatus.style.display = 'block';
+            }
+          } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+        } else if (sessionInfo.handoffStatus === 'operator_active') {
+          try {
+            if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+              this.ui.elements.handoffText.textContent = '👨‍💼 Operatore connesso';
+              this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+              this.ui.elements.handoffStatus.style.display = 'block';
+            }
+          } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+        }
+      }
+    }
+
+    // 💬 Handle operator message received via WebSocket
+    handleOperatorMessage(message) {
+      console.log('💬 Handling operator message:', message);
+      
+      // Add operator message to chat (multiple fallback strategies)
+      try {
+        // Strategy 1: Try 'this' context
+        let widget = this;
+        console.log('🔍 Strategy 1 - Checking this context methods:', {
+          hasAddBotMessage: typeof widget.addBotMessage,
+          hasCreateMessage: typeof widget.createMessageElement,
+          hasAppendMessage: typeof widget.appendMessage,
+          thisContext: typeof this
+        });
+        
+        // Strategy 2: If 'this' is wrong, try global widget instance
+        if (!widget.addBotMessage && typeof window.chatbotWidget !== 'undefined') {
+          console.log('⚠️ Strategy 2 - Using global widget instance');
+          widget = window.chatbotWidget;
+        }
+        
+        // Strategy 3: Try direct method calls
+        if (widget.addBotMessage && typeof widget.addBotMessage === 'function') {
+          widget.addBotMessage(message.content, message.citations || [], false);
+          console.log('✅ Operator message added via addBotMessage');
+        } else if (widget.createMessageElement && widget.appendMessage) {
+          console.warn('⚠️ Using fallback: createMessageElement + appendMessage');
+          const messageEl = widget.createMessageElement('bot', message.content, message.citations || [], false);
+          if (messageEl) {
+            widget.appendMessage(messageEl);
+            console.log('✅ Operator message added via fallback');
+          }
+        } else {
+          console.error('🚨 No methods available for adding messages - trying DOM manipulation');
+          // Strategy 4: Direct DOM manipulation as last resort
+          this.addOperatorMessageDirectly(message.content);
+        }
+      } catch (error) {
+        console.error('🚨 Error adding operator message:', error);
+      }
+      
+      // Update handoff status if needed (safe check for conversationTracker)
+      if (this.conversationTracker && this.conversationTracker.handoffStatus !== 'operator_active') {
+        // Update internal status
+        this.conversationTracker.handoffStatus = 'operator_active';
+        
+        // Update UI status (inline safe)
+        try {
+          if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+            this.ui.elements.handoffText.textContent = '👨‍💼 Operatore connesso';
+            this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+            this.ui.elements.handoffStatus.style.display = 'block';
+          }
+        } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+        
+        // Update localStorage
+        localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, 'operator_active');
+      }
+      
+      // Scroll to bottom to show new message
+      this.scrollToBottom();
+    }
+
+    // 🔄 Enable polling fallback for real-time messaging
+    enablePollingFallback() {
+      if (this.pollingInterval) {
+        return; // Already enabled
+      }
+      
+      // Initialize processed messages set for deduplication
+      this.processedMessageIds = new Set();
+      
+      console.log('🔄 Starting polling for operator messages...');
+      
+      // Do an initial check immediately to validate the session
+      this.checkForNewMessages();
+      
+      // Capture 'this' reference to ensure correct binding in callbacks
+      const widget = this;
+      this.pollingInterval = setInterval(() => {
+        widget.checkForNewMessages().catch(error => {
+          console.log('🔄 Polling error (will retry):', error);
+        });
+      }, 3000); // Poll every 3 seconds
+    }
+
+    // 🔄 Check for new messages via API
+    async checkForNewMessages() {
+      if (!this.conversationTracker.agentSessionId) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`${this.options.baseURL}/api/v1/conversations/${this.conversationTracker.agentSessionId}/messages`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.options.apiKey}`,
+            'Accept': 'application/json',
+            'X-Requested-With': 'ChatbotWidget'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // 🎯 Agent Console: Check conversation status changes
+          if (data.conversation) {
+            this.updateConversationStatus(data.conversation);
+          }
+          
+          // Check for new operator messages
+          if (data.messages && Array.isArray(data.messages)) {
+            this.processNewMessages(data.messages);
+          }
+        } else if (response.status === 404) {
+          // 🗑️ Conversation was deleted - clean up localStorage and stop polling
+          console.warn('🗑️ Conversation not found (deleted), cleaning up localStorage...');
+          
+          // Clear agent session data
+          this.conversationTracker.agentSessionId = null;
+          this.conversationTracker.handoffStatus = 'bot_only';
+          this.conversationTracker.operatorInfo = null;
+          
+          // Clear localStorage
+          localStorage.removeItem(CONFIG.storagePrefix + CONFIG.agentSessionKey);
+          localStorage.removeItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey);
+          
+          // Reset UI
+          this.safeHideHandoffStatus();
+          this.safeEnableHandoffButton();
+          
+          // Stop polling for this non-existent conversation
+          if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+            console.log('🔄 Polling stopped for deleted conversation');
+          }
+          
+          return; // Exit early
+        }
+      } catch (error) {
+        // Error will be caught by setInterval handler
+        throw error;
+      }
+    }
+
+    // 🎯 Update conversation status from polling
+    updateConversationStatus(conversation) {
+      const previousHandoffStatus = this.conversationTracker.handoffStatus;
+      const newHandoffStatus = conversation.handoff_status;
+      
+      if (previousHandoffStatus !== newHandoffStatus) {
+        console.log('🔄 Handoff status changed:', previousHandoffStatus, '→', newHandoffStatus);
+        
+        // Update conversation tracker
+        this.conversationTracker.handoffStatus = newHandoffStatus;
+        
+        // Update localStorage  
+        localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, newHandoffStatus);
+        
+        // Update UI based on new status (inline safe)
+        switch (newHandoffStatus) {
+          case 'bot_only':
+            // Conversation released - back to normal
+            try {
+              if (this.ui && this.ui.elements && this.ui.elements.handoffStatus) {
+                this.ui.elements.handoffStatus.style.display = 'none';
+              }
+            } catch (e) { console.warn('⚠️ Cannot hide handoff status:', e.message); }
+            try {
+              if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+                this.ui.elements.handoffBtn.disabled = false;
+                this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+              }
+            } catch (e) { console.warn('⚠️ Cannot enable handoff button:', e.message); }
+            console.log('✅ Conversation released - bot active');
+            break;
+          case 'handoff_requested':
+            try {
+              if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+                this.ui.elements.handoffText.textContent = 'Richiesta di assistenza in corso...';
+                this.ui.elements.handoffStatus.className = 'chatbot-handoff-status pending';
+                this.ui.elements.handoffStatus.style.display = 'block';
+              }
+            } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+            try {
+              if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+                this.ui.elements.handoffBtn.disabled = true;
+              }
+            } catch (e) { console.warn('⚠️ Cannot disable handoff button:', e.message); }
+            break;
+          case 'handoff_active':
+            try {
+              if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+                this.ui.elements.handoffText.textContent = '👨‍💼 Operatore connesso';
+                this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+                this.ui.elements.handoffStatus.style.display = 'block';
+              }
+            } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+            try {
+              if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
+                this.ui.elements.handoffBtn.disabled = true;
+              }
+            } catch (e) { console.warn('⚠️ Cannot disable handoff button:', e.message); }
+            break;
+        }
+      }
+    }
+
+    // 🔄 Process new messages from polling
+    processNewMessages(messages) {
+      const lastMessageTime = this.lastPollingMessageTime || 0;
+      let newMessagesFound = false;
+      let latestMessageTime = lastMessageTime;
+      
+      console.log('🔄 Processing messages:', {
+        messageCount: messages.length,
+        lastMessageTime: new Date(lastMessageTime).toISOString(),
+        processedIds: Array.from(this.processedMessageIds || [])
+      });
+      
+      messages.forEach(message => {
+        const messageTime = new Date(message.sent_at).getTime();
+        
+        // Track the latest message time
+        if (messageTime > latestMessageTime) {
+          latestMessageTime = messageTime;
+        }
+        
+        // Only process messages newer than our last check AND from operator AND not already processed
+        if (messageTime > lastMessageTime && 
+            message.sender_type === 'operator' && 
+            !(this.processedMessageIds && this.processedMessageIds.has(message.id))) {
+          
+          console.log('📨 New operator message via polling:', message);
+          // Call with correct binding
+          this.handleOperatorMessage.call(this, message);
+          
+          // Initialize set if not exists and add message ID
+          if (!this.processedMessageIds) {
+            this.processedMessageIds = new Set();
+          }
+          this.processedMessageIds.add(message.id);
+          newMessagesFound = true;
+        }
+      });
+      
+      // Always update timestamp to prevent re-processing
+      if (messages.length > 0) {
+        this.lastPollingMessageTime = latestMessageTime;
+        console.log('🕒 Updated lastPollingMessageTime to:', new Date(latestMessageTime).toISOString());
+      }
+    }
+
+    // 📡 Setup WebSocket listeners for real-time operator messages
+    setupWebSocketListeners(retryCount = 0) {
+      try {
+        // Check if Echo is available and properly initialized
+        if (typeof window.Echo === 'undefined' || 
+            typeof window.Echo.channel !== 'function' ||
+            !window.Echo.connector) {
+          if (retryCount >= 5) {
+            console.warn('📡 Gave up waiting for Echo after 5 retries');
+            return;
+          }
+          
+          console.log('📡 Echo not ready yet, will setup WebSocket listeners later (retry', retryCount + 1, ')');
+          console.log('📡 Echo status:', {
+            echoExists: typeof window.Echo !== 'undefined',
+            channelFunction: typeof window.Echo?.channel,
+            hasConnector: !!window.Echo?.connector
+          });
+          
+          // Retry after a short delay
+          setTimeout(() => {
+            this.setupWebSocketListeners(retryCount + 1);
+          }, 2000);
+          return;
+        }
+
+        const sessionId = this.conversationTracker.agentSessionId;
+        if (!sessionId) {
+          console.warn('📡 No agent session ID, cannot setup WebSocket listeners');
+          return;
+        }
+
+        console.log('📡 Setting up WebSocket listeners for session:', sessionId);
+        console.log('📡 Echo object:', window.Echo);
+        console.log('📡 Echo connector:', window.Echo.connector);
+        console.log('📡 Echo methods:', Object.getOwnPropertyNames(window.Echo));
+        console.log('📡 Echo prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(window.Echo)));
+
+        // Listen for operator messages (using public channel for testing)
+        console.log('📡 Attempting to listen on public channel: conversation.' + sessionId);
+        window.Echo.channel(`conversation.${sessionId}`)
+          .listen('ConversationMessageSent', (event) => {
+            console.log('📡 WebSocket message received:', event);
+            
+            if (event.message && event.message.sender_type === 'operator') {
+              console.log('👨‍💼 Operator message received via WebSocket');
+              
+              // Add the operator message to the chat (safe check)
+              try {
+                if (typeof this.addBotMessage === 'function') {
+                  this.addBotMessage(event.message.content, false);
+                } else {
+                  console.warn('⚠️ addBotMessage method not available in WebSocket handler');
+                }
+              } catch (error) {
+                console.error('🚨 Error adding WebSocket message:', error);
+              }
+              
+              // Update handoff status if needed
+              if (this.conversationTracker.handoffStatus !== 'handoff_active') {
+                this.conversationTracker.handoffStatus = 'handoff_active';
+                try {
+                  if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
+                    this.ui.elements.handoffText.textContent = 'Operatore connesso';
+                    this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
+                    this.ui.elements.handoffStatus.style.display = 'block';
+                  }
+                } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
+              }
+            }
+          })
+          .error((error) => {
+            console.error('📡 WebSocket error:', error);
+          });
+
+        console.log('📡 WebSocket listeners setup completed');
+
+      } catch (error) {
+        console.error('📡 Failed to setup WebSocket listeners:', error);
       }
     }
   }
