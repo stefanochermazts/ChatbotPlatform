@@ -1474,6 +1474,11 @@ class WebScraperService
             // Converti link relativi in assoluti
             $absoluteUrl = $this->resolveUrl($href, $baseUrl);
             if ($absoluteUrl && filter_var($absoluteUrl, FILTER_VALIDATE_URL)) {
+                // 🔒 Solo HTTPS: scarta http
+                $scheme = parse_url($absoluteUrl, PHP_URL_SCHEME);
+                if (strtolower((string)$scheme) !== 'https') {
+                    continue;
+                }
                 $links[] = $absoluteUrl;
             }
         }
@@ -1484,6 +1489,13 @@ class WebScraperService
     private function resolveUrl(string $url, string $baseUrl): ?string
     {
         if (filter_var($url, FILTER_VALIDATE_URL)) {
+            // Normalizza a https se il base è https e il link è http allo stesso host
+            $baseParts = parse_url($baseUrl);
+            $urlParts = parse_url($url);
+            if (($baseParts['scheme'] ?? null) === 'https' && ($urlParts['scheme'] ?? '') === 'http' && ($baseParts['host'] ?? null) === ($urlParts['host'] ?? null)) {
+                $urlParts['scheme'] = 'https';
+                return $this->buildUrl($urlParts);
+            }
             return $url; // Already absolute
         }
         
@@ -1492,18 +1504,41 @@ class WebScraperService
         
         if ($url[0] === '/') {
             // Absolute path
-            return $baseParts['scheme'] . '://' . $baseParts['host'] . $url;
+            $scheme = $baseParts['scheme'] === 'https' ? 'https' : $baseParts['scheme'];
+            return $scheme . '://' . $baseParts['host'] . $url;
         } else {
             // Relative path
             $basePath = dirname($baseParts['path'] ?? '/');
-            return $baseParts['scheme'] . '://' . $baseParts['host'] . $basePath . '/' . $url;
+            $scheme = $baseParts['scheme'] === 'https' ? 'https' : $baseParts['scheme'];
+            return $scheme . '://' . $baseParts['host'] . $basePath . '/' . ltrim($url, '/');
         }
+    }
+
+    /**
+     * Ricompone un URL da parti parse_url
+     */
+    private function buildUrl(array $parts): string
+    {
+        $scheme   = isset($parts['scheme']) ? $parts['scheme'] . '://' : '';
+        $host     = $parts['host'] ?? '';
+        $port     = isset($parts['port']) ? ':' . $parts['port'] : '';
+        $user     = $parts['user'] ?? '';
+        $pass     = isset($parts['pass']) ? ':' . $parts['pass']  : '';
+        $pass     = ($user || $pass) ? "$pass@" : '';
+        $path     = $parts['path'] ?? '';
+        $query    = isset($parts['query']) ? '?' . $parts['query'] : '';
+        $fragment = isset($parts['fragment']) ? '#' . $parts['fragment'] : '';
+        return "$scheme$user$pass$host$port$path$query$fragment";
     }
 
     private function isUrlAllowed(string $url, ScraperConfig $config): bool
     {
         $parsedUrl = parse_url($url);
         if (!$parsedUrl || !isset($parsedUrl['host'])) return false;
+        // 🔒 Consenti solo HTTPS
+        if (strtolower((string)($parsedUrl['scheme'] ?? '')) !== 'https') {
+            return false;
+        }
         
         // Check allowed domains
         if (!empty($config->allowed_domains)) {
