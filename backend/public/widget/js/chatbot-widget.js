@@ -3527,6 +3527,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           }
           
           console.log('🎯 Handoff request successful:', handoffRequest);
+
+          // Aggiorna stato interno e storage per permettere il polling
+          this.conversationTracker.handoffStatus = 'handoff_requested';
+          try { localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, 'handoff_requested'); } catch (e) {}
+          // Avvia polling subito dopo la richiesta
+          if (!this.pollingInterval) {
+            this.enablePollingFallback();
+          }
         } else {
           throw new Error('Failed to create handoff request');
         }
