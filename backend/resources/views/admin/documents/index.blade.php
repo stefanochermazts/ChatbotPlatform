@@ -25,10 +25,10 @@
     @endforeach
   </select>
   
-  <label class="text-sm ml-4">Cerca in Source URL:</label>
+  <label class="text-sm ml-4">Cerca in Titolo/URL:</label>
   <input type="text" name="source_url" value="{{ request('source_url', $sourceUrlSearch ?? '') }}" 
-         placeholder="es: comunesancesareo.it" 
-         class="border rounded px-2 py-1 text-sm w-48" />
+         placeholder="es: comunesancesareo.it o titolo documento" 
+         class="border rounded px-2 py-1 text-sm w-56" />
 
   <label class="text-sm ml-4">Qualità:</label>
   <select name="quality_filter" class="border rounded px-2 py-1 text-sm" onchange="this.form.submit()">
@@ -118,13 +118,13 @@
 <!-- Batch re-scrape (compatibile) -->
 <div class="bg-white border rounded p-4 mb-4">
   <h2 class="text-base font-semibold mb-2">🔄 Re-scraping Batch</h2>
-  <form method="post" action="{{ route('admin.documents.rescrape-all', $tenant) }}" onsubmit="return confirm('Eseguire il re-scrape di tutti i documenti filtrati con source_url?')">
+  <form method="post" action="{{ route('admin.documents.rescrape-all', $tenant) }}" onsubmit="return confirm('Eseguire il re-scrape di tutti i documenti che corrispondono ai filtri attuali?')">
     @csrf
     <input type="hidden" name="confirm" value="1" />
     <input type="hidden" name="kb_id" value="{{ (int)request('kb_id', (int)($kbId ?? 0)) }}" />
     <input type="hidden" name="source_url" value="{{ request('source_url', $sourceUrlSearch ?? '') }}" />
-    <button class="px-3 py-1 bg-orange-600 text-white rounded text-sm">Re-scrape documenti filtrati con source_url</button>
-    <p class="text-xs text-gray-600 mt-1">Applicherà i filtri KB/URL correnti; ignora il filtro qualità.</p>
+    <button class="px-3 py-1 bg-orange-600 text-white rounded text-sm">Re-scrape documenti filtrati</button>
+    <p class="text-xs text-gray-600 mt-1">Applicherà i filtri KB/Titolo/URL correnti; ignora il filtro qualità.</p>
   </form>
 </div>
 
@@ -326,6 +326,213 @@ function uploader() {
       this.uploading = false;
     }
   };
+}
+
+// 🔄 Auto-refresh AJAX per monitorare stato ingestion in tempo reale (MOLTO MEGLIO!)
+document.addEventListener('DOMContentLoaded', function() {
+  // Raccogli tutti i documenti visibili sulla pagina
+  const documentsOnPage = collectDocumentsData();
+  
+  if (documentsOnPage.length > 0) {
+    const activeDocuments = documentsOnPage.filter(doc => doc.needsUpdate);
+    
+    if (activeDocuments.length > 0) {
+      console.log(`📊 Auto-refresh AJAX attivato per ${activeDocuments.length} documenti in ingestion`);
+      setupAjaxAutoRefresh(documentsOnPage);
+    } else {
+      console.log('✅ Nessun documento in ingestion, auto-refresh non necessario');
+    }
+  }
+});
+
+// Raccoglie dati di tutti i documenti visibili sulla pagina
+function collectDocumentsData() {
+  const documents = [];
+  const rows = document.querySelectorAll('tbody tr');
+  
+  rows.forEach(row => {
+    const idCell = row.querySelector('td:first-child');
+    const statusCell = row.querySelector('td:nth-child(4)'); // Colonna "Stato"
+    const progressCell = row.querySelector('td:nth-child(5)'); // Colonna "Progress"
+    
+    if (idCell && statusCell && progressCell) {
+      const id = parseInt(idCell.textContent.trim());
+      const status = statusCell.textContent.trim().toLowerCase();
+      const progressText = progressCell.textContent.trim();
+      const progressMatch = progressText.match(/(\d+)%/);
+      const progress = progressMatch ? parseInt(progressMatch[1]) : 100;
+      
+      const needsUpdate = ['pending', 'processing', 'uploading'].includes(status) || progress < 100;
+      
+      documents.push({
+        id: id,
+        row: row,
+        statusCell: statusCell,
+        progressCell: progressCell,
+        currentStatus: status,
+        currentProgress: progress,
+        needsUpdate: needsUpdate
+      });
+    }
+  });
+  
+  return documents;
+}
+
+// Setup dell'auto-refresh AJAX (elegante!)
+function setupAjaxAutoRefresh(documents) {
+  let refreshCount = 0;
+  const maxRefreshes = 120; // Max 10 minuti
+  const documentsToMonitor = documents.filter(doc => doc.needsUpdate);
+  let activeDocumentIds = documentsToMonitor.map(doc => doc.id);
+  
+  if (activeDocumentIds.length === 0) return;
+  
+  // Indicatore visivo
+  const indicator = document.createElement('div');
+  indicator.innerHTML = `
+    <div class="flex items-center gap-2">
+      <span class="text-sm text-blue-600">📊 Monitoraggio ${activeDocumentIds.length} documenti (AJAX)</span>
+      <button onclick="stopAjaxAutoRefresh()" class="text-xs text-red-600 hover:text-red-800 underline">Stop</button>
+    </div>
+  `;
+  indicator.className = 'fixed top-16 right-4 bg-blue-50 border border-blue-200 rounded px-3 py-2 shadow-sm z-50';
+  indicator.id = 'ajax-refresh-indicator';
+  document.body.appendChild(indicator);
+  
+  const refreshInterval = setInterval(async function() {
+    if (document.hidden) return; // Pausa se tab non attivo
+    
+    refreshCount++;
+    
+    try {
+      // Fetch solo degli stati dei documenti
+      const response = await fetch('{{ route('admin.documents.status', $tenant) }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          document_ids: activeDocumentIds
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`📊 AJAX refresh #${refreshCount}:`, data);
+      
+      // Aggiorna solo gli elementi modificati
+      let updatedCount = 0;
+      let completedCount = 0;
+      
+      documents.forEach(doc => {
+        if (data.statuses && data.statuses[doc.id]) {
+          const newStatus = data.statuses[doc.id].status;
+          const newProgress = data.statuses[doc.id].progress;
+          const newError = data.statuses[doc.id].error;
+          
+          // Aggiorna status se cambiato
+          if (newStatus !== doc.currentStatus) {
+            doc.statusCell.textContent = newStatus;
+            doc.currentStatus = newStatus;
+            updatedCount++;
+          }
+          
+          // Aggiorna progress bar se cambiato
+          if (newProgress !== doc.currentProgress) {
+            const progressBar = doc.progressCell.querySelector('.bg-emerald-500');
+            const progressText = doc.progressCell.querySelector('.text-xs');
+            
+            if (progressBar) {
+              progressBar.style.width = `${newProgress}%`;
+            }
+            if (progressText) {
+              progressText.textContent = `${newProgress}%`;
+            }
+            
+            doc.currentProgress = newProgress;
+            updatedCount++;
+          }
+          
+          // Controlla se completato
+          if (newStatus === 'completed' && newProgress >= 100) {
+            completedCount++;
+            // Rimuovi dalla lista di monitoraggio
+            activeDocumentIds = activeDocumentIds.filter(id => id !== doc.id);
+          }
+        }
+      });
+      
+      // Aggiorna indicatore
+      if (activeDocumentIds.length > 0) {
+        const remainingText = activeDocumentIds.length === 1 ? '1 documento' : `${activeDocumentIds.length} documenti`;
+        indicator.querySelector('.text-blue-600').textContent = `📊 Monitoraggio ${remainingText} (AJAX)`;
+      } else {
+        // Tutti completati!
+        indicator.innerHTML = '<span class="text-sm text-green-600">✅ Tutti i documenti completati!</span>';
+        setTimeout(() => {
+          const ind = document.getElementById('ajax-refresh-indicator');
+          if (ind) ind.remove();
+        }, 3000);
+        clearInterval(refreshInterval);
+        console.log('🎉 Auto-refresh AJAX completato: tutti i documenti finiti!');
+        return;
+      }
+      
+      if (updatedCount > 0) {
+        console.log(`✨ Aggiornati ${updatedCount} elementi, ${completedCount} completati`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Errore AJAX refresh:', error);
+    }
+    
+    // Stop dopo limite massimo
+    if (refreshCount >= maxRefreshes) {
+      clearInterval(refreshInterval);
+      const ind = document.getElementById('ajax-refresh-indicator');
+      if (ind) ind.remove();
+      console.log('⏰ Auto-refresh AJAX fermato: raggiunto limite tempo');
+    }
+    
+  }, 3000); // Ogni 3 secondi (più veloce!)
+  
+  // Funzione globale per fermare
+  window.stopAjaxAutoRefresh = function() {
+    clearInterval(refreshInterval);
+    const indicator = document.getElementById('ajax-refresh-indicator');
+    if (indicator) indicator.remove();
+    console.log('🛑 Auto-refresh AJAX fermato manualmente');
+  };
+}
+
+// Helper per controllare se un documento è in ingestion
+function isDocumentInIngestion(row) {
+  const statusCell = row.querySelector('td:nth-child(4)'); // Colonna "Stato"
+  const progressCell = row.querySelector('td:nth-child(5)'); // Colonna "Progress"
+  
+  if (!statusCell) return false;
+  
+  const status = statusCell.textContent.trim().toLowerCase();
+  const isActiveStatus = ['pending', 'processing', 'uploading'].includes(status);
+  
+  // Controlla anche se il progress è < 100%
+  let isIncompleteProgress = false;
+  if (progressCell) {
+    const progressText = progressCell.textContent.trim();
+    const progressMatch = progressText.match(/(\d+)%/);
+    if (progressMatch) {
+      const progress = parseInt(progressMatch[1]);
+      isIncompleteProgress = progress < 100;
+    }
+  }
+  
+  return isActiveStatus || isIncompleteProgress;
 }
 </script>
 @endsection

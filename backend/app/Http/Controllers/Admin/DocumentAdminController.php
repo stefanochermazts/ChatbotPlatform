@@ -32,7 +32,10 @@ class DocumentAdminController extends Controller
         }
         
         if (!empty($sourceUrlSearch)) {
-            $query->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%');
+            $query->where(function($q) use ($sourceUrlSearch) {
+                $q->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%')
+                  ->orWhere('title', 'ILIKE', '%' . $sourceUrlSearch . '%');
+            });
         }
         
         // 🧠 NUOVO: Filtro per qualità contenuto
@@ -62,6 +65,34 @@ class DocumentAdminController extends Controller
         
         $docs = $query->orderByDesc('id')->paginate(20)->withQueryString();
         return view('admin.documents.index', compact('tenant', 'docs', 'kbId', 'sourceUrlSearch', 'qualityFilter'));
+    }
+
+    /**
+     * 🔄 API per ottenere lo stato dei documenti (per auto-refresh AJAX)
+     */
+    public function getDocumentStatuses(Request $request, Tenant $tenant)
+    {
+        $documentIds = $request->input('document_ids', []);
+        
+        if (empty($documentIds) || !is_array($documentIds)) {
+            return response()->json(['error' => 'document_ids required as array'], 400);
+        }
+        
+        $documents = Document::where('tenant_id', $tenant->id)
+            ->whereIn('id', $documentIds)
+            ->select('id', 'ingestion_status', 'ingestion_progress', 'last_error')
+            ->get();
+        
+        $statuses = [];
+        foreach ($documents as $doc) {
+            $statuses[$doc->id] = [
+                'status' => $doc->ingestion_status,
+                'progress' => (int)($doc->ingestion_progress ?? 0),
+                'error' => $doc->last_error
+            ];
+        }
+        
+        return response()->json(['statuses' => $statuses]);
     }
 
     /**
@@ -510,6 +541,7 @@ class DocumentAdminController extends Controller
 
         try {
             // Applica gli stessi filtri dell'index per consistenza
+            // Nota: il re-scraping funziona solo per documenti con source_url
             $query = Document::where('tenant_id', $tenant->id)
                 ->whereNotNull('source_url')
                 ->where('source_url', '!=', '');
@@ -519,9 +551,12 @@ class DocumentAdminController extends Controller
                 $query->where('knowledge_base_id', $data['kb_id']);
             }
             
-            // Applica filtro source_url se specificato
+            // Applica filtro titolo/source_url se specificato (stesso comportamento dell'index)
             if (!empty($data['source_url'])) {
-                $query->where('source_url', 'ILIKE', '%' . $data['source_url'] . '%');
+                $query->where(function($q) use ($data) {
+                    $q->where('source_url', 'ILIKE', '%' . $data['source_url'] . '%')
+                      ->orWhere('title', 'ILIKE', '%' . $data['source_url'] . '%');
+                });
             }
             
             $documents = $query->get();

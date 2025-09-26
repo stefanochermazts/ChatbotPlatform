@@ -139,6 +139,9 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
         ->name('documents.chunks')
         ->whereNumber('tenant')
         ->whereNumber('document');
+    Route::post('/tenants/{tenant}/documents/status', [DocumentAdminController::class, 'getDocumentStatuses'])
+        ->name('documents.status')
+        ->whereNumber('tenant');
     Route::post('/tenants/{tenant}/documents/upload', [DocumentAdminController::class, 'upload'])
         ->name('documents.upload')
         ->whereNumber('tenant');

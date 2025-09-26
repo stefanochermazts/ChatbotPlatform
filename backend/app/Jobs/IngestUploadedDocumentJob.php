@@ -293,9 +293,27 @@ class IngestUploadedDocumentJob implements ShouldQueue
             if (strlen($tableContent) > 0) {
                 // Aggiungi contesto se disponibile
                 $contextualizedTable = $table['context_before'] . "\n\n" . $tableContent . "\n\n" . $table['context_after'];
+                // Coalescing: se inferiore a 1200 caratteri, prova a fondere con contesto successivo
+                if (mb_strlen($contextualizedTable) < 1200 && isset($tables[$tableIndex + 1])) {
+                    $next = trim($tables[$tableIndex + 1]['content']);
+                    if ($next !== '' && mb_strlen($contextualizedTable . "\n\n" . $next) < 2200) {
+                        $contextualizedTable .= "\n\n" . $next;
+                    }
+                }
                 $contextualizedTable = trim($contextualizedTable);
                 
-                $chunks[] = $contextualizedTable;
+                // Nuovo: se la tabella è in markdown, crea chunk per riga (mappando le colonne con etichette)
+                $rowChunks = $this->explodeMarkdownTableIntoRowChunks($tableContent);
+                if (!empty($rowChunks)) {
+                    foreach ($rowChunks as $rc) {
+                        // Include un minimo di contesto prima dell'elenco per migliorare recall
+                        $final = trim(($table['context_before'] ? $table['context_before'] . "\n\n" : '') . $rc);
+                        $chunks[] = $final;
+                    }
+                } else {
+                    // Fallback: usa la tabella intera contestualizzata
+                    $chunks[] = $contextualizedTable;
+                }
                 Log::info("table_aware_chunking.table_preserved", [
                     'table_index' => $tableIndex,
                     'table_chars' => strlen($tableContent),
@@ -309,14 +327,32 @@ class IngestUploadedDocumentJob implements ShouldQueue
         // 📝 STEP 3: Chunking normale per il resto del testo (escludendo tabelle)
         if (count($tables) > 0) {
             $textWithoutTables = $this->removeTablesFromText($text, $tables);
-            $normalizedText = trim(preg_replace('/\s+/', ' ', $textWithoutTables));
+            $normalizedText = $this->normalizePlainText($textWithoutTables);
+            // Prova estrazione directory entries (Nome/Telefono/Indirizzo)
+            $dirEntries = $this->extractDirectoryEntries($normalizedText);
+            if (!empty($dirEntries)) {
+                $chunks = array_merge($chunks, $dirEntries);
+                // Rimuovi possibili duplicati riducendo il testo per chunking standard
+                // (heuristic: se molte directory entries trovate, skippa chunking standard per evitare ripetizioni)
+                if (count($dirEntries) >= 5) {
+                    return $chunks;
+                }
+            }
             if (trim($normalizedText) !== '') {
                 $regularChunks = $this->performStandardChunking($normalizedText, $max, $overlap);
                 $chunks = array_merge($chunks, $regularChunks);
             }
         } else {
             // Nessuna tabella trovata, chunking normale su tutto il testo
-            $normalizedText = trim(preg_replace('/\s+/', ' ', $text));
+            $normalizedText = $this->normalizePlainText($text);
+            // Directory-aware splitter per liste di contatti
+            $dirEntries = $this->extractDirectoryEntries($normalizedText);
+            if (!empty($dirEntries)) {
+                $chunks = array_merge($chunks, $dirEntries);
+                if (count($dirEntries) >= 5) {
+                    return $chunks;
+                }
+            }
             $regularChunks = $this->performStandardChunking($normalizedText, $max, $overlap);
             $chunks = array_merge($chunks, $regularChunks);
         }
@@ -343,6 +379,11 @@ class IngestUploadedDocumentJob implements ShouldQueue
         $tableLines = [];
         $tableStartIndex = 0;
 
+        Log::info("table_detection.start", [
+            'total_lines' => count($lines),
+            'first_10_lines' => array_slice($lines, 0, 10)
+        ]);
+
         foreach ($lines as $lineIndex => $line) {
             $trimmedLine = trim($line);
             
@@ -351,6 +392,12 @@ class IngestUploadedDocumentJob implements ShouldQueue
             $isEmptyLine = trim($line) === '';
             
             if ($isTableLine) {
+                if (!$inTable) {
+                    Log::info("table_detection.table_start", [
+                        'line_index' => $lineIndex,
+                        'line_content' => $trimmedLine
+                    ]);
+                }
                 if (!$inTable) {
                     // Inizia nuova tabella
                     $inTable = true;
@@ -383,7 +430,7 @@ class IngestUploadedDocumentJob implements ShouldQueue
                         }
                     }
 
-                    $tables[] = [
+                    $tableData = [
                         'content' => implode("\n", $tableLines),
                         'context_before' => trim($contextBefore),
                         'context_after' => trim($contextAfter),
@@ -391,6 +438,15 @@ class IngestUploadedDocumentJob implements ShouldQueue
                         'end_line' => $lineIndex - 1,
                         'rows_count' => count($tableLines)
                     ];
+                    $tables[] = $tableData;
+                    
+                    Log::info("table_detection.table_found", [
+                        'table_index' => count($tables) - 1,
+                        'rows_count' => count($tableLines),
+                        'start_line' => $tableStartIndex,
+                        'end_line' => $lineIndex - 1,
+                        'first_3_lines' => array_slice($tableLines, 0, 3)
+                    ]);
                 }
                 $inTable = false;
                 $tableLines = [];
@@ -407,7 +463,7 @@ class IngestUploadedDocumentJob implements ShouldQueue
                 }
             }
             
-            $tables[] = [
+            $tableData = [
                 'content' => implode("\n", $tableLines),
                 'context_before' => trim($contextBefore),
                 'context_after' => '',
@@ -415,6 +471,15 @@ class IngestUploadedDocumentJob implements ShouldQueue
                 'end_line' => count($lines) - 1,
                 'rows_count' => count($tableLines)
             ];
+            $tables[] = $tableData;
+            
+            Log::info("table_detection.table_found_end", [
+                'table_index' => count($tables) - 1,
+                'rows_count' => count($tableLines),
+                'start_line' => $tableStartIndex,
+                'end_line' => count($lines) - 1,
+                'first_3_lines' => array_slice($tableLines, 0, 3)
+            ]);
         }
 
         return $tables;
@@ -442,6 +507,72 @@ class IngestUploadedDocumentJob implements ShouldQueue
         });
         
         return implode("\n", $cleanLines);
+    }
+
+    /**
+     * Normalizza il testo preservando separatori, etichette e chiavi/valori
+     * per migliorare la ricercabilità di campi (es. telefono, email, orari).
+     */
+    private function normalizePlainText(string $text): string
+    {
+        // Sostituisci sequenze di spazi multipli con singolo spazio, ma preserva newline doppie come separatori paragrafo
+        $text = preg_replace("/\r\n|\r/", "\n", $text);
+        // comprimi più di 2 newline in esattamente 2
+        $text = preg_replace("/\n{3,}/", "\n\n", $text);
+        // rimuovi spazi extra all'interno delle righe
+        $text = implode("\n", array_map(function ($line) {
+            // preserva separatori ':' '-' '—' '|' per tabelle/elenchi
+            $line = preg_replace('/\s{2,}/', ' ', $line);
+            return trim($line);
+        }, explode("\n", (string) $text)));
+        return trim($text);
+    }
+
+    /**
+     * Estrae “directory entries” da testo non tabellare (Nome/Telefono/Indirizzo...) in chunk key:value
+     */
+    private function extractDirectoryEntries(string $text): array
+    {
+        $lines = array_values(array_filter(array_map(fn($l) => trim((string)$l), explode("\n", $text))));
+        if (count($lines) < 3) return [];
+
+        $chunks = [];
+        $phoneRegex = '/(?:(?:\+?39\s?)?)?(?:\d[\d\.\-\s]{5,}\d)/u';
+        for ($i = 0; $i < count($lines); $i++) {
+            $line = $lines[$i];
+            if ($line === '') continue;
+
+            if (preg_match_all($phoneRegex, $line, $m) && !empty($m[0])) {
+                // Trova nome sulla/e riga/e precedenti
+                $name = '';
+                for ($k = 1; $k <= 2; $k++) {
+                    $idx = $i - $k;
+                    if ($idx >= 0 && $lines[$idx] !== '' && !preg_match($phoneRegex, $lines[$idx])) {
+                        $name = $lines[$idx];
+                        break;
+                    }
+                }
+                // Indirizzo o info aggiuntive sulla riga successiva
+                $address = '';
+                if (isset($lines[$i + 1]) && $lines[$i + 1] !== '' && !preg_match($phoneRegex, $lines[$i + 1])) {
+                    $address = $lines[$i + 1];
+                }
+                $phones = implode(' / ', array_map('trim', $m[0]));
+                // Crea chunk
+                $parts = [];
+                if ($name !== '') $parts[] = "Nome: $name";
+                $parts[] = "Telefono: $phones";
+                if ($address !== '') $parts[] = "Indirizzo: $address";
+                $chunk = implode("\n", $parts);
+                if (mb_strlen($chunk) >= 15) {
+                    $chunks[] = $chunk;
+                }
+            }
+        }
+        // Dedup
+        $chunks = array_values(array_unique($chunks));
+        // Se meno di 2, non considerare affidabile
+        return count($chunks) >= 2 ? $chunks : [];
     }
 
     /**
@@ -657,6 +788,77 @@ class IngestUploadedDocumentJob implements ShouldQueue
             Log::warning('pptx.zip_extract_failed', ['path' => $filePath, 'error' => $e->getMessage()]);                                                        
             return '';
         }
+    }
+
+    /**
+     * Converte una tabella markdown in chunk per singola riga, esponendo le colonne come key:value
+     */
+    private function explodeMarkdownTableIntoRowChunks(string $tableMarkdown): array
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $tableMarkdown))));
+        Log::info("table_explosion.start", [
+            'total_lines' => count($lines),
+            'first_5_lines' => array_slice($lines, 0, 5)
+        ]);
+        
+        if (count($lines) < 2) {
+            Log::info("table_explosion.too_few_lines", ['lines' => count($lines)]);
+            return [];
+        }
+        // Individua header e separatore ---|---
+        $headerLine = null;
+        $separatorIndex = -1;
+        foreach ($lines as $i => $line) {
+            if ($headerLine === null && preg_match('/\|/', $line)) {
+                $headerLine = $line;
+                Log::info("table_explosion.header_found", ['header' => $headerLine]);
+                continue;
+            }
+            if ($headerLine !== null && preg_match('/^\|?\s*:?-+.*\|.*-+.*\s*\|?\s*$/', $line)) {
+                $separatorIndex = $i;
+                Log::info("table_explosion.separator_found", ['separator' => $line, 'index' => $i]);
+                break;
+            }
+        }
+        if ($headerLine === null || $separatorIndex < 0) {
+            Log::info("table_explosion.invalid_table", [
+                'header_found' => $headerLine !== null,
+                'separator_found' => $separatorIndex >= 0
+            ]);
+            return [];
+        }
+        $headers = array_map('trim', array_filter(array_map('trim', explode('|', trim($headerLine, '| ')))));
+        if (empty($headers)) {
+            return [];
+        }
+        $rows = array_slice($lines, $separatorIndex + 1);
+        $chunks = [];
+        foreach ($rows as $row) {
+            if ($row === '' || !str_contains($row, '|')) continue;
+            $cols = array_map('trim', array_filter(array_map('trim', explode('|', trim($row, '| ')))));
+            if (empty($cols)) continue;
+            // Allinea numero colonne
+            $pairs = [];
+            for ($i = 0; $i < min(count($headers), count($cols)); $i++) {
+                $h = $headers[$i];
+                $v = $cols[$i];
+                if ($v !== '') {
+                    $pairs[] = "$h: $v";
+                }
+            }
+            if (!empty($pairs)) {
+                $chunks[] = implode("\n", $pairs);
+            }
+        }
+        
+        Log::info("table_explosion.completed", [
+            'total_chunks_created' => count($chunks),
+            'headers' => $headers,
+            'total_rows_processed' => count($rows),
+            'first_chunk_sample' => $chunks[0] ?? null
+        ]);
+        
+        return $chunks;
     }
 
     /**

@@ -2762,9 +2762,10 @@ class WebScraperService
                 if ($knowledgeBaseId) {
                     $config->target_knowledge_base_id = $knowledgeBaseId;
                 }
-                // Always enable JS rendering for SPA sites; renderer will resolve Node binary robustly
-                $config->render_js = true;
-                $config->timeout = max($config->timeout, 30); // ⚡ OPTIMIZED: Reduced timeout
+                // RISPETTA LA CONFIGURAZIONE: NON forzare il rendering JS se disabilitato
+                // Mantieni solo un timeout minimo ragionevole
+                $config->render_js = (bool) ($config->render_js ?? false);
+                $config->timeout = max((int) $config->timeout, 30);
             }
 
             // Fetch e estrazione contenuto

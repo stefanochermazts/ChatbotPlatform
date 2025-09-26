@@ -547,7 +547,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         const cleanUrl = url.trim();
         const href = cleanUrl.startsWith('www.') ? `http://${cleanUrl}` : cleanUrl;
         
-        // 🔧 GESTIONE SPECIALE: Converti markdown links con placeholder in HTML
+            // 🔧 GESTIONE SPECIALE: Converti markdown links con placeholder in HTML
         // Pattern: [text](###URLMASK0###) → <a href="url">text</a>
         const markdownPattern = new RegExp(`\\[([^\\]]+)\\]\\(${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g');
         const markdownMatches = html.match(markdownPattern);
@@ -562,6 +562,21 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           html = html.replaceAll ? html.replaceAll(placeholder, linkedUrl) : html.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), linkedUrl);
         }
       });
+      
+      // 7.5. FALLBACK FINALE: Converti qualsiasi link markdown rimasto non processato
+      // Questo è un safety net per catturare link markdown che potrebbero essere sfuggiti al processing sopra
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (match, text, url) => {
+        console.warn('🚨 FALLBACK: Converting remaining markdown link:', match);
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
+      });
+      
+      // 🔧 DEBUG: Log finale per vedere se ci sono ancora link markdown non convertiti
+      const remainingMarkdownLinks = html.match(/\[([^\]]+)\]\(([^)]+)\)/g);
+      if (remainingMarkdownLinks) {
+        console.error('🚨 STILL REMAINING MARKDOWN LINKS:', remainingMarkdownLinks);
+      } else {
+        console.log('✅ All markdown links should be converted');
+      }
       
       // 8. Auto-link Email  
       html = html.replace(/(?<!["\[>]|href="|>)(?![^<]*<\/a>)([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '<a href="mailto:$1" class="chatbot-link">$1</a>');
