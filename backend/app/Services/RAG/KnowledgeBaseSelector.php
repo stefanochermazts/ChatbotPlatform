@@ -210,8 +210,9 @@ class KnowledgeBaseSelector
             '/\b(cos\'è|cosa è|che cos\'è|che cosa è)\b/iu',    // Parole interrogative
             '/\b(cos\'è|cosa è|che cos\'è|che cosa è)\s*/iu',   // Con spazi
             '/\b(dimmi|spiegami|parlami)\b/iu',                 // Verbi di richiesta
-            '/\b(di|del|della|dei|delle)\b/iu',                // Preposizioni semplici
-            '/\b(il|la|lo|gli|le|un|una|uno)\b/iu',           // Articoli
+            // ❌ RIMOSSO: articoli e preposizioni - causano perdita di contesto
+            // '/\b(di|del|della|dei|delle)\b/iu',                // Preposizioni semplici
+            // '/\b(il|la|lo|gli|le|un|una|uno)\b/iu',           // Articoli
             '/\b(come|quando|dove|perché|perchè)\b/iu',        // Altre interrogative
             '/\b(vorrei sapere|mi puoi dire|puoi dirmi)\b/iu', // Formule di cortesia
             '/\b(iniziativa|progetto|programma)\b/iu',         // Parole generiche che causano confusione

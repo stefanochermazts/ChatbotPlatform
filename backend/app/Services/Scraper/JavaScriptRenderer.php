@@ -4,15 +4,25 @@ namespace App\Services\Scraper;
 
 class JavaScriptRenderer
 {
-    public function renderUrl(string $url, int $timeout = 30): ?string
+    public function renderUrl(string $url, int $timeout = 30, array $jsConfig = []): ?string
     {
         try {
             $timeoutMs = $timeout * 1000;
+            
+            // 🔧 Estrai timeout configurabili da jsConfig
+            $navigationTimeout = ($jsConfig['js_navigation_timeout'] ?? 30) * 1000;
+            $contentWait = ($jsConfig['js_content_wait'] ?? 15) * 1000;
+            $scrollDelay = ($jsConfig['js_scroll_delay'] ?? 2) * 1000;
+            $finalWait = ($jsConfig['js_final_wait'] ?? 8) * 1000;
             
             \Log::info("🌐 [JS-RENDER] Starting JavaScript rendering", [
                 'url' => $url,
                 'timeout_seconds' => $timeout,
                 'timeout_ms' => $timeoutMs,
+                'navigation_timeout_ms' => $navigationTimeout,
+                'content_wait_ms' => $contentWait,
+                'scroll_delay_ms' => $scrollDelay,
+                'final_wait_ms' => $finalWait,
                 'environment' => app()->environment()
             ]);
             
@@ -27,8 +37,13 @@ class JavaScriptRenderer
                 mkdir($tempDir, 0755, true);
             }
             
-            // Genera script Puppeteer
-            $script = $this->generatePuppeteerScript($url, $timeoutMs, $outputPath, $errorPath);
+            // Genera script Puppeteer con timeout configurabili
+            $script = $this->generatePuppeteerScript($url, $timeoutMs, $outputPath, $errorPath, [
+                'navigationTimeout' => $navigationTimeout,
+                'contentWait' => $contentWait,
+                'scrollDelay' => $scrollDelay,
+                'finalWait' => $finalWait
+            ]);
             file_put_contents($scriptPath, $script);
             
             // Esegui Puppeteer dalla directory corrente (backend)
@@ -41,39 +56,71 @@ class JavaScriptRenderer
             if ($envNodePath) {
                 $candidateNodes[] = $envNodePath;
             }
-            // Aggiungi path comuni
+            
+            // Aggiungi path comuni (Windows specifici per primi, poi Linux)
             $candidateNodes = array_merge($candidateNodes, [
-                'node',
-                'C:\\Program Files\\nodejs\\node.exe',
-                'C:\\Program Files (x86)\\nodejs\\node.exe',
-                'C:\\Program Files\\Git\\usr\\bin\\node.exe',
-                '/usr/bin/node',
-                '/usr/local/bin/node'
+                'C:\\nvm4w2\\nodejs\\node.exe',              // NVM for Windows (comune)
+                'C:\\Program Files\\nodejs\\node.exe',       // Installazione standard Windows
+                'C:\\Program Files (x86)\\nodejs\\node.exe', // Installazione 32-bit
+                'C:\\laragon\\bin\\nodejs\\node.exe',        // Laragon Node
+                'C:\\Program Files\\Git\\usr\\bin\\node.exe',// Git Bash Node
+                '/usr/bin/node',                              // Linux standard
+                '/usr/local/bin/node',                        // Linux alternative
+                'node'                                        // Fallback a PATH (potrebbe non funzionare in PHP)
             ]);
 
-            $nodeBinary = 'node';
+            $nodeBinary = null;
             foreach ($candidateNodes as $candidate) {
-                $versionOutput = null;
-                $exitCodeProbe = 0;
-                @exec("\"$candidate\" --version 2>&1", $versionOutput, $exitCodeProbe);
-                if ($exitCodeProbe === 0 && !empty($versionOutput)) {
-                    $nodeBinary = $candidate;
-                    break;
+                // Su Windows, verifica se il file .exe esiste
+                if (DIRECTORY_SEPARATOR === '\\' && str_ends_with($candidate, '.exe')) {
+                    if (file_exists($candidate)) {
+                        $nodeBinary = $candidate;
+                        \Log::debug("Found Node.js at: $candidate");
+                        break;
+                    }
+                }
+                // Su Linux o fallback, testa con which/where
+                elseif ($candidate === 'node') {
+                    $nodeBinary = $candidate; // Ultimo fallback
+                } else {
+                    // Linux: verifica esistenza file
+                    if (file_exists($candidate)) {
+                        $nodeBinary = $candidate;
+                        \Log::debug("Found Node.js at: $candidate");
+                        break;
+                    }
                 }
             }
+            
+            if (!$nodeBinary) {
+                throw new \RuntimeException("Node.js binary not found. Please install Node.js or set NODE_BINARY_PATH in .env");
+            }
 
-            // Comando bash-friendly (Git Bash su Windows) con path esplicito
-            $nodeCmd = "cd \"$backendDir\" && \"$nodeBinary\" \"$absoluteScriptPath\"";
+            // Cambia working directory prima di eseguire (evita problemi con cd && su Windows)
+            $originalDir = getcwd();
+            chdir($backendDir);
+            
+            // Quota il path di Node.js se contiene spazi
+            $quotedNodeBinary = (strpos($nodeBinary, ' ') !== false) ? "\"$nodeBinary\"" : $nodeBinary;
+            
+            // Comando semplificato senza cd (già nella directory corretta)
+            $nodeCmd = "$quotedNodeBinary \"$absoluteScriptPath\"";
             
             // Debug: log del comando
-            \Log::debug("Executing command: $nodeCmd", [
+            \Log::debug("Executing Node.js command", [
+                'node_binary' => $nodeBinary,
+                'command' => $nodeCmd,
                 'backend_dir' => $backendDir,
-                'script_path' => $absoluteScriptPath
+                'script_path' => $absoluteScriptPath,
+                'current_dir' => getcwd()
             ]);
             $exitCode = 0;
             $output = [];
             
             exec($nodeCmd . " 2>&1", $output, $exitCode);
+            
+            // Ripristina directory originale
+            chdir($originalDir);
             
             if ($exitCode !== 0) {
                 $errorMsg = implode("\n", $output);
@@ -146,13 +193,19 @@ class JavaScriptRenderer
         }
     }
     
-    private function generatePuppeteerScript(string $url, int $timeout, string $outputPath, string $errorPath): string
+    private function generatePuppeteerScript(string $url, int $timeout, string $outputPath, string $errorPath, array $timeouts = []): string
     {
         $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Fix path per Windows - converte backslash in forward slash per JavaScript
         $outputPath = str_replace('\\', '/', $outputPath);
         $errorPath = str_replace('\\', '/', $errorPath);
+        
+        // 🔧 Estrai timeout configurabili con fallback ai valori di default
+        $navigationTimeout = $timeouts['navigationTimeout'] ?? $timeout;
+        $contentWait = $timeouts['contentWait'] ?? 15000;
+        $scrollDelay = $timeouts['scrollDelay'] ?? 2000;
+        $finalWait = $timeouts['finalWait'] ?? 8000;
         
         return <<<JS
 const puppeteer = require('puppeteer');
@@ -186,11 +239,11 @@ const fs = require('fs');
     // Imposta viewport per consistenza
     await page.setViewport({ width: 1280, height: 720 });
     
-    // Naviga alla pagina con timeout
+    // Naviga alla pagina con timeout configurabile
     console.log('📄 Navigating to page...');
     await page.goto('$url', { 
       waitUntil: 'networkidle0', 
-      timeout: $timeout 
+      timeout: $navigationTimeout 
     });
     
     // Generic handling for modern websites
@@ -202,7 +255,7 @@ const fs = require('fs');
       if (browserWarning) {
         await browserWarning.click();
         console.log('✅ Closed browser warning');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Fixed delay for browser warning
       }
     } catch (e) {
       console.log('ℹ️ No browser warning to close');
@@ -213,7 +266,7 @@ const fs = require('fs');
       console.log('🏠 Homepage detected - waiting for navigation menu...');
       
       // Wait longer for Angular router to load navigation
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, $finalWait));
       
       // Try to trigger menu/navigation loading
       try {
@@ -228,7 +281,7 @@ const fs = require('fs');
           window.scrollTo(0, 0);
         });
         console.log('🎯 Triggered navigation interactions');
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, $scrollDelay));
       } catch (e) {
         console.log('ℹ️ Navigation interaction failed:', e.message);
       }
@@ -238,7 +291,7 @@ const fs = require('fs');
     await page.evaluate(() => {
       window.scrollTo(0, document.body.scrollHeight / 2);
     });
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, $scrollDelay));
     
     // Attendi che Angular/SPA sia completamente caricato
     console.log('⏳ Waiting for JavaScript rendering...');
@@ -291,7 +344,7 @@ const fs = require('fs');
         });
         
         return result;
-      }, { timeout: 30000 }); // ⚡ OPTIMIZED: Reduced timeout with improved patterns
+      }, { timeout: $contentWait }); // ⚡ CONFIGURABLE: Timeout per attesa contenuto dinamico
       
       contentFound = true;
       console.log('✅ Real Angular content loaded successfully');
@@ -306,7 +359,7 @@ const fs = require('fs');
           return textContent.toLowerCase().includes('pedibus') && 
                  textContent.toLowerCase().includes('attivazione') &&
                  textContent.length > 2000;
-        }, { timeout: 20000 }); // ⚡ OPTIMIZED: Reduced from 30s
+        }, { timeout: $contentWait }); // ⚡ CONFIGURABLE: Timeout per contenuto specifico
         
         contentFound = true;
         console.log('✅ Found specific Pedibus content');
@@ -314,7 +367,7 @@ const fs = require('fs');
         console.log('⚠️ Specific content not found, trying selectors...');
         
         try {
-          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: 15000 }); // ⚡ OPTIMIZED
+          await page.waitForSelector('main, article, .content, [role="main"], .post, .news', { timeout: $contentWait }); // ⚡ CONFIGURABLE
           contentFound = true;
           console.log('✅ Found content container selector');
         } catch (e3) {
@@ -333,27 +386,27 @@ const fs = require('fs');
       await page.evaluate(() => {
         window.scrollTo(0, 0);
       });
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, $scrollDelay));
       
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight / 4);
       });
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, $scrollDelay));
       
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight / 2);
       });
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, $scrollDelay));
       
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight * 3/4);
       });
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, $scrollDelay));
       
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight);
       });
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, $scrollDelay));
       
       // Try to trigger any lazy loading by clicking potential expanders
       await page.evaluate(() => {
@@ -368,7 +421,7 @@ const fs = require('fs');
           }
         });
       });
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, $finalWait));
       
       // Try clicking on potential navigation elements
       try {
@@ -383,7 +436,7 @@ const fs = require('fs');
     
     // Final wait for any remaining async content (much longer for Angular)
     console.log('⏳ Final wait for content stabilization...');
-    await new Promise(resolve => setTimeout(resolve, contentFound ? 8000 : 15000));
+    await new Promise(resolve => setTimeout(resolve, contentFound ? $finalWait : $finalWait * 2));
     
     // Estrai contenuto HTML completo con pulizia selettiva
     console.log('📝 Extracting content...');
@@ -402,29 +455,37 @@ const fs = require('fs');
         
         // Try to find main content containers (expanded for complex sites)
         const selectors = [
+          '[role="main"]',           // 🆕 ARIA role first (accessibility standard)
+          '.articolo-dettaglio-testo', // 🆕 Palmanova specific (1003 chars)
+          '.article-container',      // 🆕 Palmanova specific (755 chars)
           'main',
+          '.page-content',           // 🆕 Common in CMS
+          '.site-content',           // 🆕 Common in WordPress/CMS
+          '.container-fluid',        // 🆕 Bootstrap (used by Italian PA sites)
+          '.main-content',
           'article', 
           '.content',
-          '.main-content',
           '.post-content',
           '.article-content',
-          '[role="main"]',
           '.news-content',
-          '.page-content',
           '#content',
-          '#main-content', 
-          '.site-content',
+          '#main-content',
+          '#page-content',           // 🆕 ID variant
           '.entry-content',
-          '.contenuto',
-          '.testo',
-          '.body-content'
+          '.contenuto',              // Italian
+          '.testo',                  // Italian
+          '.testolungo',             // 🆕 Italian PA specific
+          '.body-content',
+          '.wrapper'                 // 🆕 Generic wrapper
         ];
         
         let mainContent = null;
         for (const selector of selectors) {
           const element = document.querySelector(selector);
-          if (element && element.textContent.trim().length > 500) {
+          // 🔧 LOWERED THRESHOLD: 200 chars instead of 500 for fragmented content
+          if (element && element.textContent.trim().length > 200) {
             mainContent = element;
+            console.log('Found content with selector: ' + selector + ' (' + element.textContent.trim().length + ' chars)');
             break;
           }
         }

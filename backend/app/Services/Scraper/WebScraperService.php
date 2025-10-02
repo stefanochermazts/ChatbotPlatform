@@ -74,8 +74,18 @@ class WebScraperService
             $this->scrapeRecursive($seedUrl, $config, $tenant, 0);
         }
 
-        // Salva i risultati come documenti
-        $savedCount = $this->saveResults($tenant, false);
+        // 🆕 SALVATAGGIO PROGRESSIVO: I documenti sono già stati salvati durante lo scraping
+        // Il count include nuovi + aggiornati (documenti effettivamente salvati/processati)
+        $savedCount = $this->stats['new'] + $this->stats['updated'];
+        
+        \Log::info("📊 [PROGRESSIVE-SAVE] Riepilogo salvataggio progressivo", [
+            'session_id' => $this->sessionId,
+            'total_documents_processed' => count($this->results),
+            'new' => $this->stats['new'],
+            'updated' => $this->stats['updated'],
+            'skipped' => $this->stats['skipped'],
+            'total_saved' => $savedCount
+        ]);
 
         // 🏁 Log completamento sessione
         $finalStats = [
@@ -96,10 +106,95 @@ class WebScraperService
         ];
     }
 
+    /**
+     * 🚀 Modalità PARALLELA: Scraping con job distribuiti in coda
+     * Versione ottimizzata per ambienti produzione con Horizon
+     */
+    public function scrapeForTenantParallel(int $tenantId, ?int $scraperConfigId = null): array
+    {
+        $tenant = Tenant::findOrFail($tenantId);
+        $config = $scraperConfigId
+            ? ScraperConfig::where('tenant_id', $tenantId)->where('id', $scraperConfigId)->first()
+            : ScraperConfig::where('tenant_id', $tenantId)->first();
+            
+        // Store config for pattern access
+        $this->currentConfig = $config;
+        
+        if (!$config || empty($config->seed_urls)) {
+            return ['error' => 'Nessuna configurazione scraper trovata o seed URLs vuoti'];
+        }
+
+        // 🚀 Log avvio sessione di scraping parallelo
+        $this->startTime = microtime(true);
+        ScraperLogger::sessionStarted($this->sessionId, $tenantId, $config->name . ' (Parallel)');
+        
+        // Inizializza progress tracking
+        $this->initializeProgress($tenantId, $scraperConfigId);
+        
+        $this->visitedUrls = [];
+        $this->stats = ['new' => 0, 'updated' => 0, 'skipped' => 0];
+
+        \Log::info("🚀 [PARALLEL-SCRAPING] Inizio scraping parallelo", [
+            'session_id' => $this->sessionId,
+            'tenant_id' => $tenantId,
+            'config_id' => $scraperConfigId,
+            'seed_urls_count' => count($config->seed_urls)
+        ]);
+
+        // Scraping da sitemap se presente (sequenziale per estrazione URL)
+        if (!empty($config->sitemap_urls)) {
+            foreach ($config->sitemap_urls as $sitemapUrl) {
+                $this->scrapeSitemap($sitemapUrl, $config, $tenant);
+            }
+        }
+
+        // 🚀 Scraping PARALLELO dai seed URLs
+        // Invece di processare sequenzialmente, dispatcha job per ogni URL
+        foreach ($config->seed_urls as $seedUrl) {
+            $this->scrapeRecursiveParallel($seedUrl, $config, $tenant, 0);
+        }
+
+        // 🎯 In modalità parallela, i documenti vengono salvati dai job worker
+        // Qui ritorniamo solo le metriche iniziali
+        $duration = microtime(true) - $this->startTime;
+        
+        $jobsDispatched = count($this->visitedUrls);
+        
+        \Log::info("🚀 [PARALLEL-SCRAPING] Job dispatchati", [
+            'session_id' => $this->sessionId,
+            'jobs_count' => $jobsDispatched,
+            'duration_seconds' => round($duration, 2)
+        ]);
+
+        // Finalizza progress
+        $this->finalizeProgress('dispatched');
+        
+        // Log finale sessione
+        ScraperLogger::sessionCompleted(
+            $this->sessionId,
+            $jobsDispatched, // URL da processare
+            0, // Documenti salvati verranno aggiornati dai worker
+            $duration
+        );
+
+        return [
+            'urls_visited' => $jobsDispatched,
+            'documents_saved' => 0, // Verranno salvati dai worker
+            'stats' => $this->stats,
+            'duration_seconds' => round($duration, 2),
+            'mode' => 'parallel',
+            'jobs_dispatched' => $jobsDispatched
+        ];
+    }
+
+
+
     private function scrapeRecursive(string $url, ScraperConfig $config, Tenant $tenant, int $depth): void
     {
         // ⏰ Controllo timeout preventivo
         if (isset($this->startTime) && (microtime(true) - $this->startTime) > $this->maxExecutionTime) {
+
+
             \Log::warning("🕐 Scraping stopped - max execution time reached", [
                 'session_id' => $this->sessionId,
                 'elapsed_seconds' => round(microtime(true) - $this->startTime),
@@ -126,29 +221,75 @@ class WebScraperService
 
         try {
             $content = $this->fetchUrl($url, $config);
-            if (!$content) return;
+            
+            // 🐛 DEBUG: Log per capire cosa viene restituito da fetchUrl
+            \Log::debug("🔍 [FETCH-DEBUG] fetchUrl returned", [
+                'url' => $url,
+                'content_is_null' => $content === null,
+                'content_is_empty' => empty($content),
+                'content_length' => $content ? strlen($content) : 0
+            ]);
+            
+            if (!$content) {
+                \Log::warning("⚠️ [FETCH-FAILED] fetchUrl returned empty content", ['url' => $url]);
+                return;
+            }
 
             // Determina se questa pagina è "link-only" in base alla configurazione
             $isLinkOnly = $this->isLinkOnlyUrl($url, $config);
+            
+            \Log::debug("🔍 [LINK-ONLY-CHECK]", [
+                'url' => $url,
+                'is_link_only' => $isLinkOnly
+            ]);
 
             if (!$isLinkOnly) {
                 // Politica: se skip_known_urls attivo, e abbiamo già un documento per questo URL (e non è da recrawllare), salta
-                if ($this->shouldSkipKnownUrl($url, $tenant, $config)) {
+                $shouldSkip = $this->shouldSkipKnownUrl($url, $tenant, $config);
+                
+                \Log::debug("🔍 [SKIP-CHECK]", [
+                    'url' => $url,
+                    'should_skip' => $shouldSkip,
+                    'skip_known_urls_enabled' => $config->skip_known_urls ?? false
+                ]);
+                
+                if ($shouldSkip) {
                     $this->stats['skipped']++;
                     ScraperLogger::urlSuccess($this->sessionId, $url, 'skipped', 0);
                     \Log::info('Skip URL già noto', ['url' => $url]);
                 } else {
+                \Log::debug("🚀 [EXTRACTION-START] Starting content extraction", ['url' => $url]);
                 // Estrai contenuto principale
                 $extractedContent = $this->extractContent($content, $url);
                 if ($extractedContent) {
-                    // Salva risultato con metadata qualità
-                    $this->results[] = [
+                    // 🆕 SALVATAGGIO PROGRESSIVO: Salva il documento immediatamente
+                    $result = [
                         'url' => $url,
                         'title' => $extractedContent['title'],
                         'content' => $extractedContent['content'],
                         'depth' => $depth,
                         'quality_analysis' => $extractedContent['quality_analysis'] ?? null
                     ];
+                    
+                    // Aggiungi ai risultati per statistiche
+                    $this->results[] = $result;
+                    
+                    // 🚀 SALVA E AVVIA INGESTION IMMEDIATAMENTE
+                    try {
+                        $this->saveAndIngestSingleResult($result, $tenant, $config);
+                        \Log::info("✅ [PROGRESSIVE-SAVE] Documento salvato e ingestion avviata", [
+                            'session_id' => $this->sessionId,
+                            'url' => $url,
+                            'title' => $extractedContent['title']
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error("❌ [PROGRESSIVE-SAVE] Errore salvataggio progressivo", [
+                            'session_id' => $this->sessionId,
+                            'url' => $url,
+                            'error' => $e->getMessage()
+                        ]);
+                        // Non bloccare lo scraping, continua con gli altri URL
+                    }
                 }
                 }
             }
@@ -162,9 +303,19 @@ class WebScraperService
             }
 
         } catch (\Exception $e) {
-            // ❌ Log errore specifico per scraper
+            // ❌ GESTIONE ERRORE ROBUSTO: Log dettagliato ma continua con altri URL
             ScraperLogger::urlError($this->sessionId, $url, $e->getMessage());
-            \Log::warning("Errore scraping URL: {$url}", ['error' => $e->getMessage()]);
+            \Log::error("❌ [SCRAPING-ERROR] Errore processamento URL - SCARTO PAGINA E CONTINUO", [
+                'session_id' => $this->sessionId,
+                'url' => $url,
+                'depth' => $depth,
+                'error_type' => get_class($e),
+                'error_message' => $e->getMessage(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'total_urls_processed' => count($this->visitedUrls)
+            ]);
+            // Non rilancia l'eccezione - continua con le altre pagine
         }
     }
 
@@ -227,10 +378,18 @@ class WebScraperService
         
         $startTime = microtime(true);
         $renderer = new JavaScriptRenderer();
-        // ⚡ OPTIMIZED: Reduced timeout now that HTML-to-Markdown conversion is fixed
-        $timeout = max($config->timeout ?? 30, 30);
+        // ⚡ CONFIGURABLE: Usa timeout configurabili per JavaScript rendering
+        $timeout = max($config->js_timeout ?? $config->timeout ?? 30, 30);
         
-        $content = $renderer->renderUrl($url, $timeout);
+        // 🔧 Prepara configurazione timeout per JavaScript
+        $jsConfig = [
+            'js_navigation_timeout' => $config->js_navigation_timeout ?? 30,
+            'js_content_wait' => $config->js_content_wait ?? 15,
+            'js_scroll_delay' => $config->js_scroll_delay ?? 2,
+            'js_final_wait' => $config->js_final_wait ?? 8,
+        ];
+        
+        $content = $renderer->renderUrl($url, $timeout, $jsConfig);
         
         if ($content) {
             $duration = round((microtime(true) - $startTime) * 1000, 2);
@@ -400,6 +559,26 @@ class WebScraperService
         
         // STEP 1: Estrazione basata su strategia intelligente
         $extractedContent = $this->executeExtractionStrategy($html, $url, $analysis);
+        
+        // 🚀 NEW: Se l'estrazione normale fallisce, prova Readability.php come fallback
+        if (!$extractedContent || strlen($extractedContent['content']) < 100) {
+            \Log::warning("⚠️ Normal extraction failed/insufficient, trying Readability.php fallback", [
+                'url' => $url,
+                'normal_content_length' => $extractedContent ? strlen($extractedContent['content']) : 0,
+                'html_length' => strlen($html)
+            ]);
+            
+            $readabilityResult = $this->extractWithReadability($html, $url);
+            if ($readabilityResult && strlen($readabilityResult['content']) > 100) {
+                \Log::info("✅ Readability.php fallback successful", [
+                    'url' => $url,
+                    'method' => 'readability_fallback',
+                    'content_length' => strlen($readabilityResult['content']),
+                    'content_preview' => substr($readabilityResult['content'], 0, 200)
+                ]);
+                return $readabilityResult;
+            }
+        }
         
         if (!$extractedContent) {
             \Log::warning("❌ All extraction methods failed", ['url' => $url]);
@@ -573,8 +752,18 @@ class WebScraperService
     private function extractWithReadability(string $html, string $url): ?array
     {
         try {
-            // Pre-processing HTML per migliorare estrazione tabelle
+            // 🚀 ENHANCED: Pre-processing HTML più robusto per Readability.php
             $preprocessedHtml = $this->preprocessHtmlForReadability($html);
+            
+            // 🔧 FIX: Assicura che l'HTML sia valido per Readability.php
+            $preprocessedHtml = $this->ensureValidHtmlForReadability($preprocessedHtml);
+            
+            \Log::debug("📖 Readability.php preprocessing completed", [
+                'url' => $url,
+                'original_length' => strlen($html),
+                'preprocessed_length' => strlen($preprocessedHtml),
+                'html_preview' => substr($preprocessedHtml, 0, 200)
+            ]);
             
             // Configura Readability con impostazioni ottimizzate
             $readabilityConfig = new Configuration([
@@ -645,7 +834,10 @@ class WebScraperService
         // 🚀 STEP 1: Clean HTML first (same as JS rendering)
         $cleanHtml = $this->cleanHtmlForMarkdown($html);
         
-        $cleaningLoss = round((1 - (strlen($cleanHtml) / strlen($html))) * 100, 2);
+        // 🔧 FIX: Previeni divisione per zero
+        $cleaningLoss = strlen($html) > 0 
+            ? round((1 - (strlen($cleanHtml) / strlen($html))) * 100, 2)
+            : 0;
         \Log::debug("🧽 HTML cleaning completed", [
             'url' => $url,
             'original_html_length' => strlen($html),
@@ -676,7 +868,10 @@ class WebScraperService
             $markdownContent = '';
         }
         
-        $conversionLoss = round((1 - (strlen($markdownContent) / strlen($cleanHtml))) * 100, 2);
+        // 🔧 FIX: Previeni divisione per zero
+        $conversionLoss = strlen($cleanHtml) > 0 
+            ? round((1 - (strlen($markdownContent) / strlen($cleanHtml))) * 100, 2)
+            : 0;
         \Log::debug("📝 Markdown conversion completed", [
             'url' => $url,
             'clean_html_length' => strlen($cleanHtml),
@@ -687,7 +882,11 @@ class WebScraperService
         // 🚀 STEP 4: Clean up the markdown (same as JS rendering)
         $preCleanupLength = strlen($markdownContent);
         $markdownContent = $this->cleanupContent($markdownContent);
-        $cleanupLoss = round((1 - (strlen($markdownContent) / $preCleanupLength)) * 100, 2);
+        
+        // 🔧 FIX: Previeni divisione per zero se il contenuto è vuoto
+        $cleanupLoss = $preCleanupLength > 0 
+            ? round((1 - (strlen($markdownContent) / $preCleanupLength)) * 100, 2)
+            : 0;
         
         \Log::debug("🧽 Markdown cleanup completed", [
             'url' => $url,
@@ -743,6 +942,34 @@ class WebScraperService
         if (mb_detect_encoding($html, 'UTF-8', true) === false) {
             $html = mb_convert_encoding($html, 'UTF-8', mb_detect_encoding($html));
         }
+        
+        return $html;
+    }
+    
+    /**
+     * 🔧 Assicura che l'HTML sia valido per Readability.php
+     */
+    private function ensureValidHtmlForReadability(string $html): string
+    {
+        // Se l'HTML non ha tag html/body, aggiungili
+        if (!preg_match('/<html[^>]*>/i', $html)) {
+            $html = '<html><head><meta charset="UTF-8"></head><body>' . $html . '</body></html>';
+        }
+        
+        // Rimuovi tag malformati o incompleti che possono causare problemi
+        $html = preg_replace('/<[^>]*$/', '', $html); // Tag incompleti alla fine
+        $html = preg_replace('/^[^<]*</', '<', $html); // Contenuto prima del primo tag
+        
+        // Rimuovi caratteri di controllo problematici
+        $html = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $html);
+        
+        // Assicura che tutti i tag siano chiusi correttamente
+        $html = preg_replace('/<br\s*\/?>/i', '<br>', $html);
+        $html = preg_replace('/<hr\s*\/?>/i', '<hr>', $html);
+        $html = preg_replace('/<img([^>]*?)\s*\/?>/i', '<img$1>', $html);
+        
+        // Fix encoding issues comuni
+        $html = str_replace(['&nbsp;', '&amp;', '&lt;', '&gt;', '&quot;'], [' ', '&', '<', '>', '"'], $html);
         
         return $html;
     }
@@ -1580,12 +1807,31 @@ class WebScraperService
 
     private function isLinkOnlyUrl(string $url, ScraperConfig $config): bool
     {
+        // 🐛 DEBUG: Log dei pattern link-only
+        \Log::debug("🔍 [LINK-ONLY-DEBUG]", [
+            'url' => $url,
+            'link_only_patterns_type' => gettype($config->link_only_patterns),
+            'link_only_patterns_empty' => empty($config->link_only_patterns),
+            'link_only_patterns_value' => $config->link_only_patterns,
+            'link_only_patterns_count' => is_array($config->link_only_patterns) ? count($config->link_only_patterns) : 'not-array'
+        ]);
+        
         if (empty($config->link_only_patterns)) {
             return false;
         }
         foreach ($config->link_only_patterns as $pattern) {
             $regex = $this->compileUserRegex($pattern);
+            \Log::debug("🔍 [LINK-ONLY-PATTERN-CHECK]", [
+                'url' => $url,
+                'pattern' => $pattern,
+                'regex' => $regex,
+                'matches' => $regex !== null && @preg_match($regex, $url)
+            ]);
             if ($regex !== null && @preg_match($regex, $url)) {
+                \Log::info("✅ [LINK-ONLY-MATCH] URL matched link-only pattern", [
+                    'url' => $url,
+                    'pattern' => $pattern
+                ]);
                 return true;
             }
         }
@@ -1627,6 +1873,102 @@ class WebScraperService
             $q->where('last_scraped_at', '>=', $threshold);
         }
         return $q->exists();
+    }
+
+    /**
+     * 🆕 Salva e avvia ingestion per un singolo risultato (salvataggio progressivo)
+     */
+    private function saveAndIngestSingleResult(array $result, Tenant $tenant, ScraperConfig $config): void
+    {
+        // Crea contenuto Markdown
+        $markdownContent = "# {$result['title']}\n\n";
+        $markdownContent .= "**URL:** {$result['url']}\n\n";
+        $markdownContent .= "**Scraped on:** " . now()->format('Y-m-d H:i:s') . "\n\n";
+        $markdownContent .= "---\n\n";
+        $markdownContent .= $result['content'];
+
+        // Calcola hash del contenuto
+        $contentHash = hash('sha256', $result['content']);
+        
+        // Cerca documento esistente per lo stesso URL
+        $existingDocument = Document::where('tenant_id', $tenant->id)
+            ->where('source_url', $result['url'])
+            ->first();
+        
+        // Se non trovato per URL, cerca per titolo (documenti vecchi senza source_url)
+        if (!$existingDocument) {
+            $scrapedTitle = $result['title'] . ' (Scraped)';
+            $existingDocument = Document::where('tenant_id', $tenant->id)
+                ->where('title', $scrapedTitle)
+                ->where('source', 'web_scraper')
+                ->whereNull('source_url')
+                ->first();
+            
+            if ($existingDocument) {
+                $existingDocument->update(['source_url' => $result['url']]);
+                \Log::info("Aggiornato source_url per documento vecchio", [
+                    'document_id' => $existingDocument->id,
+                    'url' => $result['url']
+                ]);
+            }
+        }
+
+        if ($existingDocument) {
+            // Controlla se il contenuto è cambiato
+            if ($existingDocument->content_hash === $contentHash) {
+                // Contenuto identico - aggiorna solo timestamp
+                $targetKbId = $config->target_knowledge_base_id;
+                $updateData = ['last_scraped_at' => now()];
+                if ($targetKbId && $existingDocument->knowledge_base_id !== (int) $targetKbId) {
+                    $updateData['knowledge_base_id'] = (int) $targetKbId;
+                }
+                $existingDocument->update($updateData);
+                $this->stats['skipped']++;
+                ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'skipped', strlen($result['content']));
+                return; // Non avviare ingestion se contenuto uguale
+            } else {
+                // Contenuto cambiato - aggiorna e re-ingesta
+                $this->updateExistingDocument($existingDocument, $result, $markdownContent, $contentHash);
+                $this->stats['updated']++;
+                ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'updated', strlen($result['content']));
+                
+                // 🚀 Avvia ingestion del documento aggiornato
+                \Log::info("🔄 [PROGRESSIVE-INGEST] Avvio ingestion per documento aggiornato", [
+                    'document_id' => $existingDocument->id,
+                    'url' => $result['url']
+                ]);
+                dispatch(new \App\Jobs\IngestUploadedDocumentJob($existingDocument->id));
+                return;
+            }
+        }
+
+        // Nuovo documento - crea e avvia ingestion
+        try {
+            $document = $this->createNewDocument($tenant, $result, $markdownContent, $contentHash);
+            $this->stats['new']++;
+            ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'new', strlen($result['content']));
+            
+            // 🚀 Avvia ingestion immediatamente
+            \Log::info("🚀 [PROGRESSIVE-INGEST] Avvio ingestion per nuovo documento", [
+                'document_id' => $document->id,
+                'url' => $result['url'],
+                'title' => $document->title
+            ]);
+            dispatch(new \App\Jobs\IngestUploadedDocumentJob($document->id));
+            
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Se errore di chiave duplicata, skip
+            if (str_contains($e->getMessage(), 'duplicate key') || str_contains($e->getMessage(), '23505')) {
+                \Log::warning("🔄 Documento probabilmente già creato da processo concorrente", [
+                    'url' => $result['url'],
+                    'error' => $e->getMessage()
+                ]);
+                $this->stats['skipped']++;
+                ScraperLogger::urlSuccess($this->sessionId, $result['url'], 'skipped', strlen($result['content']));
+            } else {
+                throw $e;
+            }
+        }
     }
 
     private function saveResults(Tenant $tenant, bool $forceReingestion = false): int
@@ -1842,19 +2184,20 @@ class WebScraperService
             }
         }
         
-        // Automatic SPA detection based on content analysis (no hardcoded domains)
-        $potentialSpaIndicators = [];
-        
-        // SPA detection based on content, not domain
+        // 🚀 FIX: Se l'HTML proviene da rendering JavaScript (Puppeteer),
+        // dovrebbe essere SEMPRE trattato come JS site per usare l'estrazione appropriata
+        // Abbassata soglia da >= 2 a >= 1 per essere più inclusivi
         $isDomainSpa = false;
         
-        $isJsSite = $jsIndicatorCount >= 2 || $isDomainSpa;
+        // Più permissivo: anche 1 solo indicatore JS significa che è un sito JS-rendered
+        $isJsSite = $jsIndicatorCount >= 1 || $isDomainSpa;
         
         \Log::debug("🔍 JavaScript site detection", [
             'url' => $url,
             'js_indicators_found' => $jsIndicatorCount,
             'is_domain_spa' => $isDomainSpa,
-            'is_js_site' => $isJsSite
+            'is_js_site' => $isJsSite,
+            'threshold' => 'lowered_to_1'
         ]);
         
         return $isJsSite;
@@ -1866,7 +2209,33 @@ class WebScraperService
     private function extractFromJavaScriptSite(string $html, string $url): ?array
     {
         try {
-            // 🚀 STEP 1: Try smart content extraction first (uses our Angular patterns!)
+            // 🚀 STEP 1: Try Readability.php first (same as non-JS sites!)
+            \Log::debug("📖 [JS-EXTRACTION] Trying Readability.php extraction on JavaScript site", [
+                'url' => $url,
+                'input_html_length' => strlen($html),
+                'html_preview' => substr($html, 0, 300)
+            ]);
+            $readabilityResult = $this->extractWithReadability($html, $url);
+            
+            if ($readabilityResult && strlen($readabilityResult['content']) > 100) {
+                \Log::info("✅ [JS-EXTRACTION] Readability.php extraction successful", [
+                    'url' => $url,
+                    'method' => 'readability',
+                    'content_length' => strlen($readabilityResult['content']),
+                    'content_preview' => substr($readabilityResult['content'], 0, 200),
+                    'extraction_efficiency' => strlen($html) > 0 ? round((strlen($readabilityResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+                ]);
+                return $readabilityResult;
+            }
+            
+            \Log::warning("⚠️ [JS-EXTRACTION] Readability.php failed/insufficient, trying smart patterns", [
+                'url' => $url,
+                'readability_content_length' => $readabilityResult ? strlen($readabilityResult['content']) : 0,
+                'input_html_length' => strlen($html),
+                'readability_efficiency' => ($readabilityResult && strlen($html) > 0) ? round((strlen($readabilityResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+            ]);
+            
+            // 🚀 STEP 2: Try smart content extraction (uses our Angular patterns!)
             \Log::debug("🧠 [JS-EXTRACTION] Trying smart content extraction on JavaScript site", [
                 'url' => $url,
                 'input_html_length' => strlen($html),
@@ -1880,106 +2249,61 @@ class WebScraperService
                     'pattern_used' => 'smart_patterns',
                     'content_length' => strlen($smartResult['content']),
                     'content_preview' => substr($smartResult['content'], 0, 200),
-                    'extraction_efficiency' => round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%'
+                    'extraction_efficiency' => strlen($html) > 0 ? round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
                 ]);
                 return $smartResult;
             }
             
-            \Log::warning("⚠️ [JS-EXTRACTION] Smart extraction failed/insufficient, falling back to HTML-to-Markdown", [
+            \Log::warning("⚠️ [JS-EXTRACTION] Smart extraction failed/insufficient, falling back to manual DOM", [
                 'url' => $url,
                 'smart_content_length' => $smartResult ? strlen($smartResult['content']) : 0,
                 'input_html_length' => strlen($html),
-                'smart_efficiency' => $smartResult ? round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+                'smart_efficiency' => ($smartResult && strlen($html) > 0) ? round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
             ]);
             
-            // 🚀 STEP 2: Fallback to HTML-to-Markdown conversion
-            \Log::debug("🧹 [JS-EXTRACTION] Starting HTML cleaning phase", [
+            // 🚀 STEP 3: Fallback to manual DOM extraction (same as non-JS sites!)
+            \Log::debug("🎯 [JS-EXTRACTION] Using manual DOM extraction (same as non-JS sites)", [
                 'url' => $url,
                 'original_html_length' => strlen($html)
             ]);
-            $cleanHtml = $this->cleanHtmlForMarkdown($html);
+            $manualResult = $this->extractWithManualDOM($html, $url, null, null, null);
             
-            $cleaningLoss = round((1 - (strlen($cleanHtml) / strlen($html))) * 100, 2);
-            \Log::debug("🔄 [JS-EXTRACTION] Converting HTML to Markdown using convertToMarkdown method", [
-                'url' => $url,
-                'original_html_length' => strlen($html),
-                'clean_html_length' => strlen($cleanHtml),
-                'cleaning_loss_percentage' => $cleaningLoss . '%',
-                'clean_html_preview' => substr($cleanHtml, 0, 300)
-            ]);
-            
-            // Parse the clean HTML into DOM and use our proven convertToMarkdown method
-            $dom = new \DOMDocument();
-            libxml_use_internal_errors(true);
-            $dom->loadHTML('<html><body>' . $cleanHtml . '</body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
-            libxml_clear_errors();
-            
-            $bodyElements = $dom->getElementsByTagName('body');
-            if ($bodyElements->length > 0) {
-                $markdownContent = $this->convertToMarkdown($bodyElements->item(0), $url);
-            } else {
-                $markdownContent = '';
+            if ($manualResult && strlen($manualResult['content']) > 100) {
+                \Log::info("✅ [JS-EXTRACTION] Manual DOM extraction successful", [
+                    'url' => $url,
+                    'method' => 'manual_dom',
+                    'content_length' => strlen($manualResult['content']),
+                    'content_preview' => substr($manualResult['content'], 0, 200),
+                    'extraction_efficiency' => strlen($html) > 0 ? round((strlen($manualResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+                ]);
+                return $manualResult;
             }
             
-            $conversionLoss = round((1 - (strlen($markdownContent) / strlen($cleanHtml))) * 100, 2);
-            \Log::debug("📝 [JS-EXTRACTION] Raw markdown conversion result", [
+            \Log::warning("⚠️ [JS-EXTRACTION] All primary methods failed, trying Readability.php as last resort", [
                 'url' => $url,
-                'clean_html_length' => strlen($cleanHtml),
-                'raw_markdown_length' => strlen($markdownContent),
-                'conversion_loss_percentage' => $conversionLoss . '%',
-                'raw_markdown_preview' => substr($markdownContent, 0, 300)
+                'manual_content_length' => $manualResult ? strlen($manualResult['content']) : 0,
+                'input_html_length' => strlen($html),
+                'manual_efficiency' => ($manualResult && strlen($html) > 0) ? round((strlen($manualResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
             ]);
             
-            // Clean up the markdown using the same method as normal sites
-            $preCleanupLength = strlen($markdownContent);
-            $markdownContent = $this->cleanupContent($markdownContent);
-            $cleanupLoss = round((1 - (strlen($markdownContent) / $preCleanupLength)) * 100, 2);
+            // 🚀 FALLBACK FINALE: Prova Readability.php come ultima risorsa
+            $readabilityFallback = $this->extractWithReadability($html, $url);
+            if ($readabilityFallback && strlen($readabilityFallback['content']) > 100) {
+                \Log::info("✅ [JS-EXTRACTION] Readability.php last-resort fallback successful", [
+                    'url' => $url,
+                    'method' => 'readability_last_resort',
+                    'content_length' => strlen($readabilityFallback['content']),
+                    'content_preview' => substr($readabilityFallback['content'], 0, 200)
+                ]);
+                return $readabilityFallback;
+            }
             
-            \Log::debug("🧽 [JS-EXTRACTION] Markdown cleanup completed", [
+            \Log::warning("❌ [JS-EXTRACTION] All extraction methods failed including Readability.php", [
                 'url' => $url,
-                'pre_cleanup_length' => $preCleanupLength,
-                'post_cleanup_length' => strlen($markdownContent),
-                'cleanup_loss_percentage' => $cleanupLoss . '%'
+                'readability_content_length' => $readabilityFallback ? strlen($readabilityFallback['content']) : 0
             ]);
             
-            // Fix encoding issues (mojibake) 
-            $preEncodingLength = strlen($markdownContent);
-            $markdownContent = $this->normalizeMarkdownEncoding($markdownContent);
-            $encodingChange = strlen($markdownContent) - $preEncodingLength;
-            
-            \Log::debug("🔤 [JS-EXTRACTION] Encoding normalization completed", [
-                'url' => $url,
-                'pre_encoding_length' => $preEncodingLength,
-                'post_encoding_length' => strlen($markdownContent),
-                'encoding_change_chars' => $encodingChange
-            ]);
-            
-            // Extract title
-            $title = $this->extractTitleFromHtml($html) ?: parse_url($url, PHP_URL_HOST);
-            
-            // 📊 Final comprehensive analysis
-            $totalLoss = round((1 - (strlen($markdownContent) / strlen($html))) * 100, 2);
-            $extractionMethod = strlen($markdownContent) > 100 ? 'html_to_markdown_fallback' : 'failed';
-            
-            \Log::info("🚀 [JS-EXTRACTION] JavaScript site extraction completed", [
-                'url' => $url,
-                'title' => $title,
-                'extraction_method' => $extractionMethod,
-                'final_content_length' => strlen($markdownContent),
-                'content_preview' => substr($markdownContent, 0, 200),
-                'total_loss_percentage' => $totalLoss . '%',
-                'process_summary' => [
-                    'original_html' => strlen($html) . ' chars',
-                    'after_cleaning' => strlen($cleanHtml) . ' chars (' . $cleaningLoss . '% loss)',
-                    'after_conversion' => strlen($markdownContent) . ' chars',
-                    'total_efficiency' => (100 - $totalLoss) . '%'
-                ]
-            ]);
-            
-            return [
-                'title' => $title,
-                'content' => $markdownContent
-            ];
+            return null;
             
         } catch (\Exception $e) {
             \Log::warning("❌ JavaScript site extraction failed", [
@@ -2036,13 +2360,21 @@ class WebScraperService
         // Try to find main content area - PRIORITY to testolungo content
         $mainContentSelectors = [
             '//*[contains(@class, "testolungo")]',  // 🚀 PRIORITY: Specific content divs first
+            '//*[contains(@class, "articolo-dettaglio-testo")]', // 🆕 Palmanova specific (1003 chars)
+            '//*[contains(@class, "article-container")]', // 🆕 Palmanova specific (755 chars)
+            '//*[@role="main"]',                     // 🆕 ARIA role main (755 chars)
             '//*[contains(@class, "main-content")]', // Our injected content
+            '//*[contains(@class, "container-fluid")]', // 🆕 Bootstrap containers (comuni italiani)
+            '//*[contains(@class, "page-content")]', // 🆕 Page content wrapper
+            '//*[contains(@class, "site-content")]', // 🆕 Site content wrapper
             '//main',
             '//article', 
             '//*[@id="main"]',
             '//*[@id="content"]',
+            '//*[@id="page-content"]',               // 🆕 Page content ID
             '//*[contains(@class, "content")]',
             '//*[contains(@class, "main")]',
+            '//*[contains(@class, "wrapper")]',      // 🆕 Generic wrapper
             '//body' // fallback
         ];
         
@@ -3117,4 +3449,199 @@ class WebScraperService
         ]);
     }
 
+
+* permettendo a worker multipli di processarli in parallelo
+     */
+    public function scrapeRecursiveParallel(
+        string $url,
+        ScraperConfig $config,
+        Tenant $tenant,
+        int $depth = 0
+    ): void
+    {
+        // Check profondità massima
+        if ($depth > $config->max_depth) {
+            \Log::debug("⚠️ [PARALLEL-SCRAPE] Max depth raggiunta", [
+                'url' => $url,
+                'depth' => $depth,
+                'max_depth' => $config->max_depth
+            ]);
+            return;
+        }
+
+        // Check se URL già visitato
+        if (isset($this->visitedUrls[$url])) {
+            \Log::debug("⚠️ [PARALLEL-SCRAPE] URL già visitato", ['url' => $url]);
+            return;
+        }
+
+        $this->visitedUrls[$url] = true;
+
+        // 🚀 Dispatcha job per questo URL
+        \App\Jobs\ScrapeUrlJob::dispatch(
+            $url,
+            $depth,
+            $config->id,
+            $tenant->id,
+            $this->sessionId
+        );
+
+        \Log::info("📤 [PARALLEL-SCRAPE] Job dispatchato per URL", [
+            'url' => $url,
+            'depth' => $depth,
+            'session_id' => $this->sessionId
+        ]);
+
+        // Se non è profondità massima, fetcha la pagina per estrarre link
+        if ($depth < $config->max_depth) {
+            try {
+                $content = $this->fetchUrl($url, $config);
+                if ($content) {
+                    $links = $this->extractLinks($content, $url);
+                    
+                    \Log::info("🔗 [PARALLEL-SCRAPE] Link estratti", [
+                        'url' => $url,
+                        'links_found' => count($links),
+                        'depth' => $depth
+                    ]);
+                    
+                    // Dispatcha job per ogni link trovato
+                    foreach ($links as $link) {
+                        if (!isset($this->visitedUrls[$link]) && 
+                            $this->isAllowedUrl($link, $config)) {
+                            $this->scrapeRecursiveParallel($link, $config, $tenant, $depth + 1);
+                        }
+                    }
+                } else {
+                    \Log::warning("⚠️ [PARALLEL-SCRAPE] Fetch URL fallito per estrazione link", [
+                        'url' => $url
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::warning("❌ [PARALLEL-SCRAPE] Errore estrazione link", [
+                    'url' => $url,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Scrappa un singolo URL (chiamato dal job ScrapeUrlJob)
+     * Questo metodo è ottimizzato per essere eseguito in parallelo
+     */
+    public function scrapeSingleUrlForParallel(
+        string $url,
+        int $depth,
+        ScraperConfig $config,
+        Tenant $tenant
+    ): void
+    {
+        ScraperLogger::urlProcessing($this->sessionId, $url, $depth);
+
+        // Rate limiting
+        if ($config->rate_limit_rps > 0) {
+            usleep(1000000 / $config->rate_limit_rps);
+        }
+
+        try {
+            $content = $this->fetchUrl($url, $config);
+            
+            // 🐛 DEBUG: Log per capire cosa viene restituito da fetchUrl
+            \Log::debug("🔍 [FETCH-DEBUG] fetchUrl returned", [
+                'url' => $url,
+                'content_is_null' => $content === null,
+                'content_is_empty' => empty($content),
+                'content_length' => $content ? strlen($content) : 0
+            ]);
+            
+            if (!$content) {
+                \Log::warning("⚠️ [FETCH-FAILED] fetchUrl returned empty content", ['url' => $url]);
+                return;
+            }
+
+            // Determina se questa pagina è "link-only" in base alla configurazione
+            $isLinkOnly = $this->isLinkOnlyUrl($url, $config);
+            
+            \Log::debug("🔍 [LINK-ONLY-CHECK]", [
+                'url' => $url,
+                'is_link_only' => $isLinkOnly
+            ]);
+
+            if (!$isLinkOnly) {
+                // Politica: se skip_known_urls attivo, e abbiamo già un documento per questo URL, salta
+                $shouldSkip = $this->shouldSkipKnownUrl($url, $tenant, $config);
+                
+                \Log::debug("🔍 [SKIP-CHECK]", [
+                    'url' => $url,
+                    'should_skip' => $shouldSkip,
+                    'skip_known_urls_enabled' => $config->skip_known_urls ?? false
+                ]);
+                
+                if ($shouldSkip) {
+                    $this->stats['skipped']++;
+                    ScraperLogger::urlSuccess($this->sessionId, $url, 'skipped', 0);
+                    \Log::info('Skip URL già noto', ['url' => $url]);
+                    return;
+                }
+                
+                \Log::debug("🚀 [EXTRACTION-START] Starting content extraction", ['url' => $url]);
+                
+                // Estrai contenuto principale
+                $extractedContent = $this->extractContent($content, $url);
+                
+                if ($extractedContent) {
+                    // 🆕 SALVATAGGIO PROGRESSIVO: Salva il documento immediatamente
+                    $result = [
+                        'url' => $url,
+                        'title' => $extractedContent['title'],
+                        'content' => $extractedContent['content'],
+                        'depth' => $depth,
+                        'quality_analysis' => $extractedContent['quality_analysis'] ?? null
+                    ];
+                    
+                    // 🚀 SALVA E AVVIA INGESTION IMMEDIATAMENTE
+                    try {
+                        $this->saveAndIngestSingleResult($result, $tenant, $config);
+                        \Log::info("✅ [PROGRESSIVE-SAVE] Documento salvato e ingestion avviata", [
+                            'session_id' => $this->sessionId,
+                            'url' => $url,
+                            'title' => $result['title']
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error("❌ [PROGRESSIVE-SAVE-ERROR] Errore salvataggio documento", [
+                            'url' => $url,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                } else {
+                    \Log::warning("⚠️ [EXTRACTION-FAILED] Nessun contenuto estratto", ['url' => $url]);
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error("❌ [SCRAPE-ERROR] Errore scraping URL", [
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e; // Rilancia per permettere retry del job
+        }
+    }
+
+    /**
+     * Imposta il session ID (usato dai job per mantenere coerenza nel logging)
+     */
+    public function setSessionId(string $sessionId): void
+    {
+        $this->sessionId = $sessionId;
+    }
+
+    /**
+     * Ottiene il session ID corrente
+     */
+    public function getSessionId(): string
+    {
+        return $this->sessionId;
+    }
 }
+

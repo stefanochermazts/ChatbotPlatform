@@ -2292,14 +2292,14 @@ class KbSearchService
         
         // Pattern di normalizzazione per query formali comuni
         $patterns = [
-            // "chi sono i X?" -> "X"
-            '/^chi\s+sono\s+(i\s+|le\s+)?(.+)$/i' => '$2',
+            // "chi sono i/le X?" -> "i/le X" (mantiene articolo per migliore matching)
+            '/^chi\s+sono\s+(.+)$/i' => '$1',
             
-            // "quali sono i/le X?" -> "X"  
-            '/^quali\s+sono\s+(i\s+|le\s+)?(.+)$/i' => '$2',
+            // "quali sono i/le X?" -> "i/le X" (mantiene articolo per migliore matching)
+            '/^quali\s+sono\s+(.+)$/i' => '$1',
             
-            // Rimuovi specificazioni geografiche ridondanti per il retrieval
-            '/^(.+?)\s+(di\s+san\s+cesareo|a\s+san\s+cesareo)$/i' => '$1',
+            // ❌ RIMOSSO: rimozione specificazioni geografiche - causava perdita di contesto
+            // '/^(.+?)\s+(di\s+san\s+cesareo|a\s+san\s+cesareo)$/i' => '$1',
             
             // "potresti dirmi X?" -> "X"
             '/^potresti\s+dirmi\s+(.+)$/i' => '$1',
@@ -2316,11 +2316,11 @@ class KbSearchService
             // "la composizione di X" -> "X" 
             '/^.*composizione\s+(di\s+|del\s+|della\s+)?(.+)$/i' => '$2',
             
-            // "l'elenco di X" -> "elenco X"
-            '/^l\'elenco\s+(di\s+|del\s+|della\s+)?(.+)$/i' => 'elenco $2',
+            // "l'elenco di X" -> "elenco di X" (mantiene preposizione)
+            '/^l\'elenco\s+(.+)$/i' => 'elenco $1',
             
-            // Rimuovi articoli iniziali ridondanti
-            '/^(il\s+|la\s+|i\s+|le\s+|del\s+|della\s+|degli\s+|delle\s+)+(.+)$/i' => '$2',
+            // ❌ RIMOSSO: rimozione articoli iniziali - causava perdita di contesto
+            // '/^(il\s+|la\s+|i\s+|le\s+|del\s+|della\s+|degli\s+|delle\s+)+(.+)$/i' => '$2',
             
             // Espansione SOW
             '/\bsow\b/i' => 'statement of work sow',
@@ -2820,6 +2820,184 @@ class KbSearchService
         ]);
 
         return $boostedResults;
+    }
+
+    /**
+     * 🎯 Retrieval completo per query che richiedono completezza assoluta
+     * Bypassa il retrieval semantico normale e recupera tutti i chunk rilevanti
+     */
+    public function retrieveComplete(int $tenantId, string $query, array $intentData, bool $debug = false): array
+    {
+        $startTime = microtime(true);
+        
+        Log::info('🎯 [COMPLETE-RETRIEVAL] Starting complete retrieval', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'intent_data' => $intentData
+        ]);
+
+        // STEP 1: Identifica documenti target basati su pattern
+        $targetDocuments = $this->findTargetDocuments($tenantId, $intentData);
+        
+        if (empty($targetDocuments)) {
+            Log::warning('⚠️ [COMPLETE-RETRIEVAL] No target documents found', [
+                'tenant_id' => $tenantId,
+                'intent_data' => $intentData
+            ]);
+            
+            // Fallback al retrieval normale se non trova documenti specifici
+            return $this->retrieve($tenantId, $query, $debug);
+        }
+
+        // STEP 2: Recupera TUTTI i chunk dai documenti target
+        $allChunks = $this->getAllChunksFromDocuments($tenantId, $targetDocuments);
+        
+        // STEP 3: Filtro minimale basato sulla query (solo per escludere chunk completamente irrilevanti)
+        $relevantChunks = $this->filterRelevantChunks($allChunks, $query);
+        
+        // STEP 4: Costruisci risposta nel formato standard
+        $citations = $this->buildCitationsFromChunks($relevantChunks);
+        
+        $elapsed = microtime(true) - $startTime;
+        
+        Log::info('✅ [COMPLETE-RETRIEVAL] Complete retrieval finished', [
+            'tenant_id' => $tenantId,
+            'total_documents' => count($targetDocuments),
+            'total_chunks' => count($allChunks),
+            'relevant_chunks' => count($relevantChunks),
+            'final_citations' => count($citations),
+            'elapsed_time' => round($elapsed * 1000, 2) . 'ms'
+        ]);
+
+        return [
+            'citations' => $citations,
+            'confidence' => 0.95, // Alta confidence per retrieval completo
+            'retrieval_type' => 'complete',
+            'stats' => [
+                'total_documents' => count($targetDocuments),
+                'total_chunks' => count($allChunks),
+                'relevant_chunks' => count($relevantChunks),
+                'elapsed_ms' => round($elapsed * 1000, 2)
+            ]
+        ];
+    }
+
+    /**
+     * Trova documenti target basati sui pattern dell'intent
+     */
+    private function findTargetDocuments(int $tenantId, array $intentData): array
+    {
+        $patterns = $intentData['document_patterns'] ?? ['organi-politico-amministrativo'];
+        
+        $documents = DB::table('documents')
+            ->where('tenant_id', $tenantId)
+            ->where('ingestion_status', 'completed')
+            ->get(['id', 'title', 'path', 'source_url'])
+            ->filter(function ($doc) use ($patterns) {
+                foreach ($patterns as $pattern) {
+                    if (stripos($doc->title, $pattern) !== false || 
+                        stripos($doc->path, $pattern) !== false ||
+                        stripos($doc->source_url, $pattern) !== false) {
+                        return true;
+                    }
+                }
+                return false;
+            })
+            ->values()
+            ->toArray();
+
+        Log::debug('🎯 [COMPLETE-RETRIEVAL] Target documents found', [
+            'tenant_id' => $tenantId,
+            'patterns' => $patterns,
+            'documents_found' => count($documents),
+            'document_titles' => array_map(fn($d) => $d->title, $documents)
+        ]);
+
+        return $documents;
+    }
+
+    /**
+     * Recupera TUTTI i chunk dai documenti target
+     */
+    private function getAllChunksFromDocuments(int $tenantId, array $documents): array
+    {
+        $documentIds = array_map(fn($d) => $d->id, $documents);
+        
+        if (empty($documentIds)) {
+            return [];
+        }
+
+        $chunks = DB::table('document_chunks as dc')
+            ->join('documents as d', 'dc.document_id', '=', 'd.id')
+            ->whereIn('dc.document_id', $documentIds)
+            ->where('d.tenant_id', $tenantId)
+            ->select([
+                'dc.id',
+                'dc.document_id', 
+                'dc.chunk_index',
+                'dc.content',
+                'd.title',
+                'd.source_url'
+            ])
+            ->orderBy('dc.document_id')
+            ->orderBy('dc.chunk_index')
+            ->get()
+            ->toArray();
+
+        return $chunks;
+    }
+
+    /**
+     * Filtro minimale per escludere chunk completamente irrilevanti
+     */
+    private function filterRelevantChunks(array $chunks, string $query): array
+    {
+        // Keywords che indicano contenuto amministrativo/politico rilevante
+        $relevantKeywords = [
+            'nominativo', 'sindaco', 'assessore', 'consigliere', 'presidente',
+            'ruolo', 'organo', 'giunta', 'consiglio', 'gruppo politico'
+        ];
+        
+        return array_filter($chunks, function ($chunk) use ($relevantKeywords) {
+            $content = strtolower($chunk->content);
+            
+            // Mantieni chunk che contengono almeno una keyword rilevante
+            foreach ($relevantKeywords as $keyword) {
+                if (stripos($content, $keyword) !== false) {
+                    return true;
+                }
+            }
+            
+            return false;
+        });
+    }
+
+    /**
+     * Costruisce citazioni dal formato standard dai chunk
+     */
+    private function buildCitationsFromChunks(array $chunks): array
+    {
+        $citations = [];
+        
+        foreach ($chunks as $chunk) {
+            $citations[] = [
+                'id' => $chunk->id,
+                'title' => $chunk->title,
+                'url' => $chunk->source_url,
+                'snippet' => $chunk->content,
+                'score' => 0.95, // Score alto per retrieval completo
+                'knowledge_base' => 'Documenti',
+                'chunk_index' => $chunk->chunk_index,
+                'chunk_text' => $chunk->content,
+                'document_type' => 'pdf',
+                'view_url' => null,
+                'document_source_url' => $chunk->source_url,
+                'phone' => null,
+                'phones' => []
+            ];
+        }
+        
+        return $citations;
     }
 }
 

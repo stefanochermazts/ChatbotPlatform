@@ -60,6 +60,12 @@ class ScraperAdminController extends Controller
             'linked_max_size_mb' => ['nullable', 'integer', 'min:1', 'max:100'],
             'linked_same_domain_only' => ['nullable', 'boolean'],
             'linked_target_kb_id' => ['nullable', 'integer', 'exists:knowledge_bases,id'],
+            // 🔧 Nuovi timeout configurabili per JavaScript
+            'js_timeout' => ['nullable', 'integer', 'min:10', 'max:300'],
+            'js_navigation_timeout' => ['nullable', 'integer', 'min:10', 'max:300'],
+            'js_content_wait' => ['nullable', 'integer', 'min:5', 'max:120'],
+            'js_scroll_delay' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'js_final_wait' => ['nullable', 'integer', 'min:3', 'max:60'],
         ]);
 
         $payload = [
@@ -89,6 +95,12 @@ class ScraperAdminController extends Controller
             'linked_target_kb_id' => isset($data['linked_target_kb_id']) && $data['linked_target_kb_id'] !== ''
                 ? (int) $data['linked_target_kb_id']
                 : null,
+            // 🔧 Nuovi timeout configurabili per JavaScript
+            'js_timeout' => (int) ($data['js_timeout'] ?? 30),
+            'js_navigation_timeout' => (int) ($data['js_navigation_timeout'] ?? 30),
+            'js_content_wait' => (int) ($data['js_content_wait'] ?? 15),
+            'js_scroll_delay' => (int) ($data['js_scroll_delay'] ?? 2),
+            'js_final_wait' => (int) ($data['js_final_wait'] ?? 8),
         ];
 
         if (!empty($data['id'])) {

@@ -11,6 +11,7 @@ use App\Services\RAG\LinkConsistencyService;
 use App\Services\RAG\ContextBuilder;
 use App\Services\RAG\ConversationContextEnhancer;
 use App\Services\RAG\TenantRagConfigService;
+use App\Services\RAG\CompleteQueryDetector;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
@@ -25,6 +26,7 @@ class ChatCompletionsController extends Controller
         private readonly ContextBuilder $ctx,
         private readonly ConversationContextEnhancer $conversationEnhancer,
         private readonly TenantRagConfigService $tenantConfig,
+        private readonly CompleteQueryDetector $completeDetector,
     ) {}
 
     public function create(Request $request): JsonResponse
@@ -120,9 +122,27 @@ class ChatCompletionsController extends Controller
 
         // REMOVE: Non più override nel widget - usa solo tenant config
         
-        // Retrieval come nel RAG tester (usa la query originale per intent detection)
+        // 🎯 STEP: Complete Query Detection
         $stepStart = microtime(true);
-        $retrieval = $kb->retrieve($tenantId, $queryText, true);
+        $completeIntent = $this->completeDetector->detectCompleteIntent($queryText);
+        $profiling['steps']['intent_detection'] = microtime(true) - $stepStart;
+        
+        // Retrieval: usa complete retrieval se rilevato intent specifico
+        $stepStart = microtime(true);
+        if ($completeIntent['is_complete_query']) {
+            Log::info('🎯 [CHAT-API] Using complete retrieval for comprehensive query', [
+                'tenant_id' => $tenantId,
+                'query' => $queryText,
+                'intent_data' => $completeIntent
+            ]);
+            $retrieval = $kb->retrieveComplete($tenantId, $queryText, $completeIntent, true);
+        } else {
+            Log::debug('🔍 [CHAT-API] Using standard semantic retrieval', [
+                'tenant_id' => $tenantId,
+                'query' => $queryText
+            ]);
+            $retrieval = $kb->retrieve($tenantId, $queryText, true);
+        }
         $profiling['steps']['rag_retrieval'] = microtime(true) - $stepStart;
         $citations = $retrieval['citations'] ?? [];
         $confidence = (float) ($retrieval['confidence'] ?? 0.0);
@@ -244,6 +264,16 @@ class ChatCompletionsController extends Controller
         $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
             ? $tenant->custom_system_prompt
             : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se il contesto contiene tabelle, estrai e formatta i dati in modo chiaro e leggibile. Se non sono sufficienti, rispondi: "Non lo so". 
+
+IMPORTANTE per le TABELLE:
+- OBBLIGATORIO: Ogni riga della tabella deve essere separata da una nuova linea (\n)
+- FORMATO RICHIESTO:
+| Nominativo | Ruolo | Organo |
+|------------|-------|--------|
+| Nome1 | Ruolo1 | Organo1 |
+| Nome2 | Ruolo2 | Organo2 |
+- NON scrivere tutto su una riga sola
+- SEMPRE includere la riga separatore con i trattini
 
 IMPORTANTE per i link:
 - Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)

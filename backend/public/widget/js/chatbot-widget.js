@@ -626,55 +626,288 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     }
 
     static parseTables(html) {
-      // Regex per rilevare tabelle Markdown
+      console.log('🔍 parseTables called with content length:', html.length);
+      console.log('🔍 Content contains pipes:', html.includes('|'));
+      
+      // 🔧 ENHANCED: Regex per rilevare tabelle Markdown con o senza newline
       const tableRegex = /(\|[^\n]+\|\n\|[\s\-:|]+\|\n(?:\|[^\n]+\|\n?)+)/g;
       
-      return html.replace(tableRegex, (match) => {
-        const lines = match.trim().split('\n');
-        if (lines.length < 3) return match; // Almeno header, separator e una riga
+      // 🚀 NUOVO: Regex più aggressivo per tabelle compatte senza newline
+      // Cerca pattern: | header | header | |----| | data | data | | data | data |
+      // Versione più permissiva che cattura anche tabelle malformate
+      const compactTableRegex = /(\|[^|]*\|[^|]*\|[^|]*\|[\s\-:|]+\|[^|]*(?:\|[^|]*\|[^|]*\|[^|]*)+)/g;
+      
+      // Prima prova il regex standard (con newline)
+      let result = html.replace(tableRegex, (match) => {
+        console.log('🔍 Standard table regex matched:', match.substring(0, 100) + '...');
+        return this.processTableMatch(match, true);
+      });
+      
+      // Poi prova il regex per tabelle compatte (senza newline) - più aggressivo
+      result = result.replace(compactTableRegex, (match) => {
+        console.log('🔍 Compact table regex matched:', match.substring(0, 100) + '...');
         
-        // Rimuovi la riga separator (la seconda riga con |----|)
-        const dataLines = lines.filter((line, index) => index !== 1);
-        
-        // Parse delle righe
-        const rows = dataLines.map(line => {
-          // Rimuovi | iniziale e finale, poi split per |
-          const cells = line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
-          return cells;
-        });
-        
-        if (rows.length === 0) return match;
-        
-        // Crea HTML della tabella
-        let tableHtml = '<div class="chatbot-table-container">';
-        tableHtml += '<table class="chatbot-table">';
-        
-        // Header
-        if (rows.length > 0) {
-          tableHtml += '<thead><tr>';
-          rows[0].forEach(cell => {
-            tableHtml += `<th class="chatbot-table-header">${this.escapeHtml(cell)}</th>`;
-          });
-          tableHtml += '</tr></thead>';
+        // Verifica che non sia già stata processata
+        if (match.includes('<table') || match.includes('&lt;table')) {
+          console.log('🔍 Table already processed, skipping');
+          return match;
         }
         
-        // Body
-        if (rows.length > 1) {
-          tableHtml += '<tbody>';
-          for (let i = 1; i < rows.length; i++) {
+        // Verifica che abbia almeno 3 | per riga (minimo per essere una tabella)
+        const pipeCount = (match.match(/\|/g) || []).length;
+        console.log('🔍 Pipe count:', pipeCount);
+        if (pipeCount < 9) {
+          console.log('🔍 Not enough pipes for table, skipping');
+          return match; // Almeno header (3) + separator (3) + 1 riga (3)
+        }
+        
+        return this.processTableMatch(match, false);
+      });
+      
+      // 🚀 FALLBACK FINALE: Se non ha trovato tabelle ma ci sono molti pipe, prova parsing manuale
+      if (!result.includes('<table>') && html.includes('|')) {
+        const pipeCount = (html.match(/\|/g) || []).length;
+        console.log('🔍 No tables found but', pipeCount, 'pipes detected, trying manual parsing');
+        
+        if (pipeCount >= 12) { // Almeno 4 colonne x 3 righe
+          result = this.parseTableManually(result);
+        }
+      }
+      
+      return result;
+    }
+
+    static processTableMatch(match, hasNewlines) {
+      let lines;
+      
+      if (hasNewlines) {
+        lines = match.trim().split('\n');
+      } else {
+        // 🔧 NUOVO APPROCCIO: Parser più intelligente per tabelle compatte
+        // Esempio input: "| A | B | |---| | C | D | | E | F |"
+        
+        // Step 1: Trova tutte le sezioni che iniziano e finiscono con |
+        const segments = match.match(/\|[^|]*(?:\|[^|]*)*\|/g) || [];
+        lines = [];
+        
+        for (let segment of segments) {
+          const trimmed = segment.trim();
+          if (trimmed.length > 2) { // Almeno "| |"
+            lines.push(trimmed);
+          }
+        }
+        
+        // Step 2: Se non funziona, prova approccio alternativo
+        if (lines.length < 3) {
+          // Cerca pattern più specifici per header, separator, data
+          const headerMatch = match.match(/\|\s*[A-Za-z][^|]*(?:\|[^|]*)*\|/);
+          const separatorMatch = match.match(/\|[\s\-:|]+(?:\|[\s\-:|]*)*\|/);
+          
+          if (headerMatch && separatorMatch) {
+            lines = [headerMatch[0]];
+            lines.push(separatorMatch[0]);
+            
+            // Trova tutte le righe dati dopo il separator
+            const afterSeparator = match.substring(match.indexOf(separatorMatch[0]) + separatorMatch[0].length);
+            const dataRows = afterSeparator.match(/\|[^|]*(?:\|[^|]*)*\|/g) || [];
+            lines.push(...dataRows);
+          }
+        }
+        
+        // Step 3: Fallback finale - split manuale intelligente
+        if (lines.length < 3) {
+          // Cerca pattern: qualsiasi cosa tra | e |, ripetuta
+          const manualSplit = [];
+          let current = '';
+          let pipeCount = 0;
+          
+          for (let char of match) {
+            current += char;
+            if (char === '|') {
+              pipeCount++;
+              // Se abbiamo almeno 3 pipe, potrebbe essere una riga completa
+              if (pipeCount >= 3 && current.trim().endsWith('|')) {
+                manualSplit.push(current.trim());
+                current = '';
+                pipeCount = 0;
+              }
+            }
+          }
+          
+          if (manualSplit.length >= 3) {
+            lines = manualSplit;
+          }
+        }
+      }
+      
+      if (!lines || lines.length < 3) return match; // Almeno header, separator e una riga
+      
+      // Trova la riga separator (quella con solo -, |, :, spazi)
+      let separatorIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\|[\s\-:|]+\|$/.test(lines[i].trim())) {
+          separatorIndex = i;
+          break;
+        }
+      }
+      
+      if (separatorIndex === -1) return match; // Nessun separator trovato
+      
+      // Rimuovi la riga separator
+      const dataLines = lines.filter((line, index) => index !== separatorIndex);
+      
+      // Parse delle righe
+      const rows = dataLines.map(line => {
+        // Rimuovi | iniziale e finale, poi split per |
+        const cells = line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
+        return cells;
+      });
+      
+      if (rows.length === 0) return match;
+      
+      // Crea HTML della tabella
+      let tableHtml = '<div class="chatbot-table-container">';
+      tableHtml += '<table class="chatbot-table">';
+      
+      // Header
+      if (rows.length > 0) {
+        tableHtml += '<thead><tr>';
+        rows[0].forEach(cell => {
+          tableHtml += `<th class="chatbot-table-header">${this.escapeHtml(cell)}</th>`;
+        });
+        tableHtml += '</tr></thead>';
+      }
+      
+      // Body
+      if (rows.length > 1) {
+        tableHtml += '<tbody>';
+        for (let i = 1; i < rows.length; i++) {
+          tableHtml += '<tr>';
+          rows[i].forEach(cell => {
+            tableHtml += `<td class="chatbot-table-cell">${this.escapeHtml(cell)}</td>`;
+          });
+          tableHtml += '</tr>';
+        }
+        tableHtml += '</tbody>';
+      }
+      
+      tableHtml += '</table></div>';
+      
+      return tableHtml;
+    }
+
+    static parseTableManually(html) {
+      console.log('🔍 parseTableManually: Attempting manual table parsing');
+      
+      // Cerca pattern di tabelle compatte: testo con molti |
+      // Esempio: "| A | B | C | |---| | D | E | F | | G | H | I |"
+      
+      // Trova tutte le sezioni che contengono pipe
+      const segments = html.split(/(?=\|[^|]*\|[^|]*\|)/);
+      
+      for (let segment of segments) {
+        const pipeCount = (segment.match(/\|/g) || []).length;
+        
+        if (pipeCount >= 12) { // Potenziale tabella
+          console.log('🔍 Found potential table segment:', segment.substring(0, 100) + '...');
+          
+          // Prova a estrarre righe dalla sequenza di pipe
+          const rows = this.extractRowsFromPipeSequence(segment);
+          
+          if (rows.length >= 3) { // Header + separator + almeno 1 riga dati
+            console.log('🔍 Successfully extracted', rows.length, 'rows');
+            
+            // Costruisci HTML tabella
+            const tableHtml = this.buildTableFromRows(rows);
+            
+            // Sostituisci nel testo originale
+            html = html.replace(segment, tableHtml);
+            break; // Una tabella alla volta
+          }
+        }
+      }
+      
+      return html;
+    }
+
+    static extractRowsFromPipeSequence(text) {
+      const rows = [];
+      
+      // Pattern per identificare potenziali righe
+      // Cerca sequenze di | contenuto | contenuto | contenuto |
+      const potentialRows = text.match(/\|[^|]*\|[^|]*\|[^|]*\|[^|]*/g) || [];
+      
+      for (let row of potentialRows) {
+        // Pulisci e verifica se è una riga valida
+        const cleaned = row.trim();
+        if (cleaned.startsWith('|') && cleaned.includes('|')) {
+          
+          // Controlla se è una riga separatore (solo -, |, :, spazi)
+          if (/^\|[\s\-:|]+\|/.test(cleaned)) {
+            rows.push({ type: 'separator', content: cleaned });
+          } else {
+            // Riga normale
+            const cells = cleaned.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
+            if (cells.length >= 2) { // Almeno 2 colonne
+              rows.push({ type: 'data', content: cleaned, cells });
+            }
+          }
+        }
+      }
+      
+      return rows;
+    }
+
+    static buildTableFromRows(rows) {
+      if (rows.length < 2) return '';
+      
+      let tableHtml = '<div class="chatbot-table-container">';
+      tableHtml += '<table class="chatbot-table">';
+      
+      let headerProcessed = false;
+      let inBody = false;
+      
+      for (let row of rows) {
+        if (row.type === 'separator') {
+          // Inizia il body dopo il separator
+          if (!inBody && headerProcessed) {
+            tableHtml += '<tbody>';
+            inBody = true;
+          }
+          continue;
+        }
+        
+        if (row.type === 'data' && row.cells) {
+          if (!headerProcessed) {
+            // Prima riga = header
+            tableHtml += '<thead><tr>';
+            for (let cell of row.cells) {
+              tableHtml += `<th class="chatbot-table-header">${this.escapeHtml(cell)}</th>`;
+            }
+            tableHtml += '</tr></thead>';
+            headerProcessed = true;
+          } else {
+            // Righe dati
+            if (!inBody) {
+              tableHtml += '<tbody>';
+              inBody = true;
+            }
             tableHtml += '<tr>';
-            rows[i].forEach(cell => {
+            for (let cell of row.cells) {
               tableHtml += `<td class="chatbot-table-cell">${this.escapeHtml(cell)}</td>`;
-            });
+            }
             tableHtml += '</tr>';
           }
-          tableHtml += '</tbody>';
         }
-        
-        tableHtml += '</table></div>';
-        
-        return tableHtml;
-      });
+      }
+      
+      if (inBody) {
+        tableHtml += '</tbody>';
+      }
+      tableHtml += '</table></div>';
+      
+      console.log('🔍 Built table HTML:', tableHtml.substring(0, 200) + '...');
+      return tableHtml;
     }
 
     static escapeHtml(text) {
@@ -1288,12 +1521,16 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       if (bubble) {
         // Debug: log del contenuto prima del parsing
         console.log('🔍 Content before markdown parsing:', content.substring(0, 200) + '...');
+        console.log('🔍 Content contains table:', content.includes('|'));
+        console.log('🔍 Content contains link:', content.includes('['));
         
         // Parse markdown e applica al contenuto
         const parsedContent = MarkdownParser.parse(content);
         
         // Debug: log del contenuto dopo il parsing
         console.log('🔍 Content after markdown parsing:', parsedContent.substring(0, 200) + '...');
+        console.log('🔍 Parsed content contains <table>:', parsedContent.includes('<table>'));
+        console.log('🔍 Parsed content contains <a href>:', parsedContent.includes('<a href>'));
         
         bubble.innerHTML = parsedContent;
       }
@@ -2869,10 +3106,20 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       
       // Add bot response to UI and state (safe)
       try {
+        // 🔧 ENHANCED: Try multiple methods to add bot message with proper markdown parsing
+        console.log('🔧 Attempting to add bot message, available methods:', {
+          hasAddBotMessage: typeof this.addBotMessage,
+          hasUI: !!this.ui,
+          hasUIAddBotMessage: this.ui ? typeof this.ui.addBotMessage : 'no ui'
+        });
+        
         if (typeof this.addBotMessage === 'function') {
           this.addBotMessage(response.content, response.citations);
+        } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
+          console.log('🔧 Using UI.addBotMessage method');
+          this.ui.addBotMessage(response.content, response.citations);
         } else {
-          console.warn('⚠️ addBotMessage not available, using direct DOM fallback');
+          console.warn('⚠️ addBotMessage not available, using enhanced DOM fallback with markdown parsing');
           this.addBotMessageDirectly?.(response.content, response.citations);
         }
       } catch (e) {
@@ -3404,9 +3651,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         }
         const messageEl = document.createElement('div');
         messageEl.className = 'chatbot-message bot-message';
+        // 🔧 CRITICAL FIX: Parse markdown content before inserting
+        console.log('🔧 Emergency fallback: parsing markdown content');
+        const parsedContent = MarkdownParser.parse(content);
+        console.log('🔧 Emergency fallback: content parsed, contains <a href>:', parsedContent.includes('<a href>'));
+        
         messageEl.innerHTML = `
           <div class="message-content">
-            <div class="message-bubble bot">${content}</div>
+            <div class="message-bubble bot">${parsedContent}</div>
             <div class="message-info">
               <span class="sender">🤖 Assistente</span>
               <time>${new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})}</time>

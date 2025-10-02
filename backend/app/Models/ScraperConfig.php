@@ -19,7 +19,7 @@ class ScraperConfig extends Model
         'render_js',
         'auth_headers',
         'rate_limit_rps',
-        'timeout',
+        'timeout', // HTTP timeout (manteniamo per compatibilità)
         'sitemap_urls',
         'include_patterns',
         'exclude_patterns',
@@ -36,6 +36,12 @@ class ScraperConfig extends Model
         'linked_max_size_mb',
         'linked_same_domain_only',
         'linked_target_kb_id',
+        // Nuovi timeout configurabili per JavaScript
+        'js_timeout',
+        'js_navigation_timeout',
+        'js_content_wait',
+        'js_scroll_delay',
+        'js_final_wait',
     ];
 
     protected $casts = [
@@ -62,6 +68,12 @@ class ScraperConfig extends Model
         'linked_max_size_mb' => 'integer',
         'linked_same_domain_only' => 'boolean',
         'linked_target_kb_id' => 'integer',
+        // Cast per i nuovi timeout JavaScript
+        'js_timeout' => 'integer',
+        'js_navigation_timeout' => 'integer',
+        'js_content_wait' => 'integer',
+        'js_scroll_delay' => 'integer',
+        'js_final_wait' => 'integer',
     ];
 
     public function tenant(): BelongsTo

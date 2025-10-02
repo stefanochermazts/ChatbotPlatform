@@ -34,11 +34,15 @@ class MilvusClientPython
             ], $params);
             
             $jsonParams = json_encode($pythonParams, JSON_UNESCAPED_UNICODE);
-            $escapedParams = escapeshellarg($jsonParams);
+            
+            // 🔧 Fix per Windows: scriviamo i parametri in un file temporaneo
+            // invece di passarli come argomento per evitare problemi di encoding
+            $tempFile = tempnam(sys_get_temp_dir(), 'milvus_params_');
+            file_put_contents($tempFile, $jsonParams);
             
             // Usa percorso completo a Python per evitare problemi di PATH su Windows
             $pythonPath = config('rag.vector.milvus.python_path', 'python');
-            $command = "\"{$pythonPath}\" \"{$this->pythonScript}\" {$escapedParams} 2>&1";
+            $command = "\"{$pythonPath}\" \"{$this->pythonScript}\" \"@{$tempFile}\" 2>&1";
             $output = shell_exec($command);
             
             if (empty($output)) {
@@ -75,6 +79,11 @@ class MilvusClientPython
                 'error' => $e->getMessage()
             ]);
             return ['success' => false, 'error' => $e->getMessage()];
+        } finally {
+            // 🧹 Pulisci il file temporaneo se esiste
+            if (isset($tempFile) && file_exists($tempFile)) {
+                unlink($tempFile);
+            }
         }
     }
 

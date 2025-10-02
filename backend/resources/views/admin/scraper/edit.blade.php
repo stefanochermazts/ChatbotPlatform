@@ -9,7 +9,7 @@
   <div class="grid gap-2">
     @foreach($configs as $cfg)
       <div class="flex items-center justify-between p-2 border rounded hover:bg-gray-50 scraper-row">
-        <a href="#" data-id="{{ $cfg->id }}" onclick="event.preventDefault(); document.getElementById('scraper-id').value='{{ $cfg->id }}'; document.getElementById('run-scraper-id').value='{{ $cfg->id }}'; var rs=document.getElementById('run-scraper-id-sync'); if(rs){ rs.value='{{ $cfg->id }}'; } document.getElementById('scraper-name').value='{{ $cfg->name }}'; document.querySelector('[name=seed_urls]').value='{{ implode("\\n", $cfg->seed_urls ?? []) }}'; document.querySelector('[name=allowed_domains]').value='{{ implode("\\n", $cfg->allowed_domains ?? []) }}'; document.querySelector('[name=sitemap_urls]').value='{{ implode("\\n", $cfg->sitemap_urls ?? []) }}'; document.querySelector('[name=include_patterns]').value='{{ implode("\\n", $cfg->include_patterns ?? []) }}'; document.querySelector('[name=exclude_patterns]').value='{{ implode("\\n", $cfg->exclude_patterns ?? []) }}'; document.querySelector('[name=link_only_patterns]').value='{{ implode("\\n", $cfg->link_only_patterns ?? []) }}'; document.querySelector('[name=max_depth]').value='{{ $cfg->max_depth }}'; document.querySelector('[name=rate_limit_rps]').value='{{ $cfg->rate_limit_rps }}'; document.querySelector('[name=render_js]').checked={{ $cfg->render_js ? 'true' : 'false' }}; document.querySelector('[name=respect_robots]').checked={{ $cfg->respect_robots ? 'true' : 'false' }}; document.querySelector('[name=target_knowledge_base_id]').value='{{ $cfg->target_knowledge_base_id ?? '' }}'; document.querySelector('[name=interval_minutes]').value='{{ $cfg->interval_minutes ?? '' }}'; document.querySelector('[name=skip_known_urls]').checked={{ $cfg->skip_known_urls ? 'true' : 'false' }}; document.querySelector('[name=recrawl_days]').value='{{ $cfg->recrawl_days ?? '' }}'; var chips=document.querySelectorAll('#scraper-list .scraper-row'); chips.forEach(function(el){ el.classList.remove('bg-blue-50','border-blue-200'); }); this.closest('.scraper-row').classList.add('bg-blue-50','border-blue-200');" class="text-sm font-medium text-blue-600 hover:text-blue-800 flex-1">
+        <a href="#" data-id="{{ $cfg->id }}" onclick="event.preventDefault(); document.getElementById('scraper-id').value='{{ $cfg->id }}'; document.getElementById('run-scraper-id').value='{{ $cfg->id }}'; var rs=document.getElementById('run-scraper-id-sync'); if(rs){ rs.value='{{ $cfg->id }}'; } document.getElementById('scraper-name').value='{{ $cfg->name }}'; document.querySelector('[name=seed_urls]').value='{{ implode("\\n", $cfg->seed_urls ?? []) }}'; document.querySelector('[name=allowed_domains]').value='{{ implode("\\n", $cfg->allowed_domains ?? []) }}'; document.querySelector('[name=sitemap_urls]').value='{{ implode("\\n", $cfg->sitemap_urls ?? []) }}'; document.querySelector('[name=include_patterns]').value='{{ implode("\\n", $cfg->include_patterns ?? []) }}'; document.querySelector('[name=exclude_patterns]').value='{{ implode("\\n", $cfg->exclude_patterns ?? []) }}'; document.querySelector('[name=link_only_patterns]').value='{{ implode("\\n", $cfg->link_only_patterns ?? []) }}'; document.querySelector('[name=max_depth]').value='{{ $cfg->max_depth }}'; document.querySelector('[name=rate_limit_rps]').value='{{ $cfg->rate_limit_rps }}'; document.querySelector('[name=js_navigation_timeout]').value='{{ $cfg->js_navigation_timeout ?? 30 }}'; document.querySelector('[name=js_content_wait]').value='{{ $cfg->js_content_wait ?? 15 }}'; document.querySelector('[name=js_scroll_delay]').value='{{ $cfg->js_scroll_delay ?? 2 }}'; document.querySelector('[name=js_final_wait]').value='{{ $cfg->js_final_wait ?? 8 }}'; document.querySelector('[name=render_js]').checked={{ $cfg->render_js ? 'true' : 'false' }}; document.querySelector('[name=respect_robots]').checked={{ $cfg->respect_robots ? 'true' : 'false' }}; document.querySelector('[name=target_knowledge_base_id]').value='{{ $cfg->target_knowledge_base_id ?? '' }}'; document.querySelector('[name=interval_minutes]').value='{{ $cfg->interval_minutes ?? '' }}'; document.querySelector('[name=skip_known_urls]').checked={{ $cfg->skip_known_urls ? 'true' : 'false' }}; document.querySelector('[name=recrawl_days]').value='{{ $cfg->recrawl_days ?? '' }}'; var chips=document.querySelectorAll('#scraper-list .scraper-row'); chips.forEach(function(el){ el.classList.remove('bg-blue-50','border-blue-200'); }); this.closest('.scraper-row').classList.add('bg-blue-50','border-blue-200');" class="text-sm font-medium text-blue-600 hover:text-blue-800 flex-1">
           📄 {{ $cfg->name }} 
           <span class="text-xs text-gray-500">(ID {{ $cfg->id }}{{ $cfg->enabled ? ', Attivo' : ', Disattivo' }}{{ $cfg->interval_minutes ? ', ogni '.$cfg->interval_minutes.'min' : '' }})</span>
         </a>
@@ -183,6 +183,44 @@
             <code class="bg-white px-1 rounded">1</code> <small>= Standard, sicuro per la maggior parte</small><br>
             <code class="bg-white px-1 rounded">2-3</code> <small>= Veloce, solo siti robusti</small><br>
             <small class="text-gray-600">⚠️ Troppo alto = rischio ban IP</small>
+          </div>
+        </div>
+
+        <!-- 🔧 NUOVA SEZIONE: Timeout Configurabili per JavaScript -->
+        <div class="space-y-2 bg-blue-50 p-4 rounded border border-blue-200">
+          <h3 class="text-sm font-medium text-blue-800 mb-3">⏱️ Timeout JavaScript (secondi)</h3>
+          <div class="text-xs text-blue-700 mb-3">
+            <strong>ℹ️ Info:</strong> Questi timeout si applicano solo quando "Render JavaScript" è attivo
+          </div>
+          
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="text-xs font-medium text-gray-700">🌐 Navigazione</span>
+              <input type="number" name="js_navigation_timeout" value="{{ old('js_navigation_timeout', $config->js_navigation_timeout ?? 30) }}" min="10" max="300" class="w-full border rounded px-2 py-1 text-sm" />
+            </label>
+            
+            <label class="block">
+              <span class="text-xs font-medium text-gray-700">📄 Contenuto</span>
+              <input type="number" name="js_content_wait" value="{{ old('js_content_wait', $config->js_content_wait ?? 15) }}" min="5" max="120" class="w-full border rounded px-2 py-1 text-sm" />
+            </label>
+            
+            <label class="block">
+              <span class="text-xs font-medium text-gray-700">📜 Scroll</span>
+              <input type="number" name="js_scroll_delay" value="{{ old('js_scroll_delay', $config->js_scroll_delay ?? 2) }}" min="1" max="10" class="w-full border rounded px-2 py-1 text-sm" />
+            </label>
+            
+            <label class="block">
+              <span class="text-xs font-medium text-gray-700">⏳ Finale</span>
+              <input type="number" name="js_final_wait" value="{{ old('js_final_wait', $config->js_final_wait ?? 8) }}" min="3" max="60" class="w-full border rounded px-2 py-1 text-sm" />
+            </label>
+          </div>
+          
+          <div class="bg-white p-2 rounded text-xs mt-2">
+            <strong>📋 Spiegazione:</strong><br>
+            • <strong>Navigazione:</strong> Timeout per caricare la pagina iniziale<br>
+            • <strong>Contenuto:</strong> Attesa per contenuto dinamico (Angular/React)<br>
+            • <strong>Scroll:</strong> Pausa tra scroll per lazy loading<br>
+            • <strong>Finale:</strong> Attesa finale per stabilizzazione contenuto
           </div>
         </div>
       </div>

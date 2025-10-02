@@ -23,6 +23,7 @@ class RunWebScrapingJob implements ShouldQueue
     public function __construct(
         private readonly int $tenantId,
         private readonly ?int $scraperConfigId = null,
+        private readonly ?bool $useParallel = null, // 🆕 Flag per modalità parallela (nullable)
     ) {
         $this->onQueue('scraping');
     }
@@ -39,11 +40,30 @@ class RunWebScrapingJob implements ShouldQueue
         }
 
         try {
-            $result = $scraper->scrapeForTenant($this->tenantId, $this->scraperConfigId);
+            // 🚀 Determina modalità: parallela (default in produzione) o sequenziale
+            $useParallel = $this->useParallel ?? (app()->environment('production') || config('app.scraper_parallel_mode', true));
+            
+            if ($useParallel) {
+                \Log::info("🚀 [PARALLEL-MODE] Avvio scraping parallelo", [
+                    'tenant_id' => $this->tenantId,
+                    'scraper_config_id' => $this->scraperConfigId,
+                    'environment' => app()->environment()
+                ]);
+                
+                $result = $scraper->scrapeForTenantParallel($this->tenantId, $this->scraperConfigId);
+            } else {
+                \Log::info("📝 [SEQUENTIAL-MODE] Avvio scraping sequenziale", [
+                    'tenant_id' => $this->tenantId,
+                    'scraper_config_id' => $this->scraperConfigId
+                ]);
+                
+                $result = $scraper->scrapeForTenant($this->tenantId, $this->scraperConfigId);
+            }
             
             \Log::info("Web scraping completato", [
                 'tenant_id' => $this->tenantId,
                 'scraper_config_id' => $this->scraperConfigId,
+                'mode' => $useParallel ? 'parallel' : 'sequential',
                 'urls_visited' => $result['urls_visited'] ?? 0,
                 'documents_saved' => $result['documents_saved'] ?? 0
             ]);
@@ -72,4 +92,3 @@ class RunWebScrapingJob implements ShouldQueue
         return $this->tenantId;
     }
 }
-
