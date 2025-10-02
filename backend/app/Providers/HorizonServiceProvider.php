@@ -35,6 +35,7 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
             return in_array($user->email, [
                 'admin@chatbot.local',
                 'admin@maia.chat',
+                'stefano@crowdm.com'
                 // Aggiungi altre email admin
             ]);
             
