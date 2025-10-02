@@ -139,8 +139,9 @@ return [
                 'connection' => 'redis',
                 'queue' => ['scraping'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
-                'maxProcesses' => 5,  // 🚀 5 URL in parallelo per scraping
+                'autoScalingStrategy' => 'simple',  // ✅ Simple = parallelismo immediato
+                'minProcesses' => 3,                 // 🆕 Minimo 3 worker sempre attivi
+                'maxProcesses' => 5,                 // 🚀 Max 5 URL in parallelo
                 'maxTime' => 0,
                 'maxJobs' => 0,
                 'memory' => 512,
@@ -152,8 +153,9 @@ return [
                 'connection' => 'redis',
                 'queue' => ['ingestion'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
-                'maxProcesses' => 5,  // 🚀 5 documenti in parallelo per ingestion
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 3,                 // 🆕 Minimo 3 worker
+                'maxProcesses' => 5,                 // 🚀 Max 5 documenti in parallelo
                 'maxTime' => 0,
                 'maxJobs' => 0,
                 'memory' => 1024,
@@ -165,8 +167,9 @@ return [
                 'connection' => 'redis',
                 'queue' => ['embeddings'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
-                'maxProcesses' => 3,  // 3 processi per embeddings
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 2,                 // 🆕 Minimo 2 worker
+                'maxProcesses' => 3,                 // 3 processi max per embeddings
                 'maxTime' => 0,
                 'maxJobs' => 0,
                 'memory' => 512,
@@ -178,8 +181,9 @@ return [
                 'connection' => 'redis',
                 'queue' => ['indexing'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
-                'maxProcesses' => 2,  // 2 processi per indexing
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 1,                 // 🆕 Minimo 1 worker
+                'maxProcesses' => 2,                 // 2 processi max per indexing
                 'maxTime' => 0,
                 'maxJobs' => 0,
                 'memory' => 256,
@@ -207,8 +211,9 @@ return [
                 'connection' => 'redis',
                 'queue' => ['scraping'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
-                'maxProcesses' => 2,  // 🚀 2 URL in parallelo in locale
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 2,                 // 🆕 Minimo 2 worker in dev
+                'maxProcesses' => 2,                 // 🚀 Max 2 URL in parallelo in locale
                 'maxTime' => 0,
                 'maxJobs' => 0,
                 'memory' => 512,
@@ -220,8 +225,9 @@ return [
                 'connection' => 'redis',
                 'queue' => ['ingestion'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
-                'maxProcesses' => 3,  // 🚀 3 processi paralleli anche in locale
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 2,                 // 🆕 Minimo 2 worker in dev
+                'maxProcesses' => 3,                 // 🚀 Max 3 processi paralleli in locale
                 'maxTime' => 0,
                 'maxJobs' => 0,
                 'memory' => 1024,
@@ -233,7 +239,8 @@ return [
                 'connection' => 'redis',
                 'queue' => ['embeddings'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 1,                 // 🆕 Minimo 1 worker in dev
                 'maxProcesses' => 2,
                 'maxTime' => 0,
                 'maxJobs' => 0,
@@ -246,7 +253,8 @@ return [
                 'connection' => 'redis',
                 'queue' => ['indexing'],
                 'balance' => 'auto',
-                'autoScalingStrategy' => 'time',
+                'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
+                'minProcesses' => 1,                 // 🆕 Minimo 1 worker in dev
                 'maxProcesses' => 1,
                 'maxTime' => 0,
                 'maxJobs' => 0,
