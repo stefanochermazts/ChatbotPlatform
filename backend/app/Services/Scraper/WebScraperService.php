@@ -3512,7 +3512,7 @@ class WebScraperService
                     // Dispatcha job per ogni link trovato
                     foreach ($links as $link) {
                         if (!isset($this->visitedUrls[$link]) && 
-                            $this->isAllowedUrl($link, $config)) {
+                            $this->isUrlAllowed($link, $config)) {
                             $this->scrapeRecursiveParallel($link, $config, $tenant, $depth + 1);
                         }
                     }
