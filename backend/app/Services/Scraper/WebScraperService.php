@@ -3449,8 +3449,12 @@ class WebScraperService
         ]);
     }
 
-
-* permettendo a worker multipli di processarli in parallelo
+    /**
+     * Scraping ricorsivo in modalità parallela
+     * 
+     * Invece di processare immediatamente ogni URL, questo metodo
+     * dispatcha ogni URL come job separato sulla coda 'scraping',
+     * permettendo a worker multipli di processarli in parallelo
      */
     public function scrapeRecursiveParallel(
         string $url,
