@@ -2209,7 +2209,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     enableHandoffButton() {
       if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
         this.ui.elements.handoffBtn.disabled = false;
-        this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+        // Non impostare textContent, l'icona viene gestita da applyOperatorConfiguration
       }
     }
 
@@ -3170,6 +3170,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const handoffBtn = document.getElementById('chatbot-handoff-btn');
       if (handoffBtn) {
         handoffBtn.disabled = false;
+        handoffBtn.style.display = 'flex';
         handoffBtn.style.opacity = '1';
         handoffBtn.title = handoffBtn.title.replace(' (non disponibile)', '');
       }
@@ -3178,9 +3179,8 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     setOperatorUnavailable() {
       const handoffBtn = document.getElementById('chatbot-handoff-btn');
       if (handoffBtn) {
-        handoffBtn.disabled = true;
-        handoffBtn.style.opacity = '0.5';
-        handoffBtn.title = handoffBtn.title + ' (non disponibile)';
+        // Nasconde completamente il pulsante quando non disponibile
+        handoffBtn.style.display = 'none';
       }
     }
 
@@ -3858,7 +3858,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           // Enable button if no active handoff
           if (!handoffStatus || handoffStatus === 'bot_only') {
             this.ui.elements.handoffBtn.disabled = false;
-            this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+            // Non impostare textContent, l'icona viene gestita da applyOperatorConfiguration
             this.ui.elements.handoffBtn.style.display = 'block';
             this.ui.elements.handoffBtn.style.opacity = '1';
             console.log('✅ Handoff button enabled successfully');
@@ -4062,7 +4062,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           try {
             if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
               this.ui.elements.handoffBtn.disabled = false;
-              this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+              // Non impostare textContent, l'icona viene gestita da applyOperatorConfiguration
             }
           } catch (e) { console.warn('⚠️ Cannot enable handoff button:', e.message); }
         }
@@ -4266,7 +4266,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
             try {
               if (this.ui && this.ui.elements && this.ui.elements.handoffBtn) {
                 this.ui.elements.handoffBtn.disabled = false;
-                this.ui.elements.handoffBtn.textContent = '👨‍💼 Operatore';
+                // Non impostare textContent, l'icona viene gestita da applyOperatorConfiguration
               }
             } catch (e) { console.warn('⚠️ Cannot enable handoff button:', e.message); }
             // Stop polling quando torna al bot
