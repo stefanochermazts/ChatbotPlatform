@@ -493,6 +493,8 @@
                   @foreach($days as $dayKey => $dayName)
                     <div class="p-3 border border-gray-200 rounded-lg">
                       <div class="flex items-center mb-2">
+                        <!-- Hidden input per garantire che venga sempre inviato un valore -->
+                        <input type="hidden" name="operator_availability[{{ $dayKey }}][enabled]" value="0">
                         <input type="checkbox" name="operator_availability[{{ $dayKey }}][enabled]" value="1"
                                @checked(isset($availability[$dayKey]['enabled']) && $availability[$dayKey]['enabled'])
                                class="rounded border-gray-300 text-blue-600 day-enabled" data-day="{{ $dayKey }}">

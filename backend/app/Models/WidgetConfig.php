@@ -102,21 +102,36 @@ class WidgetConfig extends Model
         }
         
         $availability = $this->operator_availability;
+        
+        // Se non c'è nessuna configurazione di orari, l'operatore è sempre disponibile
         if (!$availability || empty($availability)) {
-            return true; // Always available if no schedule set
+            return true;
         }
         
         $now = now();
         $currentDay = strtolower($now->format('l')); // monday, tuesday, etc.
         $currentTime = $now->format('H:i');
         
-        // Check if current day is in availability
-        if (!isset($availability[$currentDay]) || !$availability[$currentDay]['enabled']) {
+        // Check if current day exists in availability
+        if (!isset($availability[$currentDay])) {
+            // Se il giorno non è configurato ma ci sono altri giorni configurati, 
+            // significa che questo giorno è chiuso
             return false;
         }
         
         $daySchedule = $availability[$currentDay];
+        
+        // Check if day is enabled
+        if (!isset($daySchedule['enabled']) || !$daySchedule['enabled']) {
+            return false;
+        }
+        
         $slots = $daySchedule['slots'] ?? [];
+        
+        // Se non ci sono slot per questo giorno, non è disponibile
+        if (empty($slots)) {
+            return false;
+        }
         
         // Check if current time is within any of the available slots
         foreach ($slots as $slot) {
@@ -133,6 +148,7 @@ class WidgetConfig extends Model
             }
         }
         
+        // Se siamo arrivati qui, nessuno slot è valido
         return false;
     }
     

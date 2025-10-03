@@ -3125,8 +3125,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const operatorConfig = this.options.operator || {};
       const availability = operatorConfig.availability || {};
       
+      // Se non c'è nessuna configurazione di orari, l'operatore è sempre disponibile
       if (!availability || Object.keys(availability).length === 0) {
-        // No schedule set, always available
+        this.setOperatorAvailable();
         return;
       }
       
@@ -3134,14 +3135,30 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
       
+      // Check if current day exists in availability
       const daySchedule = availability[currentDay];
-      if (!daySchedule || !daySchedule.enabled) {
+      if (!daySchedule) {
+        // Se il giorno non è configurato ma ci sono altri giorni configurati, 
+        // significa che questo giorno è chiuso
+        this.setOperatorUnavailable();
+        return;
+      }
+      
+      // Check if day is enabled
+      if (!daySchedule.enabled) {
         this.setOperatorUnavailable();
         return;
       }
       
       // Check if current time is within any of the available slots
       const slots = daySchedule.slots || [];
+      
+      // Se non ci sono slot per questo giorno, non è disponibile
+      if (slots.length === 0) {
+        this.setOperatorUnavailable();
+        return;
+      }
+      
       let isAvailable = false;
       
       for (const slot of slots) {
