@@ -2875,27 +2875,37 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     }
 
     async loadThemeConfiguration() {
+      console.log('🌐 [THEME] === INIZIO LOAD THEME CONFIGURATION ===');
+      
       if (!this.options.tenantId) {
-        console.warn('[ChatbotWidget] No tenantId provided, skipping theme configuration load');
+        console.warn('🌐 [THEME] ❌ No tenantId provided, skipping theme configuration load');
         return;
       }
       
+      console.log('🌐 [THEME] tenantId:', this.options.tenantId);
+      
       try {
         const url = `${this.options.baseURL}/api/v1/tenants/${this.options.tenantId}/widget-theme`;
-        console.log('[ChatbotWidget] Loading theme configuration from:', url);
+        console.log('🌐 [THEME] Loading theme configuration from:', url);
         
         const response = await fetch(url);
+        console.log('🌐 [THEME] Response status:', response.status);
+        
         if (!response.ok) {
           throw new Error(`Failed to load theme configuration: ${response.status}`);
         }
         
         const themeConfig = await response.json();
-        console.log('[ChatbotWidget] Theme configuration loaded:', themeConfig);
+        console.log('🌐 [THEME] Theme configuration loaded:', themeConfig);
         
         // Merge theme configuration into options
         if (themeConfig.operator) {
           this.options.operator = themeConfig.operator;
-          console.log('[ChatbotWidget] Operator configuration loaded:', this.options.operator);
+          console.log('🌐 [THEME] ✅ Operator configuration loaded:', this.options.operator);
+          console.log('🌐 [THEME] Operator enabled:', this.options.operator.enabled);
+          console.log('🌐 [THEME] Operator availability:', this.options.operator.availability);
+        } else {
+          console.log('🌐 [THEME] ⚠️ No operator configuration in theme');
         }
         
         // Merge other theme properties if needed
@@ -2909,8 +2919,10 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           this.options.branding = { ...this.options.branding, ...themeConfig.branding };
         }
         
+        console.log('🌐 [THEME] === FINE LOAD THEME CONFIGURATION ===');
+        
       } catch (error) {
-        console.error('[ChatbotWidget] Failed to load theme configuration:', error);
+        console.error('🌐 [THEME] ❌ Failed to load theme configuration:', error);
         // Continue without theme configuration
       }
     }
@@ -3059,39 +3071,54 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     }
 
     applyOperatorConfiguration() {
-      console.log('[ChatbotWidget] Applying operator configuration...');
+      console.log('🔧 [OPERATOR] === INIZIO APPLY CONFIGURATION ===');
+      console.log('🔧 [OPERATOR] this.options.operator:', this.options.operator);
       
       const handoffBtn = document.getElementById('chatbot-handoff-btn');
       const handoffIcon = document.getElementById('chatbot-handoff-icon');
       
       if (!handoffBtn || !handoffIcon) {
-        console.log('[ChatbotWidget] Operator elements not found');
+        console.log('🔧 [OPERATOR] ❌ Operator elements not found');
         return;
       }
+      
+      console.log('🔧 [OPERATOR] ✅ Elementi trovati');
       
       // Get operator configuration from options
       const operatorConfig = this.options.operator || {};
       const isEnabled = operatorConfig.enabled || false;
       
+      console.log('🔧 [OPERATOR] operatorConfig:', operatorConfig);
+      console.log('🔧 [OPERATOR] isEnabled:', isEnabled);
+      
       if (!isEnabled) {
+        console.log('🔧 [OPERATOR] ❌ Operatore NON abilitato -> nascondo pulsante');
         handoffBtn.style.display = 'none';
         return;
       }
       
+      console.log('🔧 [OPERATOR] ✅ Operatore abilitato');
+      
       // Show button
       handoffBtn.style.display = 'flex';
+      console.log('🔧 [OPERATOR] Pulsante impostato su display: flex');
       
       // Set icon based on configuration
       const iconType = operatorConfig.button_icon || 'headphones';
       const iconSvg = this.getOperatorIcon(iconType);
       handoffIcon.innerHTML = iconSvg;
+      console.log('🔧 [OPERATOR] Icona impostata:', iconType);
       
       // Set tooltip
       const buttonText = operatorConfig.button_text || 'Operatore';
       handoffBtn.title = `Parla con un ${buttonText.toLowerCase()}`;
+      console.log('🔧 [OPERATOR] Tooltip impostato:', handoffBtn.title);
       
       // Check availability
+      console.log('🔧 [OPERATOR] Chiamata checkOperatorAvailability()...');
       this.checkOperatorAvailability();
+      
+      console.log('🔧 [OPERATOR] === FINE APPLY CONFIGURATION ===');
     }
     
     getOperatorIcon(iconType) {
@@ -3122,11 +3149,18 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     }
     
     checkOperatorAvailability() {
+      console.log('🔍 [OPERATOR] === INIZIO CHECK DISPONIBILITÀ ===');
+      
       const operatorConfig = this.options.operator || {};
+      console.log('🔍 [OPERATOR] operatorConfig:', operatorConfig);
+      
       const availability = operatorConfig.availability || {};
+      console.log('🔍 [OPERATOR] availability:', availability);
+      console.log('🔍 [OPERATOR] availability keys:', Object.keys(availability));
       
       // Se non c'è nessuna configurazione di orari, l'operatore è sempre disponibile
       if (!availability || Object.keys(availability).length === 0) {
+        console.log('🔍 [OPERATOR] ✅ Nessuna configurazione orari -> Sempre disponibile');
         this.setOperatorAvailable();
         return;
       }
@@ -3134,27 +3168,36 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+      console.log('🔍 [OPERATOR] currentDay:', currentDay);
+      console.log('🔍 [OPERATOR] currentTime:', currentTime);
       
       // Check if current day exists in availability
       const daySchedule = availability[currentDay];
+      console.log('🔍 [OPERATOR] daySchedule for', currentDay, ':', daySchedule);
+      
       if (!daySchedule) {
         // Se il giorno non è configurato ma ci sono altri giorni configurati, 
         // significa che questo giorno è chiuso
+        console.log('🔍 [OPERATOR] ❌ Giorno NON configurato -> NON disponibile');
         this.setOperatorUnavailable();
         return;
       }
       
       // Check if day is enabled
+      console.log('🔍 [OPERATOR] daySchedule.enabled:', daySchedule.enabled);
       if (!daySchedule.enabled) {
+        console.log('🔍 [OPERATOR] ❌ Giorno NON abilitato -> NON disponibile');
         this.setOperatorUnavailable();
         return;
       }
       
       // Check if current time is within any of the available slots
       const slots = daySchedule.slots || [];
+      console.log('🔍 [OPERATOR] slots:', slots);
       
       // Se non ci sono slot per questo giorno, non è disponibile
       if (slots.length === 0) {
+        console.log('🔍 [OPERATOR] ❌ Nessuno slot configurato -> NON disponibile');
         this.setOperatorUnavailable();
         return;
       }
@@ -3165,22 +3208,33 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         const startTime = slot.start_time;
         const endTime = slot.end_time;
         
+        console.log('🔍 [OPERATOR] Checking slot:', { startTime, endTime });
+        
         // Skip empty slots
         if (!startTime || !endTime) {
+          console.log('🔍 [OPERATOR] ⚠️ Slot vuoto, skip');
           continue;
         }
         
+        console.log('🔍 [OPERATOR] Confronto:', currentTime, '>=', startTime, '&&', currentTime, '<=', endTime);
         if (currentTime >= startTime && currentTime <= endTime) {
+          console.log('🔍 [OPERATOR] ✅ Slot valido trovato!');
           isAvailable = true;
           break;
         }
       }
       
+      console.log('🔍 [OPERATOR] isAvailable finale:', isAvailable);
+      
       if (isAvailable) {
+        console.log('🔍 [OPERATOR] ✅ Operatore DISPONIBILE');
         this.setOperatorAvailable();
       } else {
+        console.log('🔍 [OPERATOR] ❌ Operatore NON DISPONIBILE');
         this.setOperatorUnavailable();
       }
+      
+      console.log('🔍 [OPERATOR] === FINE CHECK DISPONIBILITÀ ===');
     }
     
     setOperatorAvailable() {
