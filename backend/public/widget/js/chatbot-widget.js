@@ -2874,7 +2874,48 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       this.init();
     }
 
-    init() {
+    async loadThemeConfiguration() {
+      if (!this.options.tenantId) {
+        console.warn('[ChatbotWidget] No tenantId provided, skipping theme configuration load');
+        return;
+      }
+      
+      try {
+        const url = `${this.options.baseURL}/api/v1/tenants/${this.options.tenantId}/widget-theme`;
+        console.log('[ChatbotWidget] Loading theme configuration from:', url);
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to load theme configuration: ${response.status}`);
+        }
+        
+        const themeConfig = await response.json();
+        console.log('[ChatbotWidget] Theme configuration loaded:', themeConfig);
+        
+        // Merge theme configuration into options
+        if (themeConfig.operator) {
+          this.options.operator = themeConfig.operator;
+          console.log('[ChatbotWidget] Operator configuration loaded:', this.options.operator);
+        }
+        
+        // Merge other theme properties if needed
+        if (themeConfig.layout) {
+          this.options.layout = { ...this.options.layout, ...themeConfig.layout };
+        }
+        if (themeConfig.behavior) {
+          this.options.behavior = { ...this.options.behavior, ...themeConfig.behavior };
+        }
+        if (themeConfig.branding) {
+          this.options.branding = { ...this.options.branding, ...themeConfig.branding };
+        }
+        
+      } catch (error) {
+        console.error('[ChatbotWidget] Failed to load theme configuration:', error);
+        // Continue without theme configuration
+      }
+    }
+
+    async init() {
       this.setupEventHandlers();
       
       // 🎨 Initialize UI FIRST - so elements are available for configuration
@@ -2882,6 +2923,9 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         console.log('[ChatbotWidget] Initializing UI...');
         this.ui.init();
       }
+      
+      // 🔧 Load theme configuration from API
+      await this.loadThemeConfiguration();
       
       // Apply configuration AFTER UI is initialized
       this.applyConfiguration();
