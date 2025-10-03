@@ -3933,9 +3933,8 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           if (!handoffStatus || handoffStatus === 'bot_only') {
             this.ui.elements.handoffBtn.disabled = false;
             // Non impostare textContent, l'icona viene gestita da applyOperatorConfiguration
-            this.ui.elements.handoffBtn.style.display = 'block';
-            this.ui.elements.handoffBtn.style.opacity = '1';
-            console.log('✅ Handoff button enabled successfully');
+            // NON sovrascrivere display/opacity - lascia che checkOperatorAvailability gestisca la visibilità
+            console.log('✅ Handoff button enabled (availability managed by operator config)');
           } else {
             console.log('ℹ️ Handoff button not enabled due to status:', handoffStatus);
           }
