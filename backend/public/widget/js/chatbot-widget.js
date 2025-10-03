@@ -3183,9 +3183,12 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         return;
       }
       
-      // Check if day is enabled
-      console.log('🔍 [OPERATOR] daySchedule.enabled:', daySchedule.enabled);
-      if (!daySchedule.enabled) {
+      // Check if day is enabled (converti a boolean perché può essere stringa "0" o "1")
+      const isEnabled = daySchedule.enabled === true || daySchedule.enabled === 1 || daySchedule.enabled === '1';
+      console.log('🔍 [OPERATOR] daySchedule.enabled (raw):', daySchedule.enabled, 'type:', typeof daySchedule.enabled);
+      console.log('🔍 [OPERATOR] isEnabled (converted):', isEnabled);
+      
+      if (!isEnabled) {
         console.log('🔍 [OPERATOR] ❌ Giorno NON abilitato -> NON disponibile');
         this.setOperatorUnavailable();
         return;

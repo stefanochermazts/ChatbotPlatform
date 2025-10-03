@@ -27,11 +27,20 @@ class WidgetThemeController extends Controller
         unset($theme['advanced']);
 
         // Aggiungi configurazione operatore
+        $availability = $config->operator_availability ?? [];
+        
+        // Converti enabled da stringa/int a boolean per ogni giorno
+        foreach ($availability as $day => $schedule) {
+            if (isset($schedule['enabled'])) {
+                $availability[$day]['enabled'] = (bool) $schedule['enabled'];
+            }
+        }
+        
         $theme['operator'] = [
-            'enabled' => $config->operator_enabled ?? false,
+            'enabled' => (bool) ($config->operator_enabled ?? false),
             'button_text' => $config->operator_button_text ?? 'Operatore',
             'button_icon' => $config->operator_button_icon ?? 'headphones',
-            'availability' => $config->operator_availability ?? [],
+            'availability' => $availability,
             'unavailable_message' => $config->operator_unavailable_message ?? 'Operatore non disponibile in questo momento'
         ];
 
