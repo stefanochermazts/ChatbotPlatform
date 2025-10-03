@@ -38,6 +38,11 @@ class WidgetConfig extends Model
         'enable_conversation_context',
         'allowed_domains',
         'enable_analytics',
+        'operator_enabled',
+        'operator_button_text',
+        'operator_button_icon',
+        'operator_availability',
+        'operator_unavailable_message',
         'gdpr_compliant',
         'custom_css',
         'custom_js',
@@ -60,6 +65,8 @@ class WidgetConfig extends Model
         'enable_conversation_context' => 'boolean',
         'allowed_domains' => 'array',
         'enable_analytics' => 'boolean',
+        'operator_enabled' => 'boolean',
+        'operator_availability' => 'array',
         'gdpr_compliant' => 'boolean',
         'advanced_config' => 'array',
         'last_updated_at' => 'datetime',
@@ -79,6 +86,52 @@ class WidgetConfig extends Model
     public function updatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    
+    // =================================================================
+    // OPERATOR AVAILABILITY METHODS
+    // =================================================================
+    
+    /**
+     * Check if operator is currently available based on time and day
+     */
+    public function isOperatorAvailable(): bool
+    {
+        if (!$this->operator_enabled) {
+            return false;
+        }
+        
+        $availability = $this->operator_availability;
+        if (!$availability || empty($availability)) {
+            return true; // Always available if no schedule set
+        }
+        
+        $now = now();
+        $currentDay = strtolower($now->format('l')); // monday, tuesday, etc.
+        $currentTime = $now->format('H:i');
+        
+        // Check if current day is in availability
+        if (!isset($availability[$currentDay]) || !$availability[$currentDay]['enabled']) {
+            return false;
+        }
+        
+        $daySchedule = $availability[$currentDay];
+        $startTime = $daySchedule['start_time'] ?? '00:00';
+        $endTime = $daySchedule['end_time'] ?? '23:59';
+        
+        return $currentTime >= $startTime && $currentTime <= $endTime;
+    }
+    
+    /**
+     * Get operator availability message
+     */
+    public function getOperatorAvailabilityMessage(): string
+    {
+        if ($this->isOperatorAvailable()) {
+            return 'Operatore disponibile';
+        }
+        
+        return $this->operator_unavailable_message ?? 'Operatore non disponibile in questo momento';
     }
     
     // =================================================================

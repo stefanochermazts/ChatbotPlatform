@@ -433,6 +433,101 @@
           </div>
         </div>
         
+        <!-- Operator Configuration -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-xl font-semibold mb-4">👨‍💼 Configurazione Operatore</h2>
+          
+          <div class="space-y-4">
+            <!-- Enable Operator -->
+            <div>
+              <label class="inline-flex items-center">
+                <input type="checkbox" name="operator_enabled" value="1" 
+                       @checked(old('operator_enabled', $config->operator_enabled)) 
+                       class="rounded border-gray-300 text-blue-600" id="operator_enabled">
+                <span class="ml-2 text-sm text-gray-900">Abilita pulsante operatore</span>
+              </label>
+            </div>
+            
+            <!-- Operator Button Configuration -->
+            <div id="operator_config" class="space-y-4" style="display: {{ old('operator_enabled', $config->operator_enabled) ? 'block' : 'none' }}">
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label for="operator_button_text" class="block text-sm font-medium text-gray-700">
+                    Testo Pulsante
+                  </label>
+                  <input type="text" name="operator_button_text" id="operator_button_text"
+                         value="{{ old('operator_button_text', $config->operator_button_text ?? 'Operatore') }}"
+                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                  @error('operator_button_text')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+                </div>
+                
+                <div>
+                  <label for="operator_button_icon" class="block text-sm font-medium text-gray-700">
+                    Icona Pulsante
+                  </label>
+                  <select name="operator_button_icon" id="operator_button_icon"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="headphones" @selected(old('operator_button_icon', $config->operator_button_icon ?? 'headphones') == 'headphones')>🎧 Cuffie</option>
+                    <option value="user" @selected(old('operator_button_icon', $config->operator_button_icon ?? 'headphones') == 'user')>👤 Persona</option>
+                    <option value="phone" @selected(old('operator_button_icon', $config->operator_button_icon ?? 'headphones') == 'phone')>📞 Telefono</option>
+                    <option value="message-circle" @selected(old('operator_button_icon', $config->operator_button_icon ?? 'headphones') == 'message-circle')>💬 Messaggio</option>
+                    <option value="life-buoy" @selected(old('operator_button_icon', $config->operator_button_icon ?? 'headphones') == 'life-buoy')>🛟 Supporto</option>
+                  </select>
+                  @error('operator_button_icon')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+                </div>
+              </div>
+              
+              <!-- Availability Schedule -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  Orari di Disponibilità
+                </label>
+                <div class="space-y-2">
+                  @php
+                    $days = ['monday' => 'Lunedì', 'tuesday' => 'Martedì', 'wednesday' => 'Mercoledì', 
+                             'thursday' => 'Giovedì', 'friday' => 'Venerdì', 'saturday' => 'Sabato', 'sunday' => 'Domenica'];
+                    $availability = old('operator_availability', $config->operator_availability ?? []);
+                  @endphp
+                  
+                  @foreach($days as $dayKey => $dayName)
+                    <div class="flex items-center space-x-4 p-3 border border-gray-200 rounded-lg">
+                      <div class="flex items-center">
+                        <input type="checkbox" name="operator_availability[{{ $dayKey }}][enabled]" value="1"
+                               @checked(isset($availability[$dayKey]['enabled']) && $availability[$dayKey]['enabled'])
+                               class="rounded border-gray-300 text-blue-600 day-enabled">
+                        <span class="ml-2 text-sm font-medium w-20">{{ $dayName }}</span>
+                      </div>
+                      
+                      <div class="flex items-center space-x-2 day-times" style="display: {{ isset($availability[$dayKey]['enabled']) && $availability[$dayKey]['enabled'] ? 'flex' : 'none' }}">
+                        <input type="time" name="operator_availability[{{ $dayKey }}][start_time]"
+                               value="{{ $availability[$dayKey]['start_time'] ?? '09:00' }}"
+                               class="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <span class="text-sm text-gray-500">alle</span>
+                        <input type="time" name="operator_availability[{{ $dayKey }}][end_time]"
+                               value="{{ $availability[$dayKey]['end_time'] ?? '18:00' }}"
+                               class="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                      </div>
+                    </div>
+                  @endforeach
+                </div>
+                @error('operator_availability')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+              </div>
+              
+              <!-- Unavailable Message -->
+              <div>
+                <label for="operator_unavailable_message" class="block text-sm font-medium text-gray-700">
+                  Messaggio quando non disponibile
+                </label>
+                <textarea name="operator_unavailable_message" id="operator_unavailable_message" rows="2"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Operatore non disponibile in questo momento. Ti risponderemo appena possibile.">{{ old('operator_unavailable_message', $config->operator_unavailable_message) }}</textarea>
+                @error('operator_unavailable_message')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <!-- Custom Code -->
         <div class="bg-white rounded-lg shadow p-6">
           <h2 class="text-xl font-semibold mb-4">💻 Codice Personalizzato</h2>
@@ -634,9 +729,44 @@ async function loadCurrentColors() {
   }
 }
 
+// Operator Configuration JavaScript
+function toggleOperatorConfig() {
+  const enabled = document.getElementById('operator_enabled').checked;
+  const config = document.getElementById('operator_config');
+  
+  if (enabled) {
+    config.style.display = 'block';
+  } else {
+    config.style.display = 'none';
+  }
+}
+
+function toggleDayTimes(checkbox) {
+  const dayTimes = checkbox.closest('.flex').querySelector('.day-times');
+  if (checkbox.checked) {
+    dayTimes.style.display = 'flex';
+  } else {
+    dayTimes.style.display = 'none';
+  }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
   toggleCustomColors();
+  
+  // Operator configuration
+  const operatorEnabled = document.getElementById('operator_enabled');
+  if (operatorEnabled) {
+    operatorEnabled.addEventListener('change', toggleOperatorConfig);
+    
+    // Day checkboxes
+    const dayCheckboxes = document.querySelectorAll('.day-enabled');
+    dayCheckboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', function() {
+        toggleDayTimes(this);
+      });
+    });
+  }
 });
 </script>
 
