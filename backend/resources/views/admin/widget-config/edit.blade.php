@@ -481,9 +481,9 @@
               <!-- Availability Schedule -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">
-                  Orari di Disponibilità
+                  Orari di Disponibilità (max 2 fasce orarie per giorno)
                 </label>
-                <div class="space-y-2">
+                <div class="space-y-3">
                   @php
                     $days = ['monday' => 'Lunedì', 'tuesday' => 'Martedì', 'wednesday' => 'Mercoledì', 
                              'thursday' => 'Giovedì', 'friday' => 'Venerdì', 'saturday' => 'Sabato', 'sunday' => 'Domenica'];
@@ -491,26 +491,41 @@
                   @endphp
                   
                   @foreach($days as $dayKey => $dayName)
-                    <div class="flex items-center space-x-4 p-3 border border-gray-200 rounded-lg">
-                      <div class="flex items-center">
+                    <div class="p-3 border border-gray-200 rounded-lg">
+                      <div class="flex items-center mb-2">
                         <input type="checkbox" name="operator_availability[{{ $dayKey }}][enabled]" value="1"
                                @checked(isset($availability[$dayKey]['enabled']) && $availability[$dayKey]['enabled'])
-                               class="rounded border-gray-300 text-blue-600 day-enabled">
-                        <span class="ml-2 text-sm font-medium w-20">{{ $dayName }}</span>
+                               class="rounded border-gray-300 text-blue-600 day-enabled" data-day="{{ $dayKey }}">
+                        <span class="ml-2 text-sm font-medium">{{ $dayName }}</span>
                       </div>
                       
-                      <div class="flex items-center space-x-2 day-times" style="display: {{ isset($availability[$dayKey]['enabled']) && $availability[$dayKey]['enabled'] ? 'flex' : 'none' }}">
-                        <input type="time" name="operator_availability[{{ $dayKey }}][start_time]"
-                               value="{{ $availability[$dayKey]['start_time'] ?? '09:00' }}"
-                               class="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                        <span class="text-sm text-gray-500">alle</span>
-                        <input type="time" name="operator_availability[{{ $dayKey }}][end_time]"
-                               value="{{ $availability[$dayKey]['end_time'] ?? '18:00' }}"
-                               class="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                      <div class="day-times ml-6 space-y-2" style="display: {{ isset($availability[$dayKey]['enabled']) && $availability[$dayKey]['enabled'] ? 'block' : 'none' }}" data-day="{{ $dayKey }}">
+                        @php
+                          $slots = $availability[$dayKey]['slots'] ?? [
+                            ['start_time' => '09:00', 'end_time' => '13:00'],
+                            ['start_time' => '14:00', 'end_time' => '18:00']
+                          ];
+                        @endphp
+                        
+                        @foreach([0, 1] as $slotIndex)
+                          <div class="flex items-center space-x-2">
+                            <span class="text-xs text-gray-500 w-16">Fascia {{ $slotIndex + 1 }}:</span>
+                            <input type="time" name="operator_availability[{{ $dayKey }}][slots][{{ $slotIndex }}][start_time]"
+                                   value="{{ $slots[$slotIndex]['start_time'] ?? '' }}"
+                                   class="text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Inizio">
+                            <span class="text-sm text-gray-500">-</span>
+                            <input type="time" name="operator_availability[{{ $dayKey }}][slots][{{ $slotIndex }}][end_time]"
+                                   value="{{ $slots[$slotIndex]['end_time'] ?? '' }}"
+                                   class="text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Fine">
+                          </div>
+                        @endforeach
                       </div>
                     </div>
                   @endforeach
                 </div>
+                <div class="text-xs text-gray-500 mt-2">💡 Lascia vuoto per indicare chiusura in quella fascia</div>
                 @error('operator_availability')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
               </div>
               
@@ -742,11 +757,14 @@ function toggleOperatorConfig() {
 }
 
 function toggleDayTimes(checkbox) {
-  const dayTimes = checkbox.closest('.flex').querySelector('.day-times');
-  if (checkbox.checked) {
-    dayTimes.style.display = 'flex';
-  } else {
-    dayTimes.style.display = 'none';
+  const day = checkbox.getAttribute('data-day');
+  const dayTimes = document.querySelector(`.day-times[data-day="${day}"]`);
+  if (dayTimes) {
+    if (checkbox.checked) {
+      dayTimes.style.display = 'block';
+    } else {
+      dayTimes.style.display = 'none';
+    }
   }
 }
 

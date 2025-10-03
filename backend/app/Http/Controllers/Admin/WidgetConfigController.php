@@ -161,8 +161,9 @@ class WidgetConfigController extends Controller
             'operator_button_icon' => 'nullable|string|max:50',
             'operator_availability' => 'nullable|array',
             'operator_availability.*.enabled' => 'boolean',
-            'operator_availability.*.start_time' => 'nullable|string|regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/',
-            'operator_availability.*.end_time' => 'nullable|string|regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/',
+            'operator_availability.*.slots' => 'nullable|array',
+            'operator_availability.*.slots.*.start_time' => 'nullable|date_format:H:i',
+            'operator_availability.*.slots.*.end_time' => 'nullable|date_format:H:i',
             'operator_unavailable_message' => 'nullable|string|max:500',
             
             'gdpr_compliant' => 'boolean',

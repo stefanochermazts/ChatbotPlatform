@@ -116,10 +116,24 @@ class WidgetConfig extends Model
         }
         
         $daySchedule = $availability[$currentDay];
-        $startTime = $daySchedule['start_time'] ?? '00:00';
-        $endTime = $daySchedule['end_time'] ?? '23:59';
+        $slots = $daySchedule['slots'] ?? [];
         
-        return $currentTime >= $startTime && $currentTime <= $endTime;
+        // Check if current time is within any of the available slots
+        foreach ($slots as $slot) {
+            $startTime = $slot['start_time'] ?? null;
+            $endTime = $slot['end_time'] ?? null;
+            
+            // Skip empty slots
+            if (!$startTime || !$endTime) {
+                continue;
+            }
+            
+            if ($currentTime >= $startTime && $currentTime <= $endTime) {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     /**

@@ -3096,16 +3096,30 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         return;
       }
       
-      const startTime = daySchedule.start_time || '00:00';
-      const endTime = daySchedule.end_time || '23:59';
+      // Check if current time is within any of the available slots
+      const slots = daySchedule.slots || [];
+      let isAvailable = false;
       
-      if (currentTime < startTime || currentTime > endTime) {
-        this.setOperatorUnavailable();
-        return;
+      for (const slot of slots) {
+        const startTime = slot.start_time;
+        const endTime = slot.end_time;
+        
+        // Skip empty slots
+        if (!startTime || !endTime) {
+          continue;
+        }
+        
+        if (currentTime >= startTime && currentTime <= endTime) {
+          isAvailable = true;
+          break;
+        }
       }
       
-      // Operator is available
-      this.setOperatorAvailable();
+      if (isAvailable) {
+        this.setOperatorAvailable();
+      } else {
+        this.setOperatorUnavailable();
+      }
     }
     
     setOperatorAvailable() {
