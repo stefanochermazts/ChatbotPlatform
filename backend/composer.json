@@ -10,6 +10,7 @@
         "firebase/php-jwt": "^6.11",
         "fivefilters/readability.php": "^3.3",
         "laravel/framework": "^12.0",
+        "laravel/horizon": "^5.34",
         "laravel/reverb": "^1.6",
         "laravel/tinker": "^2.10.1",
         "league/html-to-markdown": "^5.1",

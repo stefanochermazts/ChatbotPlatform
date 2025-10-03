@@ -3,5 +3,6 @@
 return [
     App\Providers\AppServiceProvider::class,
     App\Providers\BroadcastServiceProvider::class,
-    App\Providers\HorizonServiceProvider::class,  // 🆕 Horizon
+    // HorizonServiceProvider caricato condizionalmente in base all'ambiente
+    App\Providers\HorizonServiceProvider::class,
 ];
