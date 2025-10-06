@@ -34,6 +34,7 @@
         <a class="hover:text-blue-600" href="{{ route('admin.operator-console.index') }}">👨‍💼 Operator Console</a>
         @if(auth()->user()->isAdmin())
           <a class="hover:text-blue-600" href="{{ route('admin.utilities.index') }}">⚡ Utilities</a>
+          <a class="hover:text-blue-600" href="/horizon" target="_blank">📊 Horizon</a>
         @endif
         <form method="post" action="{{ route('logout') }}">
           @csrf
