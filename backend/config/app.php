@@ -46,6 +46,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Latency Metrics
+    |--------------------------------------------------------------------------
+    |
+    | Enable latency tracking middleware for performance monitoring.
+    | Set to false to disable overhead in non-production environments.
+    |
+    */
+
+    'latency_metrics_enabled' => (bool) env('LATENCY_METRICS_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------
     |

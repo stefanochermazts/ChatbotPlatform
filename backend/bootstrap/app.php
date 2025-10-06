@@ -12,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // 📊 Latency metrics middleware (applied globally to API routes)
+        $middleware->api(append: [
+            \App\Http\Middleware\LatencyMetrics::class,
+        ]);
+
         $middleware->alias([
             'auth.apikey' => \App\Http\Middleware\AuthenticateApiKey::class,
             'admin.token' => \App\Http\Middleware\EnsureAdminToken::class,

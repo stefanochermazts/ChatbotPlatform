@@ -74,6 +74,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // 📊 LATENCY: Log dedicato per metriche latency e performance
+        'latency' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/latency.log'),
+            'level' => 'info',
+            'days' => 7, // Mantieni 7 giorni di log (molto verboso)
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
