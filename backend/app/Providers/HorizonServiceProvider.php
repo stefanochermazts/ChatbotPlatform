@@ -10,17 +10,25 @@ use Laravel\Horizon\HorizonApplicationServiceProvider;
 class HorizonServiceProvider extends ServiceProvider
 {
     /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        // ✅ CRITICAL: Registra Horizon PRIMA che le route vengano caricate
+        if ($this->app->environment('production')) {
+            if (class_exists(HorizonApplicationServiceProvider::class)) {
+                $this->app->register(HorizonApplicationServiceProvider::class);
+            }
+        }
+    }
+
+    /**
      * Bootstrap any application services.
      */
     public function boot(): void
     {
-        // ✅ Solo in produzione: carica Horizon
+        // ✅ Solo in produzione: configura autorizzazione
         if ($this->app->environment('production')) {
-            // Registra Horizon solo se disponibile
-            if (class_exists(HorizonApplicationServiceProvider::class)) {
-                $this->app->register(HorizonApplicationServiceProvider::class);
-            }
-            
             // 🚨 DEBUG: Disabilita temporaneamente auth per testare
             Horizon::auth(function ($request) {
                 \Log::info('🔍 Horizon::auth() chiamato', [
