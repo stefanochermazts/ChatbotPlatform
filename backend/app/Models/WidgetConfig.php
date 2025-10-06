@@ -219,6 +219,7 @@ class WidgetConfig extends Model
             // Core API configuration
             'apiKey' => $this->tenant->getWidgetApiKey(),
             'tenantId' => $this->tenant->id,
+            'widgetConfigId' => $this->id,
             
             // Theme and appearance from widget config form
             'theme' => $this->theme,
