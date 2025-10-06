@@ -55,17 +55,17 @@ if (-not (Test-Path $ReportDir)) {
 }
 
 # Colors
-function Write-Success { Write-Host "✅ $args" -ForegroundColor Green }
-function Write-Error2 { Write-Host "❌ $args" -ForegroundColor Red }
-function Write-Warning2 { Write-Host "⚠️  $args" -ForegroundColor Yellow }
-function Write-Info { Write-Host "ℹ️  $args" -ForegroundColor Cyan }
+function Write-Success { Write-Host "[OK] $args" -ForegroundColor Green }
+function Write-Error2 { Write-Host "[ERROR] $args" -ForegroundColor Red }
+function Write-Warning2 { Write-Host "[WARNING] $args" -ForegroundColor Yellow }
+function Write-Info { Write-Host "[INFO] $args" -ForegroundColor Cyan }
 
 function Write-Header {
     param([string]$Title)
     Write-Host ""
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+    Write-Host "================================================================" -ForegroundColor Blue
     Write-Host "  $Title" -ForegroundColor Blue
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+    Write-Host "================================================================" -ForegroundColor Blue
     Write-Host ""
 }
 
@@ -419,12 +419,12 @@ function New-Report {
 # Main execution
 Write-Host @"
 
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║         Baseline Metrics Test - Step 1                       ║
-║         Performance Optimization Plan                        ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
+================================================================
+                                                               
+         Baseline Metrics Test - Step 1                       
+         Performance Optimization Plan                        
+                                                               
+================================================================
 
 "@ -ForegroundColor Blue
 
