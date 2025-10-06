@@ -140,11 +140,11 @@ return [
                 'queue' => ['scraping'],
                 'balance' => 'auto',
                 'autoScalingStrategy' => 'simple',  // ✅ Simple = parallelismo immediato
-                'minProcesses' => 3,                 // 🆕 Minimo 3 worker sempre attivi
-                'maxProcesses' => 5,                 // 🚀 Max 5 URL in parallelo
+                'minProcesses' => 5,                 // 🆕 Minimo 3 worker sempre attivi
+                'maxProcesses' => 10,                 // 🚀 Max 5 URL in parallelo
                 'maxTime' => 0,
                 'maxJobs' => 0,
-                'memory' => 512,
+                'memory' => 1024,
                 'tries' => 2,
                 'timeout' => 300,     // 5 minuti timeout per URL
                 'nice' => 0,
@@ -154,11 +154,11 @@ return [
                 'queue' => ['ingestion'],
                 'balance' => 'auto',
                 'autoScalingStrategy' => 'simple',  // ✅ Simple per parallelismo
-                'minProcesses' => 3,                 // 🆕 Minimo 3 worker
-                'maxProcesses' => 5,                 // 🚀 Max 5 documenti in parallelo
+                'minProcesses' => 5,                 // 🆕 Minimo 3 worker
+                'maxProcesses' => 10,                 // 🚀 Max 5 documenti in parallelo
                 'maxTime' => 0,
                 'maxJobs' => 0,
-                'memory' => 1024,
+                'memory' => 1536,
                 'tries' => 3,
                 'timeout' => 1800,    // 30 minuti timeout
                 'nice' => 0,
