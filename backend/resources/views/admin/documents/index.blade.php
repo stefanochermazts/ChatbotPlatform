@@ -44,6 +44,14 @@
   @if(request()->hasAny(['kb_id','source_url','quality_filter']) && (request('kb_id') || request('source_url') || request('quality_filter')))
     <a href="{{ route('admin.documents.index', $tenant) }}" class="text-xs text-gray-600 underline">Reset filtri</a>
   @endif
+  
+  <a href="{{ route('admin.documents.export-excel', array_merge(['tenant' => $tenant->id], request()->all())) }}" 
+     class="ml-auto px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 inline-flex items-center gap-2">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+    </svg>
+    Esporta Excel
+  </a>
 </form>
 
 <!-- Single URL Scraper -->

@@ -135,6 +135,9 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::get('/tenants/{tenant}/documents', [DocumentAdminController::class, 'index'])
         ->name('documents.index')
         ->whereNumber('tenant');
+    Route::get('/tenants/{tenant}/documents/export-excel', [DocumentAdminController::class, 'exportExcel'])
+        ->name('documents.export-excel')
+        ->whereNumber('tenant');
     Route::get('/tenants/{tenant}/documents/{document}/chunks', [DocumentAdminController::class, 'chunks'])
         ->name('documents.chunks')
         ->whereNumber('tenant')

@@ -68,6 +68,110 @@ class DocumentAdminController extends Controller
     }
 
     /**
+     * 📊 Esporta documenti in Excel
+     */
+    public function exportExcel(Request $request, Tenant $tenant)
+    {
+        $kbId = (int) $request->query('kb_id', 0);
+        $sourceUrlSearch = $request->query('source_url', '');
+        $qualityFilter = $request->query('quality_filter', '');
+        
+        // Stessa query dell'index per rispettare i filtri
+        $query = Document::where('tenant_id', $tenant->id);
+        
+        if ($kbId > 0) {
+            $query->where('knowledge_base_id', $kbId);
+        }
+        
+        if (!empty($sourceUrlSearch)) {
+            $query->where(function($q) use ($sourceUrlSearch) {
+                $q->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%')
+                  ->orWhere('title', 'ILIKE', '%' . $sourceUrlSearch . '%');
+            });
+        }
+        
+        if (!empty($qualityFilter)) {
+            switch ($qualityFilter) {
+                case 'high':
+                    $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.7");
+                    break;
+                case 'medium':
+                    $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.4")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.7");
+                    break;
+                case 'low':
+                    $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
+                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.4");
+                    break;
+                case 'no_analysis':
+                    $query->where(function($q) {
+                        $q->whereNull('metadata')
+                          ->orWhereRaw("metadata->'quality_analysis' IS NULL");
+                    });
+                    break;
+            }
+        }
+        
+        // Prendi tutti i documenti (senza paginazione)
+        $documents = $query->orderByDesc('id')->get();
+        
+        // Crea foglio Excel
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        
+        // Imposta intestazioni
+        $sheet->setCellValue('A1', 'ID');
+        $sheet->setCellValue('B1', 'Titolo');
+        $sheet->setCellValue('C1', 'Source URL');
+        $sheet->setCellValue('D1', 'Path');
+        $sheet->setCellValue('E1', 'Ultimo Scraping');
+        $sheet->setCellValue('F1', 'Source');
+        $sheet->setCellValue('G1', 'Status');
+        $sheet->setCellValue('H1', 'KB ID');
+        
+        // Stile header
+        $headerStyle = [
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER]
+        ];
+        $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+        
+        // Popola dati
+        $row = 2;
+        foreach ($documents as $doc) {
+            $sheet->setCellValue('A' . $row, $doc->id);
+            $sheet->setCellValue('B' . $row, $doc->title);
+            $sheet->setCellValue('C' . $row, $doc->source_url ?? 'N/A');
+            $sheet->setCellValue('D' . $row, $doc->path ?? 'N/A');
+            $sheet->setCellValue('E' . $row, $doc->last_scraped_at ? $doc->last_scraped_at->format('Y-m-d H:i:s') : 'N/A');
+            $sheet->setCellValue('F' . $row, $doc->source ?? 'N/A');
+            $sheet->setCellValue('G' . $row, $doc->ingestion_status ?? 'N/A');
+            $sheet->setCellValue('H' . $row, $doc->knowledge_base_id ?? 'N/A');
+            $row++;
+        }
+        
+        // Auto-size colonne
+        foreach(range('A','H') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        
+        // Genera file
+        $filename = 'documenti-' . $tenant->slug . '-' . date('Y-m-d-His') . '.xlsx';
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        
+        // Invia come download
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        
+        $writer->save('php://output');
+        exit;
+    }
+
+    /**
      * 🔄 API per ottenere lo stato dei documenti (per auto-refresh AJAX)
      */
     public function getDocumentStatuses(Request $request, Tenant $tenant)
