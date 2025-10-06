@@ -21,37 +21,21 @@ class HorizonServiceProvider extends ServiceProvider
                 $this->app->register(HorizonApplicationServiceProvider::class);
             }
             
-            // ✅ CRITICAL: Registra il gate di autorizzazione
-            $this->gate();
-        }
-    }
-
-    /**
-     * Register the Horizon gate.
-     *
-     * This gate determines who can access Horizon in non-local environments.
-     */
-    protected function gate(): void
-    {
-        // ✅ Solo in produzione: definisci il gate
-        if ($this->app->environment('production')) {
-            Gate::define('viewHorizon', function ($user) {
-                // ✅ PRODUZIONE: Permetti accesso solo agli admin
-                // Modifica in base alla tua logica di autorizzazione
+            // ✅ CRITICAL: Registra il gate di autorizzazione usando Horizon::auth()
+            Horizon::auth(function ($request) {
+                // Controlla se l'utente è autenticato
+                if (!auth()->check()) {
+                    return false;
+                }
                 
-                // Opzione 1: Permetti solo email specifiche
+                $user = auth()->user();
+                
+                // Permetti accesso solo a email specifiche
                 return in_array($user->email, [
                     'admin@chatbot.local',
                     'admin@maia.chat',
                     'stefano@crowdm.com'
-                    // Aggiungi altre email admin
                 ]);
-                
-                // Opzione 2: Controlla ruolo admin (se hai un campo role)
-                // return $user->role === 'admin' || $user->is_admin === true;
-                
-                // Opzione 3: Controlla se è un super admin
-                // return $user->hasRole('super-admin');
             });
         }
     }
