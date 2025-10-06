@@ -20,6 +20,9 @@ class HorizonServiceProvider extends ServiceProvider
             if (class_exists(HorizonApplicationServiceProvider::class)) {
                 $this->app->register(HorizonApplicationServiceProvider::class);
             }
+            
+            // ✅ CRITICAL: Registra il gate di autorizzazione
+            $this->gate();
         }
     }
 
