@@ -2209,109 +2209,156 @@ class WebScraperService
     private function extractFromJavaScriptSite(string $html, string $url): ?array
     {
         try {
-            // 🚀 STEP 1: Try Readability.php first (same as non-JS sites!)
-            \Log::debug("📖 [JS-EXTRACTION] Trying Readability.php extraction on JavaScript site", [
+            \Log::info("🌐 [JS-EXTRACTION] Starting extraction with league/html-to-markdown", [
                 'url' => $url,
-                'input_html_length' => strlen($html),
-                'html_preview' => substr($html, 0, 300)
+                'html_length' => strlen($html)
             ]);
-            $readabilityResult = $this->extractWithReadability($html, $url);
             
-            if ($readabilityResult && strlen($readabilityResult['content']) > 100) {
-                \Log::info("✅ [JS-EXTRACTION] Readability.php extraction successful", [
+        // 🚀 STEP 1: Clean HTML (remove scripts, styles, nav, footer, etc.)
+        $cleanedHtml = $this->cleanHtmlForJavaScriptSite($html);
+        
+        \Log::debug("🧹 [JS-EXTRACTION] HTML cleaned", [
+            'url' => $url,
+            'original_length' => strlen($html),
+            'cleaned_length' => strlen($cleanedHtml),
+            'reduction_percent' => strlen($html) > 0 ? round((1 - strlen($cleanedHtml) / strlen($html)) * 100, 2) : 0,
+            'cleaned_html_preview' => substr($cleanedHtml, 0, 1000)
+        ]);
+            
+            // 🚀 STEP 2: Convert HTML to Markdown using league/html-to-markdown
+            $converter = new \League\HTMLToMarkdown\HtmlConverter([
+                'strip_tags' => true,
+                'remove_nodes' => 'script style',
+                'hard_break' => true,
+                'header_style' => 'atx',
+            ]);
+            
+            // 🚀 Add TableConverter for better table handling
+            $tableConverter = new \League\HTMLToMarkdown\Converter\TableConverter();
+            $converter->getEnvironment()->addConverter($tableConverter);
+            
+            \Log::debug("📊 [JS-EXTRACTION] TableConverter added for better table support", [
+                'url' => $url
+            ]);
+            
+            $markdown = $converter->convert($cleanedHtml);
+            
+            \Log::debug("📝 [JS-EXTRACTION] HTML converted to Markdown", [
+                'url' => $url,
+                'markdown_length' => strlen($markdown),
+                'markdown_preview' => substr($markdown, 0, 300)
+            ]);
+            
+            // 🚀 STEP 3: Clean up Markdown
+            $markdown = $this->cleanupContent($markdown);
+            
+            // 🚀 STEP 4: Extract title
+            $title = $this->extractTitleFromHtml($html) ?: parse_url($url, PHP_URL_HOST);
+            
+            if (strlen($markdown) < 100) {
+                \Log::warning("⚠️ [JS-EXTRACTION] Extracted content too short", [
                     'url' => $url,
-                    'method' => 'readability',
-                    'content_length' => strlen($readabilityResult['content']),
-                    'content_preview' => substr($readabilityResult['content'], 0, 200),
-                    'extraction_efficiency' => strlen($html) > 0 ? round((strlen($readabilityResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+                    'markdown_length' => strlen($markdown)
                 ]);
-                return $readabilityResult;
+                return null;
             }
             
-            \Log::warning("⚠️ [JS-EXTRACTION] Readability.php failed/insufficient, trying smart patterns", [
+            \Log::info("✅ [JS-EXTRACTION] Extraction successful", [
                 'url' => $url,
-                'readability_content_length' => $readabilityResult ? strlen($readabilityResult['content']) : 0,
-                'input_html_length' => strlen($html),
-                'readability_efficiency' => ($readabilityResult && strlen($html) > 0) ? round((strlen($readabilityResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
+                'method' => 'league/html-to-markdown',
+                'title' => $title,
+                'content_length' => strlen($markdown),
+                'content_preview' => substr($markdown, 0, 200)
             ]);
             
-            // 🚀 STEP 2: Try smart content extraction (uses our Angular patterns!)
-            \Log::debug("🧠 [JS-EXTRACTION] Trying smart content extraction on JavaScript site", [
-                'url' => $url,
-                'input_html_length' => strlen($html),
-                'html_preview' => substr($html, 0, 300)
-            ]);
-            $smartResult = $this->trySmartContentExtraction($html, $url);
-            
-            if ($smartResult && strlen($smartResult['content']) > 100) {
-                \Log::info("🎯 [JS-EXTRACTION] Smart extraction successful", [
-                    'url' => $url,
-                    'pattern_used' => 'smart_patterns',
-                    'content_length' => strlen($smartResult['content']),
-                    'content_preview' => substr($smartResult['content'], 0, 200),
-                    'extraction_efficiency' => strlen($html) > 0 ? round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
-                ]);
-                return $smartResult;
-            }
-            
-            \Log::warning("⚠️ [JS-EXTRACTION] Smart extraction failed/insufficient, falling back to manual DOM", [
-                'url' => $url,
-                'smart_content_length' => $smartResult ? strlen($smartResult['content']) : 0,
-                'input_html_length' => strlen($html),
-                'smart_efficiency' => ($smartResult && strlen($html) > 0) ? round((strlen($smartResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
-            ]);
-            
-            // 🚀 STEP 3: Fallback to manual DOM extraction (same as non-JS sites!)
-            \Log::debug("🎯 [JS-EXTRACTION] Using manual DOM extraction (same as non-JS sites)", [
-                'url' => $url,
-                'original_html_length' => strlen($html)
-            ]);
-            $manualResult = $this->extractWithManualDOM($html, $url, null, null, null);
-            
-            if ($manualResult && strlen($manualResult['content']) > 100) {
-                \Log::info("✅ [JS-EXTRACTION] Manual DOM extraction successful", [
-                    'url' => $url,
-                    'method' => 'manual_dom',
-                    'content_length' => strlen($manualResult['content']),
-                    'content_preview' => substr($manualResult['content'], 0, 200),
-                    'extraction_efficiency' => strlen($html) > 0 ? round((strlen($manualResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
-                ]);
-                return $manualResult;
-            }
-            
-            \Log::warning("⚠️ [JS-EXTRACTION] All primary methods failed, trying Readability.php as last resort", [
-                'url' => $url,
-                'manual_content_length' => $manualResult ? strlen($manualResult['content']) : 0,
-                'input_html_length' => strlen($html),
-                'manual_efficiency' => ($manualResult && strlen($html) > 0) ? round((strlen($manualResult['content']) / strlen($html)) * 100, 2) . '%' : '0%'
-            ]);
-            
-            // 🚀 FALLBACK FINALE: Prova Readability.php come ultima risorsa
-            $readabilityFallback = $this->extractWithReadability($html, $url);
-            if ($readabilityFallback && strlen($readabilityFallback['content']) > 100) {
-                \Log::info("✅ [JS-EXTRACTION] Readability.php last-resort fallback successful", [
-                    'url' => $url,
-                    'method' => 'readability_last_resort',
-                    'content_length' => strlen($readabilityFallback['content']),
-                    'content_preview' => substr($readabilityFallback['content'], 0, 200)
-                ]);
-                return $readabilityFallback;
-            }
-            
-            \Log::warning("❌ [JS-EXTRACTION] All extraction methods failed including Readability.php", [
-                'url' => $url,
-                'readability_content_length' => $readabilityFallback ? strlen($readabilityFallback['content']) : 0
-            ]);
-            
-            return null;
+            return [
+                'title' => $title,
+                'content' => $markdown
+            ];
             
         } catch (\Exception $e) {
-            \Log::warning("❌ JavaScript site extraction failed", [
+            \Log::error("❌ [JS-EXTRACTION] Exception during extraction", [
                 'url' => $url,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return null;
         }
+    }
+    
+    /**
+     * 🧹 Clean HTML specifically for JavaScript-rendered sites
+     */
+    private function cleanHtmlForJavaScriptSite(string $html): string
+    {
+        // 🚀 CRITICAL: Replace Angular component tags FIRST (before DOM parsing)
+        // This ensures league/html-to-markdown can properly parse Angular-rendered content
+        $html = $this->replaceAngularTags($html);
+        
+        \Log::debug("🔧 [JS-CLEAN] Angular tags replaced", [
+            'html_length' => strlen($html)
+        ]);
+        
+        // Load HTML into DOM
+        $dom = new \DOMDocument();
+        libxml_use_internal_errors(true);
+        $dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR);
+        libxml_clear_errors();
+        
+        // Remove unwanted elements
+        $elementsToRemove = [
+            '//script',
+            '//style',
+            '//nav',
+            '//footer',
+            '//header[not(contains(@class, "card"))]', // Keep card headers
+            '//aside',
+            '//*[contains(@class, "nav")]',
+            '//*[contains(@class, "navbar")]',
+            '//*[contains(@class, "menu")]',
+            '//*[contains(@class, "footer")]',
+            '//*[contains(@class, "ads")]',
+            '//*[contains(@class, "advertisement")]',
+            '//*[contains(@class, "cookie")]',
+            '//*[contains(@class, "privacy")]',
+        ];
+        
+        $xpath = new \DOMXPath($dom);
+        foreach ($elementsToRemove as $selector) {
+            $nodes = $xpath->query($selector);
+            foreach ($nodes as $node) {
+                if ($node->parentNode) {
+                    $node->parentNode->removeChild($node);
+                }
+            }
+        }
+        
+        // Try to find main content area
+        $mainContentSelectors = [
+            '//*[@role="main"]',
+            '//*[contains(@class, "main-content")]',
+            '//*[contains(@class, "page-content")]',
+            '//*[contains(@class, "container")]',
+            '//main',
+            '//article',
+            '//body'
+        ];
+        
+        foreach ($mainContentSelectors as $selector) {
+            $nodes = $xpath->query($selector);
+            if ($nodes->length > 0) {
+                $mainNode = $nodes->item(0);
+                $cleanHtml = $dom->saveHTML($mainNode);
+                \Log::debug("🎯 [JS-CLEAN] Found main content with selector", [
+                    'selector' => $selector,
+                    'content_length' => strlen($cleanHtml)
+                ]);
+                return $cleanHtml;
+            }
+        }
+        
+        // Fallback: return cleaned full body
+        return $dom->saveHTML();
     }
     
     /**
@@ -2410,6 +2457,8 @@ class WebScraperService
             '</app-md-files>' => '</div>',
             '<app-converter-file>' => '<div class="converter-file">',
             '</app-converter-file>' => '</div>',
+            '<app-md-contacts>' => '<div class="md-contacts">',
+            '</app-md-contacts>' => '</div>',
             // Add more as needed
         ];
         

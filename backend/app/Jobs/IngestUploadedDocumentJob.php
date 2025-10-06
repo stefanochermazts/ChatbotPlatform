@@ -325,19 +325,36 @@ class IngestUploadedDocumentJob implements ShouldQueue
         }
 
         // 📝 STEP 3: Chunking normale per il resto del testo (escludendo tabelle)
+        // 🚫 SKIP extractDirectoryEntries per documenti scraped: il Markdown è già ben formattato
+        $isScrapedDocument = in_array($doc->source, ['web_scraper', 'web_scraper_linked'], true);
+        
+        Log::info("chunking.scraped_document_check", [
+            'document_id' => $doc->id,
+            'source' => $doc->source,
+            'is_scraped' => $isScrapedDocument
+        ]);
+        
         if (count($tables) > 0) {
             $textWithoutTables = $this->removeTablesFromText($text, $tables);
             $normalizedText = $this->normalizePlainText($textWithoutTables);
-            // Prova estrazione directory entries (Nome/Telefono/Indirizzo)
-            $dirEntries = $this->extractDirectoryEntries($normalizedText);
-            if (!empty($dirEntries)) {
-                $chunks = array_merge($chunks, $dirEntries);
-                // Rimuovi possibili duplicati riducendo il testo per chunking standard
-                // (heuristic: se molte directory entries trovate, skippa chunking standard per evitare ripetizioni)
-                if (count($dirEntries) >= 5) {
-                    return $chunks;
+            
+            // Prova estrazione directory entries (Nome/Telefono/Indirizzo) SOLO per documenti NON scraped
+            if (!$isScrapedDocument) {
+                $dirEntries = $this->extractDirectoryEntries($normalizedText);
+                if (!empty($dirEntries)) {
+                    $chunks = array_merge($chunks, $dirEntries);
+                    // Rimuovi possibili duplicati riducendo il testo per chunking standard
+                    // (heuristic: se molte directory entries trovate, skippa chunking standard per evitare ripetizioni)
+                    if (count($dirEntries) >= 5) {
+                        Log::info("table_aware_chunking.directory_entries_only", [
+                            'document_id' => $doc->id,
+                            'entries_count' => count($dirEntries)
+                        ]);
+                        return $chunks;
+                    }
                 }
             }
+            
             if (trim($normalizedText) !== '') {
                 $regularChunks = $this->performStandardChunking($normalizedText, $max, $overlap);
                 $chunks = array_merge($chunks, $regularChunks);
@@ -345,14 +362,22 @@ class IngestUploadedDocumentJob implements ShouldQueue
         } else {
             // Nessuna tabella trovata, chunking normale su tutto il testo
             $normalizedText = $this->normalizePlainText($text);
-            // Directory-aware splitter per liste di contatti
-            $dirEntries = $this->extractDirectoryEntries($normalizedText);
-            if (!empty($dirEntries)) {
-                $chunks = array_merge($chunks, $dirEntries);
-                if (count($dirEntries) >= 5) {
-                    return $chunks;
+            
+            // Directory-aware splitter per liste di contatti SOLO per documenti NON scraped
+            if (!$isScrapedDocument) {
+                $dirEntries = $this->extractDirectoryEntries($normalizedText);
+                if (!empty($dirEntries)) {
+                    $chunks = array_merge($chunks, $dirEntries);
+                    if (count($dirEntries) >= 5) {
+                        Log::info("table_aware_chunking.directory_entries_only", [
+                            'document_id' => $doc->id,
+                            'entries_count' => count($dirEntries)
+                        ]);
+                        return $chunks;
+                    }
                 }
             }
+            
             $regularChunks = $this->performStandardChunking($normalizedText, $max, $overlap);
             $chunks = array_merge($chunks, $regularChunks);
         }
