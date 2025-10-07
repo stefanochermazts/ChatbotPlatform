@@ -3433,16 +3433,10 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const sessionId = this.conversationTracker?.agentSessionId || '';
       console.log('🔍 ChatbotWidget.sendMessage - passing session ID:', sessionId);
       
-      // 🚀 STREAMING: Create message element ONCE before streaming starts
+      // 🚀 STREAMING: Create message element on FIRST chunk, not before
       let messageElement = null;
       let contentDiv = null;
       let accumulatedContent = '';
-      
-      // Pre-create the message element for streaming updates
-      if (this.ui && typeof this.ui.addBotMessage === 'function') {
-        messageElement = this.ui.addBotMessage('', []); // Empty message, will be updated
-        contentDiv = messageElement?.querySelector('.message-content');
-      }
       
       const response = await this.api.sendMessage(messages, {
         model: this.options.model,
@@ -3453,7 +3447,13 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         onChunk: (delta, accumulated) => {
           accumulatedContent = accumulated;
           
-          // ✅ Update EXISTING message element, don't create new ones
+          // ✅ Create message element on FIRST chunk only
+          if (!messageElement && this.ui && typeof this.ui.addBotMessage === 'function') {
+            messageElement = this.ui.addBotMessage('', []); // Empty message, will be updated
+            contentDiv = messageElement?.querySelector('.message-content');
+          }
+          
+          // ✅ Update EXISTING message element with accumulated content
           if (contentDiv) {
             // Use markdown parser if available
             if (typeof marked !== 'undefined') {
@@ -3529,8 +3529,8 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       
       // Emit event with analytics data for tracking
       this.events.emit(CONFIG.events.MESSAGE_RECEIVED, {
-        content: response.content,
-        citations: response.citations,
+        content: finalContent,
+        citations: finalCitations,
         responseTime: responseTime,
         confidence: response.confidence,
         tokensUsed: response.usage?.total_tokens
