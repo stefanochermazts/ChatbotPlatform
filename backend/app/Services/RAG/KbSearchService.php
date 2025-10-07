@@ -40,20 +40,30 @@ class KbSearchService
             'breakdown' => []
         ];
         
-        // ⏱️ STEP 1: Query Normalization
+        // ⏱️ STEP 1: Query Normalization & Synonym Expansion
         $stepStart = microtime(true);
         $normalizedQuery = $this->normalizeQuery($query);
+        
+        // 🔧 ESPANSIONE SINONIMI: Espandi sempre la query con i sinonimi del tenant
+        // Questo migliora significativamente il retrieval semantico e BM25
+        $expandedQuery = $this->expandQueryWithSynonyms($normalizedQuery, $tenantId);
+        
         $profiling['breakdown']['Query Normalization'] = round((microtime(true) - $stepStart) * 1000, 2);
         
-        if ($normalizedQuery !== $query && $debug) {
-            Log::info('[RAG] Query normalized', [
+        if ($debug && ($normalizedQuery !== $query || $expandedQuery !== $normalizedQuery)) {
+            Log::info('[RAG] Query normalized and expanded', [
                 'original' => $query,
-                'normalized' => $normalizedQuery
+                'normalized' => $normalizedQuery,
+                'expanded' => $expandedQuery,
+                'synonyms_applied' => $expandedQuery !== $normalizedQuery
             ]);
         }
         if ($query === '') {
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $profiling : null];
         }
+        
+        // Usa la query espansa per tutto il resto del processo
+        $normalizedQuery = $expandedQuery;
 
         // ⏱️ STEP 2: Tenant & Language Setup
         $stepStart = microtime(true);
@@ -1269,17 +1279,54 @@ class KbSearchService
     }
     
     /**
-     * Espande la query con sinonimi comuni per migliorare l'intent detection
+     * Espande la query con sinonimi comuni per migliorare il retrieval semantico e BM25
+     * 
+     * @param string $query Query originale
+     * @param int|null $tenantId ID del tenant per sinonimi personalizzati
+     * @return string Query espansa con sinonimi
      */
     private function expandQueryWithSynonyms(string $query, ?int $tenantId = null): string
     {
         $synonyms = $this->getTenantSynonyms($tenantId);
+        
+        if (empty($synonyms)) {
+            return $query; // Nessun sinonimo configurato
+        }
 
+        // Normalizza la query per il matching case-insensitive
+        $queryLower = mb_strtolower($query);
         $expanded = $query;
-        foreach ($synonyms as $term => $synonymList) {
-            if (str_contains($query, $term)) {
-                $expanded .= ' ' . $synonymList;
+        $addedSynonyms = [];
+        
+        // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
+        $sortedSynonyms = $synonyms;
+        uksort($sortedSynonyms, fn($a, $b) => strlen($b) - strlen($a));
+        
+        foreach ($sortedSynonyms as $term => $synonymList) {
+            $termLower = mb_strtolower($term);
+            
+            // Match case-insensitive con word boundary per evitare match parziali
+            // Es: "comune" non deve matchare in "comunemente"
+            if (preg_match('/\b' . preg_quote($termLower, '/') . '\b/u', $queryLower)) {
+                // Aggiungi i sinonimi evitando duplicati
+                $synonymWords = preg_split('/[\s,]+/', $synonymList, -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($synonymWords as $synonym) {
+                    $synonym = trim($synonym);
+                    $synonymLower = mb_strtolower($synonym);
+                    
+                    // Evita duplicati: non aggiungere se già presente nella query o nei sinonimi aggiunti
+                    if ($synonym !== '' && 
+                        !str_contains($queryLower, $synonymLower) && 
+                        !in_array($synonymLower, $addedSynonyms, true)) {
+                        $addedSynonyms[] = $synonymLower;
+                    }
+                }
             }
+        }
+        
+        // Aggiungi i sinonimi alla query
+        if (!empty($addedSynonyms)) {
+            $expanded .= ' ' . implode(' ', $addedSynonyms);
         }
 
         return $expanded;
