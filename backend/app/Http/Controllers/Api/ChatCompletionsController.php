@@ -29,7 +29,7 @@ class ChatCompletionsController extends Controller
         private readonly CompleteQueryDetector $completeDetector,
     ) {}
 
-    public function create(Request $request): JsonResponse
+    public function create(Request $request): JsonResponse|\Symfony\Component\HttpFoundation\StreamedResponse
     {
         $requestStartTime = microtime(true);
         $profiling = ['request_start' => $requestStartTime, 'steps' => []];
