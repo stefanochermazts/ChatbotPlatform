@@ -519,7 +519,9 @@ IMPORTANTE per i link:
                 // 🔗 Aggiungi URL fonte per evitare allucinazioni nei link
                 $sourceInfo = '';
                 if (!empty($c['document_source_url'])) {
-                    $sourceInfo = "\n[Fonte: ".$this->cleanUtf8($c['document_source_url'])."]";
+                    // 🔧 FIX: Non usare parentesi quadre perché confondono l'LLM facendogli pensare
+                    // che sia un link markdown incompleto, portandolo ad inventare ###URLMASK###
+                    $sourceInfo = "\nFonte originale: ".$this->cleanUtf8($c['document_source_url']);
                 }
                 
                 if ($content !== '') {
