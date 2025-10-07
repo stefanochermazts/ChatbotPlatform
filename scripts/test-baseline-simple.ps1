@@ -31,10 +31,16 @@ if (-not $ApiKey) {
     exit 1
 }
 
+# Skip SSL certificate validation for local development
+if (-not $Production) {
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+}
+
 # Test 1: Health Check
 Write-Host "`n[1/5] Health Check..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/up" -UseBasicParsing -TimeoutSec 10
+    $response = Invoke-WebRequest -Uri "$BaseUrl/up" -UseBasicParsing -TimeoutSec 10 -SkipCertificateCheck
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] Health check passed" -ForegroundColor Green
     }
@@ -58,7 +64,7 @@ try {
         "Authorization" = "Bearer $ApiKey"
     }
     
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/chat/completions" -Method POST -Headers $headers -Body $payload -UseBasicParsing -TimeoutSec 30
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/chat/completions" -Method POST -Headers $headers -Body $payload -UseBasicParsing -TimeoutSec 30 -SkipCertificateCheck
     
     $latency = $response.Headers['X-Latency-Ms']
     $correlation = $response.Headers['X-Correlation-Id']
@@ -131,7 +137,7 @@ for ($i = 1; $i -le 5; $i++) {
         $response = Invoke-RestMethod -Uri "$BaseUrl/api/v1/chat/completions" -Method POST -Headers @{
             "Content-Type" = "application/json"
             "Authorization" = "Bearer $ApiKey"
-        } -Body $payload -TimeoutSec 30
+        } -Body $payload -TimeoutSec 30 -SkipCertificateCheck
         $sw.Stop()
         
         $latency = $sw.ElapsedMilliseconds
