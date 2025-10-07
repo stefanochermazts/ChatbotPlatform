@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Streaming SSE - ChatbotPlatform</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .test-controls {
+            margin-bottom: 30px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .response-box {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 200px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+        .response-box.streaming {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .metric {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .metric-value.good {
+            color: #28a745;
+        }
+        .metric-value.warning {
+            color: #ffc107;
+        }
+        .metric-value.bad {
+            color: #dc3545;
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        .status.idle {
+            background: #e9ecef;
+            color: #666;
+        }
+        .status.streaming {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status.complete {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+        }
+        .log-entry.info {
+            color: #4fc3f7;
+        }
+        .log-entry.success {
+            color: #66bb6a;
+        }
+        .log-entry.error {
+            color: #ef5350;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Test Streaming SSE</h1>
+        <p class="subtitle">Test dell'implementazione Server-Sent Events per ridurre la latenza percepita</p>
+
+        <div class="test-controls">
+            <button id="testStreaming" onclick="testStreaming()">Test Streaming</button>
+            <button id="testNonStreaming" onclick="testNonStreaming()">Test Non-Streaming</button>
+            <button id="clearLog" onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div id="status" class="status idle">Idle</div>
+
+        <div id="response" class="response-box">
+            <em>La risposta apparirà qui...</em>
+        </div>
+
+        <div class="metrics">
+            <div class="metric">
+                <div class="metric-label">Time to First Byte</div>
+                <div id="ttfb" class="metric-value">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Total Time</div>
+                <div id="totalTime" class="metric-value">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Chunks Received</div>
+                <div id="chunks" class="metric-value">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Response Length</div>
+                <div id="length" class="metric-value">-</div>
+            </div>
+        </div>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const API_KEY = 'test-key'; // Replace with your API key
+        const BASE_URL = window.location.origin;
+        const API_ENDPOINT = '/api/v1/chat/completions';
+
+        let startTime, firstByteTime, chunkCount;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function setStatus(text, className) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = text;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function updateMetric(id, value, className = '') {
+            const elem = document.getElementById(id);
+            elem.textContent = value;
+            elem.className = `metric-value ${className}`;
+        }
+
+        async function testStreaming() {
+            log('🚀 Starting streaming test...', 'info');
+            setStatus('Streaming...', 'streaming');
+            
+            const responseDiv = document.getElementById('response');
+            responseDiv.className = 'response-box streaming';
+            responseDiv.textContent = '';
+            
+            startTime = performance.now();
+            firstByteTime = null;
+            chunkCount = 0;
+            
+            updateMetric('ttfb', '-');
+            updateMetric('totalTime', '-');
+            updateMetric('chunks', '0');
+            updateMetric('length', '0');
+
+            try {
+                const response = await fetch(BASE_URL + API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            { role: 'user', content: 'Spiega in 3 paragrafi cos\'è il machine learning' }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500,
+                        stream: true
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let accumulated = '';
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) break;
+
+                    if (!firstByteTime) {
+                        firstByteTime = performance.now();
+                        const ttfb = Math.round(firstByteTime - startTime);
+                        updateMetric('ttfb', `${ttfb}ms`, ttfb < 1000 ? 'good' : ttfb < 2000 ? 'warning' : 'bad');
+                        log(`✅ First byte received in ${ttfb}ms`, 'success');
+                    }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.trim() || !line.startsWith('data: ')) continue;
+
+                        const data = line.slice(6).trim();
+                        
+                        if (data === '[DONE]') {
+                            log('✅ Stream completed', 'success');
+                            break;
+                        }
+
+                        try {
+                            const chunk = JSON.parse(data);
+                            const delta = chunk.choices?.[0]?.delta?.content || '';
+                            
+                            if (delta) {
+                                accumulated += delta;
+                                chunkCount++;
+                                responseDiv.textContent = accumulated;
+                                updateMetric('chunks', chunkCount);
+                                updateMetric('length', accumulated.length);
+                            }
+                        } catch (e) {
+                            log(`⚠️ Failed to parse chunk: ${e.message}`, 'error');
+                        }
+                    }
+                }
+
+                const totalTime = Math.round(performance.now() - startTime);
+                updateMetric('totalTime', `${totalTime}ms`, totalTime < 5000 ? 'good' : totalTime < 10000 ? 'warning' : 'bad');
+                
+                setStatus('Complete', 'complete');
+                log(`✅ Streaming test completed in ${totalTime}ms`, 'success');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+                setStatus('Error', 'error');
+                responseDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function testNonStreaming() {
+            log('📦 Starting non-streaming test...', 'info');
+            setStatus('Loading...', 'streaming');
+            
+            const responseDiv = document.getElementById('response');
+            responseDiv.className = 'response-box';
+            responseDiv.textContent = 'Waiting for response...';
+            
+            startTime = performance.now();
+            
+            updateMetric('ttfb', '-');
+            updateMetric('totalTime', '-');
+            updateMetric('chunks', 'N/A');
+            updateMetric('length', '0');
+
+            try {
+                const response = await fetch(BASE_URL + API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            { role: 'user', content: 'Spiega in 3 paragrafi cos\'è il machine learning' }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500,
+                        stream: false
+                    })
+                });
+
+                const totalTime = Math.round(performance.now() - startTime);
+                updateMetric('ttfb', `${totalTime}ms`, totalTime < 2000 ? 'good' : totalTime < 5000 ? 'warning' : 'bad');
+                updateMetric('totalTime', `${totalTime}ms`, totalTime < 5000 ? 'good' : totalTime < 10000 ? 'warning' : 'bad');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                const content = data.choices?.[0]?.message?.content || 'No content';
+                
+                responseDiv.textContent = content;
+                updateMetric('length', content.length);
+                
+                setStatus('Complete', 'complete');
+                log(`✅ Non-streaming test completed in ${totalTime}ms`, 'success');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+                setStatus('Error', 'error');
+                responseDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        log('✅ Test page loaded', 'success');
+        log('ℹ️ Update API_KEY in the script if needed', 'info');
+    </script>
+</body>
+</html>
