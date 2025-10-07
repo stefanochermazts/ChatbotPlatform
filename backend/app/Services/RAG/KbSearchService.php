@@ -59,7 +59,12 @@ class KbSearchService
         $stepStart = microtime(true);
         $this->activeLangs = $this->getTenantLanguages($tenantId);
         $tenant = \App\Models\Tenant::find($tenantId);
-        $useMultiKb = $tenant && $tenant->multi_kb_search;
+        // 🔧 FIX: Leggi multi_kb_search da rag_settings invece di colonna diretta
+        $useMultiKb = false;
+        if ($tenant) {
+            $ragSettings = is_string($tenant->rag_settings) ? json_decode($tenant->rag_settings, true) : (array)$tenant->rag_settings;
+            $useMultiKb = ($ragSettings['multi_kb_search']['enabled'] ?? false) === true;
+        }
         $profiling['breakdown']['Tenant Setup'] = round((microtime(true) - $stepStart) * 1000, 2);
 
         // ⏱️ STEP 3: Intent Detection

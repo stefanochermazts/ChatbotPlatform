@@ -37,12 +37,16 @@ class FastEmbeddingReranker implements RerankerInterface
             // 4. Position bias (mantieni ordine originale come tie-breaker)
             $positionScore = 1.0 - ($i / count($candidates)) * 0.1;
             
+            // 5. Exact phrase match bonus
+            $exactMatchScore = $this->calculateExactMatchScore($query, $text);
+            
             // Combina scores senza embeddings
             $scores[$i] = (
-                $keywordScore * 0.4 +    // Keyword overlap
-                $tfScore * 0.3 +         // Term frequency
-                $lengthScore * 0.2 +     // Length factor
-                $positionScore * 0.1     // Position bias
+                $keywordScore * 0.3 +      // Keyword overlap (ridotto da 0.4)
+                $tfScore * 0.25 +          // Term frequency (ridotto da 0.3)
+                $lengthScore * 0.15 +      // Length factor (ridotto da 0.2)
+                $exactMatchScore * 0.25 +  // Exact phrase match (nuovo!)
+                $positionScore * 0.05      // Position bias (ridotto da 0.1)
             );
         }
 
@@ -73,7 +77,14 @@ class FastEmbeddingReranker implements RerankerInterface
     {
         if (empty($queryWords)) return 0.0;
         $intersection = array_intersect($queryWords, $textWords);
-        return count($intersection) / count($queryWords);
+        
+        // 🔧 FIX: Bonus se TUTTE le parole chiave sono presenti
+        $baseScore = count($intersection) / count($queryWords);
+        if ($baseScore >= 0.99) {
+            return 1.0; // Tutte le parole presenti → score massimo
+        }
+        
+        return $baseScore;
     }
     
     private function calculateTermFrequency(string $query, string $text): float
@@ -95,13 +106,55 @@ class FastEmbeddingReranker implements RerankerInterface
     {
         $length = strlen($text);
         
-        // Preferisci testi di lunghezza media (300-800 caratteri)
-        if ($length >= 300 && $length <= 800) {
+        // 🔧 FIX: Non penalizzare chunk corti (da tabelle esplose)
+        // Accetta qualsiasi lunghezza tra 100 e 1000 caratteri come ottimale
+        if ($length >= 100 && $length <= 1000) {
             return 1.0;
-        } elseif ($length < 300) {
-            return $length / 300; // Penalizza testi troppo corti
+        } elseif ($length < 100) {
+            return max(0.7, $length / 100); // Penalizza solo chunk molto corti (< 100 caratteri)
         } else {
-            return max(0.5, 800 / $length); // Penalizza testi troppo lunghi
+            return max(0.5, 1000 / $length); // Penalizza testi troppo lunghi
         }
+    }
+    
+    private function calculateExactMatchScore(string $query, string $text): float
+    {
+        $query = strtolower(trim($query));
+        $text = strtolower($text);
+        
+        // 🔧 FIX: Bonus per match esatti della query nel testo
+        // Questo aiuta a trovare chunk come "Sabelli Alessandra - Sindaco" per query "sindaco"
+        
+        // 1. Exact phrase match (query completa presente nel testo)
+        if (str_contains($text, $query)) {
+            return 1.0;
+        }
+        
+        // 2. Partial match: tutte le parole della query sono vicine nel testo
+        $queryWords = preg_split('/\s+/', $query);
+        if (count($queryWords) === 1) {
+            // Single word query: check if it's a standalone word (not part of another word)
+            if (preg_match('/\b' . preg_quote($query, '/') . '\b/', $text)) {
+                return 0.9;
+            }
+        } else {
+            // Multi-word query: check if words appear close together (within 50 chars)
+            $positions = [];
+            foreach ($queryWords as $word) {
+                $pos = strpos($text, $word);
+                if ($pos !== false) {
+                    $positions[] = $pos;
+                }
+            }
+            
+            if (count($positions) === count($queryWords)) {
+                $span = max($positions) - min($positions);
+                if ($span < 50) {
+                    return 0.8; // Words are close together
+                }
+            }
+        }
+        
+        return 0.0;
     }
 }
