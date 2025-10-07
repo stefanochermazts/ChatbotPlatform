@@ -3433,31 +3433,69 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const sessionId = this.conversationTracker?.agentSessionId || '';
       console.log('🔍 ChatbotWidget.sendMessage - passing session ID:', sessionId);
       
-      // 🚀 STREAMING: Disabled by default for stability
-      // TODO: Fix streaming loop issue before re-enabling
+      // 🚀 STREAMING: Create message element ONCE before streaming starts
+      let messageElement = null;
+      let contentDiv = null;
+      let accumulatedContent = '';
+      
+      // Pre-create the message element for streaming updates
+      if (this.ui && typeof this.ui.addBotMessage === 'function') {
+        messageElement = this.ui.addBotMessage('', []); // Empty message, will be updated
+        contentDiv = messageElement?.querySelector('.message-content');
+      }
+      
       const response = await this.api.sendMessage(messages, {
         model: this.options.model,
         temperature: this.options.temperature,
         maxTokens: this.options.maxTokens,
         sessionId: sessionId,
-        stream: false, // ❌ Disabled streaming temporarily
+        stream: true, // ✅ Re-enabled streaming with proper fix
+        onChunk: (delta, accumulated) => {
+          accumulatedContent = accumulated;
+          
+          // ✅ Update EXISTING message element, don't create new ones
+          if (contentDiv) {
+            // Use markdown parser if available
+            if (typeof marked !== 'undefined') {
+              contentDiv.innerHTML = marked.parse(accumulated);
+            } else {
+              contentDiv.textContent = accumulated;
+            }
+            
+            // Auto-scroll to bottom as content updates
+            const messagesContainer = this.ui?.elements?.messages;
+            if (messagesContainer) {
+              messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+          }
+        }
       });
       
       const responseTime = performance.now() - startTime;
       
-      // Add bot response to UI and state (non-streaming mode)
-      try {
-        if (typeof this.addBotMessage === 'function') {
-          this.addBotMessage(response.content, response.citations);
-        } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
-          this.ui.addBotMessage(response.content, response.citations);
-        } else {
-          console.warn('⚠️ addBotMessage not available, using fallback');
+      // Add citations after streaming completes
+      if (messageElement && response.citations && response.citations.length > 0) {
+        const citationsDiv = messageElement.querySelector('.message-citations');
+        if (citationsDiv && this.ui && typeof this.ui.renderCitations === 'function') {
+          citationsDiv.innerHTML = this.ui.renderCitations(response.citations);
+        }
+      }
+      
+      // Fallback: if streaming failed or message element wasn't created
+      if (!messageElement) {
+        console.warn('⚠️ Streaming failed, using non-streaming fallback');
+        try {
+          if (typeof this.addBotMessage === 'function') {
+            this.addBotMessage(response.content, response.citations);
+          } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
+            this.ui.addBotMessage(response.content, response.citations);
+          } else {
+            this.addBotMessageDirectly?.(response.content, response.citations);
+          }
+        } catch (e) {
+          console.error('🚨 Failed to render bot message:', e);
           this.addBotMessageDirectly?.(response.content, response.citations);
         }
-      } catch (e) {
-        console.error('🚨 Failed to render bot message:', e);
-        this.addBotMessageDirectly?.(response.content, response.citations);
       }
       this.state.addMessage({ 
         role: 'assistant', 
