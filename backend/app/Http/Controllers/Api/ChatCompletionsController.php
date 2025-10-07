@@ -308,8 +308,14 @@ IMPORTANTE per i link:
             'user_message_preview' => mb_substr($payload['messages'][count($payload['messages'])-1]['content'] ?? '', 0, 300),
         ]);
 
-        // Non aggiungiamo ulteriori system messages legati a expansion
+        // 🚀 STREAMING: Se richiesto, usa SSE invece di risposta sincrona
         $stepStart = microtime(true);
+        $isStreaming = ($validated['stream'] ?? false) === true;
+        
+        if ($isStreaming) {
+            return $this->handleStreamingResponse($payload, $profiling, $requestStartTime);
+        }
+        
         $result = $this->chat->chatCompletions($payload);
         $profiling['steps']['llm_completion'] = microtime(true) - $stepStart;
 
@@ -381,6 +387,81 @@ IMPORTANTE per i link:
         
         \Log::info("WIDGET RAG DEBUG END");
         return response()->json($result);
+    }
+
+    /**
+     * Handle streaming response using Server-Sent Events (SSE)
+     */
+    private function handleStreamingResponse(array $payload, array $profiling, float $requestStartTime)
+    {
+        return response()->stream(function () use ($payload, $profiling, $requestStartTime) {
+            // Set headers for SSE
+            header('Content-Type: text/event-stream');
+            header('Cache-Control: no-cache');
+            header('Connection: keep-alive');
+            header('X-Accel-Buffering: no'); // Disable nginx buffering
+            
+            $accumulated = '';
+            $chunkCount = 0;
+            
+            try {
+                $result = $this->chat->chatCompletionsStream($payload, function ($delta, $chunkData) use (&$accumulated, &$chunkCount) {
+                    $accumulated .= $delta;
+                    $chunkCount++;
+                    
+                    // Send SSE chunk
+                    echo "data: " . json_encode($chunkData) . "\n\n";
+                    
+                    // Flush output buffer
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                });
+                
+                // Send final [DONE] message
+                echo "data: [DONE]\n\n";
+                
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+                
+                $totalRequestTime = microtime(true) - $requestStartTime;
+                
+                \Log::info("STREAMING CHAT COMPLETED", [
+                    'chunks_sent' => $chunkCount,
+                    'total_length' => strlen($accumulated),
+                    'total_time_ms' => round($totalRequestTime * 1000, 2),
+                    'model' => $result['model'] ?? 'unknown',
+                    'usage' => $result['usage'] ?? []
+                ]);
+                
+            } catch (\Exception $e) {
+                \Log::error("STREAMING ERROR", [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                
+                // Send error as SSE
+                echo "data: " . json_encode([
+                    'error' => [
+                        'message' => 'Streaming failed: ' . $e->getMessage(),
+                        'type' => 'stream_error'
+                    ]
+                ]) . "\n\n";
+                
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'Connection' => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     private function extractUserQuery(array $messages): string

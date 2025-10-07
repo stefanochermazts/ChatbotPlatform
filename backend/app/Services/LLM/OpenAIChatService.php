@@ -59,6 +59,160 @@ class OpenAIChatService
     }
 
     /**
+     * Stream chat completions using Server-Sent Events (SSE)
+     * 
+     * @param array $payload OpenAI chat completion payload
+     * @param callable $onChunk Callback for each chunk: function(string $delta, array $chunkData)
+     * @return array Final completion data with accumulated content
+     */
+    public function chatCompletionsStream(array $payload, callable $onChunk): array
+    {
+        $apiKey = (string) config('openai.api_key');
+        
+        // Mock mode: simulate streaming
+        if ($apiKey === '') {
+            $content = $this->buildEchoContent($payload);
+            $words = explode(' ', $content);
+            $accumulated = '';
+            
+            foreach ($words as $i => $word) {
+                $delta = ($i > 0 ? ' ' : '') . $word;
+                $accumulated .= $delta;
+                
+                $chunkData = [
+                    'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
+                    'object' => 'chat.completion.chunk',
+                    'created' => time(),
+                    'model' => $payload['model'] ?? 'gpt-4o-mini',
+                    'choices' => [[
+                        'index' => 0,
+                        'delta' => ['content' => $delta],
+                        'finish_reason' => null,
+                    ]],
+                ];
+                
+                $onChunk($delta, $chunkData);
+                usleep(50000); // 50ms delay for realistic simulation
+            }
+            
+            // Final chunk
+            $finalChunk = [
+                'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
+                'object' => 'chat.completion.chunk',
+                'created' => time(),
+                'model' => $payload['model'] ?? 'gpt-4o-mini',
+                'choices' => [[
+                    'index' => 0,
+                    'delta' => [],
+                    'finish_reason' => 'stop',
+                ]],
+            ];
+            $onChunk('', $finalChunk);
+            
+            return [
+                'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
+                'object' => 'chat.completion',
+                'created' => time(),
+                'model' => $payload['model'] ?? 'gpt-4o-mini',
+                'choices' => [[
+                    'index' => 0,
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => $accumulated,
+                    ],
+                    'finish_reason' => 'stop',
+                ]],
+                'usage' => [
+                    'prompt_tokens' => 0,
+                    'completion_tokens' => str_word_count($accumulated),
+                    'total_tokens' => str_word_count($accumulated),
+                ],
+            ];
+        }
+
+        // Real streaming with OpenAI
+        $payload = $this->adaptPayloadForModel($payload);
+        $payload['stream'] = true;
+
+        $response = $this->http->post('/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer '.$apiKey,
+                'Content-Type' => 'application/json',
+            ],
+            'json' => $payload,
+            'stream' => true,
+        ]);
+
+        $body = $response->getBody();
+        $accumulated = '';
+        $lastChunkData = null;
+
+        while (!$body->eof()) {
+            $line = $this->readLine($body);
+            
+            if (trim($line) === '' || !str_starts_with($line, 'data: ')) {
+                continue;
+            }
+
+            $data = trim(substr($line, 6));
+            
+            if ($data === '[DONE]') {
+                break;
+            }
+
+            $chunkData = json_decode($data, true);
+            if (!$chunkData) {
+                continue;
+            }
+
+            $lastChunkData = $chunkData;
+            $delta = $chunkData['choices'][0]['delta']['content'] ?? '';
+            
+            if ($delta !== '') {
+                $accumulated .= $delta;
+                $onChunk($delta, $chunkData);
+            }
+        }
+
+        // Build final response
+        return [
+            'id' => $lastChunkData['id'] ?? 'chatcmpl-'.uniqid(),
+            'object' => 'chat.completion',
+            'created' => $lastChunkData['created'] ?? time(),
+            'model' => $lastChunkData['model'] ?? $payload['model'] ?? 'gpt-4o-mini',
+            'choices' => [[
+                'index' => 0,
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => $accumulated,
+                ],
+                'finish_reason' => $lastChunkData['choices'][0]['finish_reason'] ?? 'stop',
+            ]],
+            'usage' => $lastChunkData['usage'] ?? [
+                'prompt_tokens' => 0,
+                'completion_tokens' => 0,
+                'total_tokens' => 0,
+            ],
+        ];
+    }
+
+    /**
+     * Read a line from stream (handles SSE format)
+     */
+    private function readLine($stream): string
+    {
+        $line = '';
+        while (!$stream->eof()) {
+            $char = $stream->read(1);
+            if ($char === "\n") {
+                break;
+            }
+            $line .= $char;
+        }
+        return $line;
+    }
+
+    /**
      * Alcuni modelli (es. gpt-5-mini) non accettano "max_tokens" e richiedono
      * "max_completion_tokens". Questa funzione normalizza il payload.
      */

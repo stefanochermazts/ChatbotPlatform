@@ -259,12 +259,15 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     async sendMessage(messages, options = {}) {
       const url = this.baseURL + CONFIG.apiEndpoint;
       
+      // 🚀 Enable streaming by default for better UX
+      const enableStreaming = options.stream !== false;
+      
       const payload = {
         model: options.model || 'gpt-4o-mini',
         messages: messages,
         temperature: options.temperature || 0.7,
         max_tokens: options.maxTokens || 1000,
-        stream: false,
+        stream: enableStreaming,
         ...options.additionalParams
       };
 
@@ -290,14 +293,20 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const timeoutId = setTimeout(() => controller.abort(), CONFIG.requestTimeout);
 
       try {
+        // 🚀 STREAMING: Handle SSE if enabled
+        if (enableStreaming && options.onChunk) {
+          return await this.handleStreamingResponse(url, payload, sessionId, options.onChunk, controller);
+        }
+
+        // Non-streaming fallback
         const response = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`,
-            'Accept': 'application/json', // 🔧 FIX: Header necessario per evitare redirect 302
+            'Accept': 'application/json',
             'X-Requested-With': 'ChatbotWidget',
-            'X-Session-ID': sessionId // 🎯 Agent Console: Session ID per check handoff
+            'X-Session-ID': sessionId
           },
           body: JSON.stringify(payload),
           signal: controller.signal
@@ -330,6 +339,88 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         
         throw new APIError('Network error', 0, { originalError: error });
       }
+    }
+
+    async handleStreamingResponse(url, payload, sessionId, onChunk, controller) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Accept': 'text/event-stream',
+          'X-Requested-With': 'ChatbotWidget',
+          'X-Session-ID': sessionId
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new APIError(
+          errorData.error?.message || `HTTP ${response.status}`,
+          response.status,
+          errorData
+        );
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = '';
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (!line.trim() || !line.startsWith('data: ')) continue;
+
+            const data = line.slice(6).trim();
+            
+            if (data === '[DONE]') {
+              break;
+            }
+
+            try {
+              const chunk = JSON.parse(data);
+              
+              if (chunk.error) {
+                throw new APIError(chunk.error.message || 'Streaming error', 500, chunk.error);
+              }
+
+              const delta = chunk.choices?.[0]?.delta?.content || '';
+              
+              if (delta) {
+                accumulated += delta;
+                onChunk(delta, accumulated);
+              }
+            } catch (e) {
+              if (e instanceof APIError) throw e;
+              console.warn('Failed to parse SSE chunk:', e);
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      // Return final response in standard format
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: accumulated
+          },
+          finish_reason: 'stop'
+        }]
+      };
     }
 
     processResponse(data) {
@@ -3342,36 +3433,64 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const sessionId = this.conversationTracker?.agentSessionId || '';
       console.log('🔍 ChatbotWidget.sendMessage - passing session ID:', sessionId);
       
+      // 🚀 STREAMING: Create message element and update it progressively
+      let messageElement = null;
+      let accumulatedContent = '';
+      
       const response = await this.api.sendMessage(messages, {
         model: this.options.model,
         temperature: this.options.temperature,
         maxTokens: this.options.maxTokens,
-        sessionId: sessionId // 🎯 Pass session ID to API
+        sessionId: sessionId,
+        stream: true, // 🚀 Enable streaming
+        onChunk: (delta, accumulated) => {
+          accumulatedContent = accumulated;
+          
+          // Create message element on first chunk
+          if (!messageElement) {
+            messageElement = this.ui.addBotMessage('', []); // Empty initially
+          }
+          
+          // Update message content progressively
+          if (messageElement) {
+            const contentDiv = messageElement.querySelector('.message-content');
+            if (contentDiv) {
+              // Use markdown parser if available
+              if (typeof marked !== 'undefined') {
+                contentDiv.innerHTML = marked.parse(accumulated);
+              } else {
+                contentDiv.textContent = accumulated;
+              }
+            }
+          }
+        }
       });
       
       const responseTime = performance.now() - startTime;
       
-      // Add bot response to UI and state (safe)
-      try {
-        // 🔧 ENHANCED: Try multiple methods to add bot message with proper markdown parsing
-        console.log('🔧 Attempting to add bot message, available methods:', {
-          hasAddBotMessage: typeof this.addBotMessage,
-          hasUI: !!this.ui,
-          hasUIAddBotMessage: this.ui ? typeof this.ui.addBotMessage : 'no ui'
-        });
-        
-        if (typeof this.addBotMessage === 'function') {
-          this.addBotMessage(response.content, response.citations);
-        } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
-          console.log('🔧 Using UI.addBotMessage method');
-          this.ui.addBotMessage(response.content, response.citations);
-        } else {
-          console.warn('⚠️ addBotMessage not available, using enhanced DOM fallback with markdown parsing');
+      // Final update with citations (if not already added)
+      if (messageElement && response.citations && response.citations.length > 0) {
+        const citationsDiv = messageElement.querySelector('.message-citations');
+        if (citationsDiv) {
+          citationsDiv.innerHTML = this.ui.renderCitations(response.citations);
+        }
+      }
+      
+      // If streaming failed or wasn't used, fallback to non-streaming display
+      if (!messageElement) {
+        try {
+          if (typeof this.addBotMessage === 'function') {
+            this.addBotMessage(response.content, response.citations);
+          } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
+            this.ui.addBotMessage(response.content, response.citations);
+          } else {
+            console.warn('⚠️ addBotMessage not available, using fallback');
+            this.addBotMessageDirectly?.(response.content, response.citations);
+          }
+        } catch (e) {
+          console.error('🚨 Failed to render bot message:', e);
           this.addBotMessageDirectly?.(response.content, response.citations);
         }
-      } catch (e) {
-        console.error('🚨 Failed to render bot message:', e);
-        this.addBotMessageDirectly?.(response.content, response.citations);
       }
       this.state.addMessage({ 
         role: 'assistant', 
