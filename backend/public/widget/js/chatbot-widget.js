@@ -552,7 +552,18 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       });
       
       // Maschera www. URLs - versione migliorata
-      html = html.replace(/(?<!["\[>])(www\.[^\s<"']+?)(?=[\s<"']|$)/g, (match) => {
+      html = html.replace(/(?<!["\[>])(www\.[^\s<"']+?)(?=[\s<"']|$)/g, (match, offset, string) => {
+        // 🔧 CRITICAL FIX: NON mascherare www. URLs che sono già dentro un markdown link
+        // Cerca se questo match è parte di un pattern [text](url) guardando indietro
+        const beforeMatch = string.substring(Math.max(0, offset - 200), offset);
+        const afterMatch = string.substring(offset, Math.min(string.length, offset + 10));
+        
+        // Se c'è un'apertura di markdown link [...] prima e ](url) dopo, skip
+        if (beforeMatch.includes('[') && afterMatch.startsWith(match + '](')) {
+          console.log('🔧 Skipping www. URL inside markdown link:', match);
+          return match; // Non mascherare
+        }
+        
         // 🔧 CRITICAL FIX: Preserva parentesi per URL che finiscono con numeri (es. idtesto/20247)
         let cleanUrl = match;
         // Rimuovi solo caratteri di punteggiatura finali MA non ) se l'URL finisce con numeri
