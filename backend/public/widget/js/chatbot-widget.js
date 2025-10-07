@@ -3443,32 +3443,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         temperature: this.options.temperature,
         maxTokens: this.options.maxTokens,
         sessionId: sessionId,
-        stream: true, // ✅ Re-enabled streaming with proper fix
-        onChunk: (delta, accumulated) => {
-          accumulatedContent = accumulated;
-          
-          // ✅ Create message element on FIRST chunk only
-          if (!messageElement && this.ui && typeof this.ui.addBotMessage === 'function') {
-            messageElement = this.ui.addBotMessage('', []); // Empty message, will be updated
-            contentDiv = messageElement?.querySelector('.message-content');
-          }
-          
-          // ✅ Update EXISTING message element with accumulated content
-          if (contentDiv) {
-            // Use markdown parser if available
-            if (typeof marked !== 'undefined') {
-              contentDiv.innerHTML = marked.parse(accumulated);
-            } else {
-              contentDiv.textContent = accumulated;
-            }
-            
-            // Auto-scroll to bottom as content updates
-            const messagesContainer = this.ui?.elements?.messages;
-            if (messagesContainer) {
-              messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-          }
-        }
+        stream: false, // ❌ DISABLED: Streaming causes infinite loop, needs complete rewrite
       });
       
       const responseTime = performance.now() - startTime;
