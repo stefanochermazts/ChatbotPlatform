@@ -3433,64 +3433,31 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       const sessionId = this.conversationTracker?.agentSessionId || '';
       console.log('🔍 ChatbotWidget.sendMessage - passing session ID:', sessionId);
       
-      // 🚀 STREAMING: Create message element and update it progressively
-      let messageElement = null;
-      let accumulatedContent = '';
-      
+      // 🚀 STREAMING: Disabled by default for stability
+      // TODO: Fix streaming loop issue before re-enabling
       const response = await this.api.sendMessage(messages, {
         model: this.options.model,
         temperature: this.options.temperature,
         maxTokens: this.options.maxTokens,
         sessionId: sessionId,
-        stream: true, // 🚀 Enable streaming
-        onChunk: (delta, accumulated) => {
-          accumulatedContent = accumulated;
-          
-          // Create message element on first chunk
-          if (!messageElement) {
-            messageElement = this.ui.addBotMessage('', []); // Empty initially
-          }
-          
-          // Update message content progressively
-          if (messageElement) {
-            const contentDiv = messageElement.querySelector('.message-content');
-            if (contentDiv) {
-              // Use markdown parser if available
-              if (typeof marked !== 'undefined') {
-                contentDiv.innerHTML = marked.parse(accumulated);
-              } else {
-                contentDiv.textContent = accumulated;
-              }
-            }
-          }
-        }
+        stream: false, // ❌ Disabled streaming temporarily
       });
       
       const responseTime = performance.now() - startTime;
       
-      // Final update with citations (if not already added)
-      if (messageElement && response.citations && response.citations.length > 0) {
-        const citationsDiv = messageElement.querySelector('.message-citations');
-        if (citationsDiv) {
-          citationsDiv.innerHTML = this.ui.renderCitations(response.citations);
-        }
-      }
-      
-      // If streaming failed or wasn't used, fallback to non-streaming display
-      if (!messageElement) {
-        try {
-          if (typeof this.addBotMessage === 'function') {
-            this.addBotMessage(response.content, response.citations);
-          } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
-            this.ui.addBotMessage(response.content, response.citations);
-          } else {
-            console.warn('⚠️ addBotMessage not available, using fallback');
-            this.addBotMessageDirectly?.(response.content, response.citations);
-          }
-        } catch (e) {
-          console.error('🚨 Failed to render bot message:', e);
+      // Add bot response to UI and state (non-streaming mode)
+      try {
+        if (typeof this.addBotMessage === 'function') {
+          this.addBotMessage(response.content, response.citations);
+        } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
+          this.ui.addBotMessage(response.content, response.citations);
+        } else {
+          console.warn('⚠️ addBotMessage not available, using fallback');
           this.addBotMessageDirectly?.(response.content, response.citations);
         }
+      } catch (e) {
+        console.error('🚨 Failed to render bot message:', e);
+        this.addBotMessageDirectly?.(response.content, response.citations);
       }
       this.state.addMessage({ 
         role: 'assistant', 
