@@ -638,17 +638,29 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         const cleanUrl = url.trim();
         const href = cleanUrl.startsWith('www.') ? `http://${cleanUrl}` : cleanUrl;
         
-            // 🔧 GESTIONE SPECIALE: Converti markdown links con placeholder in HTML
-        // Pattern: [text](###URLMASK0###) → <a href="url">text</a>
+        // 🔧 CRITICAL FIX: Ripristina placeholder sia in markdown che in HTML
+        // Il problema era che il markdown viene convertito in HTML PRIMA del ripristino,
+        // quindi il pattern markdown non trova più il placeholder
+        
+        // 1. Cerca e sostituisci in tag HTML già convertiti: <a href="###URLMASK0###">
+        const htmlPattern = new RegExp(`<a([^>]*?)href="${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`, 'g');
+        if (html.match(htmlPattern)) {
+          console.log('🔧 Restoring URL in HTML link:', placeholder, '→', href);
+          html = html.replace(htmlPattern, `<a$1href="${href}"$2>`);
+        }
+        
+        // 2. Cerca e sostituisci in markdown ancora non convertito: [text](###URLMASK0###)
         const markdownPattern = new RegExp(`\\[([^\\]]+)\\]\\(${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g');
         const markdownMatches = html.match(markdownPattern);
         
         if (markdownMatches) {
           console.log('🔧 Converting markdown link with placeholder:', markdownMatches[0], '→', href);
-          // Sostituisci markdown con HTML link
           html = html.replace(markdownPattern, `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>`);
-        } else {
-          // Placeholder non in markdown - linkifica normalmente
+        }
+        
+        // 3. Fallback: sostituisci placeholder standalone (non in link)
+        if (html.includes(placeholder)) {
+          console.log('🔧 Replacing standalone placeholder:', placeholder, '→', href);
           const linkedUrl = `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${cleanUrl}</a>`;
           html = html.replaceAll ? html.replaceAll(placeholder, linkedUrl) : html.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), linkedUrl);
         }
