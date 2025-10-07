@@ -3484,28 +3484,44 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       // Fallback: if streaming failed or message element wasn't created
       if (!messageElement) {
         console.warn('⚠️ Streaming failed, using non-streaming fallback');
+        
+        // Ensure response has content
+        const content = response?.content || accumulatedContent || '';
+        const citations = response?.citations || [];
+        
+        if (!content) {
+          console.error('🚨 No content in response:', response);
+          this.ui?.showError(new Error('Risposta vuota dal server'));
+          return;
+        }
+        
         try {
           if (typeof this.addBotMessage === 'function') {
-            this.addBotMessage(response.content, response.citations);
+            this.addBotMessage(content, citations);
           } else if (this.ui && typeof this.ui.addBotMessage === 'function') {
-            this.ui.addBotMessage(response.content, response.citations);
+            this.ui.addBotMessage(content, citations);
           } else {
-            this.addBotMessageDirectly?.(response.content, response.citations);
+            this.addBotMessageDirectly?.(content, citations);
           }
         } catch (e) {
           console.error('🚨 Failed to render bot message:', e);
-          this.addBotMessageDirectly?.(response.content, response.citations);
+          this.addBotMessageDirectly?.(content, citations);
         }
       }
+      
+      // Save to state with proper content
+      const finalContent = response?.content || accumulatedContent || '';
+      const finalCitations = response?.citations || [];
+      
       this.state.addMessage({ 
         role: 'assistant', 
-        content: response.content,
-        citations: response.citations
+        content: finalContent,
+        citations: finalCitations
       });
       
       // 🎯 Track bot response in Agent Console
-      if (this.conversationTracker) {
-        this.conversationTracker.sendMessage(response.content, 'system');
+      if (this.conversationTracker && finalContent) {
+        this.conversationTracker.sendMessage(finalContent, 'system');
       }
       
       // Check for form triggers after bot response (per trigger non keyword-based)
