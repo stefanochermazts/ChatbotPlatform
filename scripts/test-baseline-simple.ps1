@@ -31,16 +31,27 @@ if (-not $ApiKey) {
     exit 1
 }
 
-# Skip SSL certificate validation for local development
+# Skip SSL certificate validation for local development (Windows PowerShell 5.1 compatible)
 if (-not $Production) {
-    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    add-type @"
+        using System.Net;
+        using System.Security.Cryptography.X509Certificates;
+        public class TrustAllCertsPolicy : ICertificatePolicy {
+            public bool CheckValidationResult(
+                ServicePoint srvPoint, X509Certificate certificate,
+                WebRequest request, int certificateProblem) {
+                return true;
+            }
+        }
+"@
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 }
 
 # Test 1: Health Check
 Write-Host "`n[1/5] Health Check..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/up" -UseBasicParsing -TimeoutSec 10 -SkipCertificateCheck
+    $response = Invoke-WebRequest -Uri "$BaseUrl/up" -UseBasicParsing -TimeoutSec 10
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] Health check passed" -ForegroundColor Green
     }
@@ -64,7 +75,7 @@ try {
         "Authorization" = "Bearer $ApiKey"
     }
     
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/chat/completions" -Method POST -Headers $headers -Body $payload -UseBasicParsing -TimeoutSec 30 -SkipCertificateCheck
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/chat/completions" -Method POST -Headers $headers -Body $payload -UseBasicParsing -TimeoutSec 30
     
     $latency = $response.Headers['X-Latency-Ms']
     $correlation = $response.Headers['X-Correlation-Id']
@@ -137,7 +148,7 @@ for ($i = 1; $i -le 5; $i++) {
         $response = Invoke-RestMethod -Uri "$BaseUrl/api/v1/chat/completions" -Method POST -Headers @{
             "Content-Type" = "application/json"
             "Authorization" = "Bearer $ApiKey"
-        } -Body $payload -TimeoutSec 30 -SkipCertificateCheck
+        } -Body $payload -TimeoutSec 30
         $sw.Stop()
         
         $latency = $sw.ElapsedMilliseconds
