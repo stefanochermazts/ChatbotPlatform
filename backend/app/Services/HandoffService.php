@@ -56,11 +56,15 @@ class HandoffService
             // 📨 Messaggio di sistema per notificare handoff
             $this->createHandoffSystemMessage($session, $handoffRequest);
 
+            // 📢 EMIT EVENT: Broadcast handoff request to operators
+            event(new \App\Events\HandoffRequested($handoffRequest));
+
             Log::info('handoff.requested', [
                 'session_id' => $session->session_id,
                 'handoff_id' => $handoffRequest->id,
                 'trigger_type' => $triggerType,
-                'priority' => $priority
+                'priority' => $priority,
+                'event_broadcasted' => true
             ]);
 
             return $handoffRequest;

@@ -192,23 +192,100 @@
 
       async function poll() {
         try {
+          console.log('🔄 [Polling] Checking for new handoffs...');
           const url = new URL(window.location.origin + '/admin/operator-console/handoffs/poll');
-          if (lastId) url.searchParams.set('since_id', lastId);
+          if (lastId) {
+            url.searchParams.set('since_id', lastId);
+            console.log('   Since ID:', lastId);
+          }
           const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-          if (!res.ok) return;
+          console.log('   Response status:', res.status, res.ok ? '✅' : '❌');
+          if (!res.ok) {
+            console.warn('   ⚠️  Polling failed - status not OK');
+            return;
+          }
           const data = await res.json();
+          console.log('   Response data:', data);
           if (data && data.new && data.handoff) {
+            console.log('   🔔 NEW HANDOFF DETECTED!', data.handoff);
             lastId = data.handoff.id;
             try { sessionStorage.setItem(storageKey, String(lastId)); } catch(e) {}
             createToast(data);
+          } else {
+            console.log('   ✅ No new handoffs (data.new =', data?.new, ')');
           }
-        } catch (e) { /* silent */ }
+        } catch (e) {
+          console.error('❌ [Polling] Error:', e);
+        }
       }
 
-      // Start polling (5s)
+      // Start polling (5s) as fallback
+      console.log('⏰ [Polling] Started - checking every 5 seconds');
       setInterval(poll, 5000);
       // Initial immediate check
+      console.log('🚀 [Polling] Running initial check...');
       poll();
+      
+      // ✅ REAL-TIME: Listen for handoff events via WebSocket (Echo)
+      @if(auth()->check() && auth()->user()->isOperator())
+        console.log('🎧 Setting up Echo listener for operator...');
+        
+        // Get accessible tenant IDs for this operator
+        const accessibleTenantIds = @json(auth()->user()->tenants()->pluck('tenants.id'));
+        console.log('📋 Operator has access to tenants:', accessibleTenantIds);
+        
+        // ✅ FIX: Create tenant name mapping server-side (specify table prefix for ambiguous columns)
+        const tenantMap = @json(auth()->user()->tenants()->pluck('tenants.name', 'tenants.id'));
+        console.log('📋 Tenant name mapping:', tenantMap);
+        
+        // Listen on each tenant's operator channel
+        accessibleTenantIds.forEach(tenantId => {
+          const channelName = `tenant.${tenantId}.operators`;
+          console.log(`🎧 Subscribing to private channel: ${channelName}`);
+          
+          window.Echo.private(channelName)
+            .listen('.handoff.requested', (event) => {
+              console.log('🔔 Handoff event received via WebSocket!', event);
+              
+              // Only show toast if handoff is newer than last seen
+              if (!lastId || event.handoff_request.id > lastId) {
+                lastId = event.handoff_request.id;
+                try { sessionStorage.setItem(storageKey, String(lastId)); } catch(e) {}
+                
+                // Transform event data to match toast format
+                const toastData = {
+                  new: true,
+                  handoff: {
+                    id: event.handoff_request.id,
+                    priority: event.handoff_request.priority,
+                    reason: event.handoff_request.reason,
+                    tenant: {
+                      id: event.tenant_id,
+                      name: tenantMap[event.tenant_id] || 'Tenant'  // ✅ FIX: Use server-side mapping
+                    },
+                    session: {
+                      id: event.session.session_id
+                    }
+                  }
+                };
+                
+                createToast(toastData);
+                
+                // Play notification sound
+                const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+Tt4m8gBSyCzfPTgjMGHm7A7+OZSA0PU6nk682SMRQMQJX07/yHLgQlg83z14s0Bh1uwPDbmUoPEFSq5fnNlDAUDEGW9vGAPgUlg87z1oo0Bh5vwPDbmEsPEVWr5/rOlTAVDUKX9/KAPgYnhM/01ow1Bx9wwfHcmkwQElat6PvPljEVDkOY+POBPwYohNH01o01ByBxwvHdnE0RElat6fzQlzEWDkSZ+fSCQAcpiNL12I42CCFyw/LenmESDlev6v3RmDIXD0Wa+/aEQggriNP12Y82CSJzxPPfoWITD1ew6/7SmTIYEEeb/PeGQwktiNT22o43CSN0xfThomMUEFix7P/TmjMZEUif/fmHRAouidX33I84CiR1xvijpGUVEVmy7MDUmzQZEkug/vqJRgsvidb43Y86CiV2x/mlpWYWEluz7cHWnDUaFEyh//yKRwwwjNj63pA7CyZ4yPqmpmgWE1y07MHXnTYbFU2jAf6LSA0xjdr73pE8DCd5yfunp2kXFF207cLYnjgcFk6kAv+NSQ4yjNv83pI9DChxyv2opGsYFV217sPZnzgdGE+lA/+OSg8zjdz93pM+DSl6y/6qpWwZFl+27cTaoTkdGVClBQCPSxA0jtz+35RADip7zf+rpW0aGF+37cXbojkeGlGmBgGQTBE1kN3/4JVBDit8zf+spW4bGWG48cbdozofG1KnBwGRTRI2kd7+4ZVCDyx9zv+tp28cGmK58cfdozofHFOpCAGSTRM3kt//4pdDDy1+z/+wp3AdG2O79cjfpTwgHlSqCAKTThQ4k+D/45dEEC5/0P+xqHEeHGS89cnhpj0hH1WrCQOUTxU6lOIB5JhFES+A0P+yqXEfHWW99srjpz4iIFWsCgSVURY7leIB5ZlGEjCA0f+zq3IgHma+98vkqD8jIVatDAaWUhc8luQC5ppHEzGB0v+1rHMhH2e/+MzlqUAkIleuDQeXUxg9mOUD55pIFDKC0/+2rXQjIGjA+c3nqkElI1ivDgiYVRk+meYE6JtJFTOD1P+3r3UkIWnB+s7oq0ImJFqwDwmZVho/muYE6ZxKFjSE1f+4sHYlImnC+8/prEMnJVuxEAqaVxpAm+gF6p1LFzaF1/+5sXcnI2rD/M/qrUQoJly0EQubWRtBnOkG651MFzeG2P+6s3kpJGvE/dDrrkcpKF21EgycWxxCneoG7J5NGDSH2f+7tHorJWzF/dHtrkgtKV62Ew2dXB5DoewH7Z9OGTmI2v+8tnwsJ23G/tLvr0ovKmC4FA6eXR9EpO0I7qBPGjqJ3P++uH8uKG7H/9PwsEwyK2G5FRCfXiFGpu4J8KFQGzuK3f+/un8vKG/I/9PxsU0zLGK6FRGgXyJHpu4K8aJRHDyL3v/Au4EwKXHJ/9TyslA1LWO7FhKhYCNIp+8L8qNSHTyM3/+/vIIxKnLK/9X0s1I2L2S8FxOiYSRJqPEM86NTHj2N4P/AvYQyK3LK/9b1tFM4MGa+FxSjYiVKqfEM9KRUHz6O4f/BvoU0LHPM/9f2tVQ5MWe/GBWkYyZLqvIN9aVVID+P4f/CvoY1LHPM/9j3tlU6M2jAGRalYydMq/IQ9aZWIUCQ4v/Ev4g2LHPM/9n4t1Y7M2nBGhelZChNrPMR9qdXIUGR4//FwIk3LXbO/9r5uFg8NGrCGxinZSlOrvMR96dYIkKS5P/GwYo4Lnf0//v6uVk9NWvDHBmoZipPr/QS+KlZI0OT5f/HwYs5Lnf0/wAB');
+                audio.volume = 0.5;
+                audio.play().catch(() => {});
+              }
+            })
+            .error((error) => {
+              console.error(`❌ Error subscribing to ${channelName}:`, error);
+            });
+        });
+        
+        console.log('✅ Echo listeners setup completed');
+      @else
+        console.log('⚠️  Current user is not an operator, skipping Echo listeners');
+      @endif
     })();
   </script>
 

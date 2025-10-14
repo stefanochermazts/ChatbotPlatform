@@ -217,7 +217,7 @@ class HandoffRequest extends Model
             'status' => 'assigned',
             'assigned_operator_id' => $operatorId,
             'assigned_at' => now(),
-            'wait_time_seconds' => $this->requested_at->diffInSeconds(now())
+            'wait_time_seconds' => (int) $this->requested_at->diffInSeconds(now())  // ✅ Cast to int
         ]);
 
         if ($success) {
@@ -248,7 +248,7 @@ class HandoffRequest extends Model
             'resolution_outcome' => $outcome,
             'resolution_notes' => $notes,
             'user_satisfaction' => $satisfaction,
-            'resolution_time_seconds' => $this->requested_at->diffInSeconds(now())
+            'resolution_time_seconds' => (int) $this->requested_at->diffInSeconds(now())  // ✅ Cast to int
         ]);
 
         if ($success) {

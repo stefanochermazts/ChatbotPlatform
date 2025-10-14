@@ -153,7 +153,7 @@
                                             @php
                                                 $availableOperator = \App\Models\User::where('is_operator', true)
                                                     ->where('operator_status', 'available')
-                                                    ->where('current_conversations', '<', DB::raw('max_concurrent_conversations'))
+                                                    ->whereRaw('current_conversations < max_concurrent_conversations')
                                                     ->first();
                                             @endphp
                                             

@@ -65,9 +65,17 @@ class HandoffController extends Controller
             );
 
             if ($handoffRequest) {
-                // Try automatic assignment
-                $isAssigned = $this->routingService->autoAssignHandoff($handoffRequest);
-                $assignedOperator = $isAssigned ? $handoffRequest->fresh()->assignedOperator : null;
+                // ✅ MANUAL ASSIGNMENT: Do NOT auto-assign, let operators take it manually via notification
+                // The handoff will remain in "pending" status and operators will see it via polling/toast
+                // $isAssigned = $this->routingService->autoAssignHandoff($handoffRequest);
+                // $assignedOperator = $isAssigned ? $handoffRequest->fresh()->assignedOperator : null;
+                
+                \Log::info('handoff.created_pending', [
+                    'handoff_id' => $handoffRequest->id,
+                    'status' => $handoffRequest->status,
+                    'tenant_id' => $handoffRequest->tenant_id,
+                    'priority' => $handoffRequest->priority
+                ]);
                 
                 return response()->json([
                     'success' => true,
@@ -76,10 +84,7 @@ class HandoffController extends Controller
                         'status' => $handoffRequest->status,
                         'priority' => $handoffRequest->priority,
                         'requested_at' => $handoffRequest->requested_at->toISOString(),
-                        'assigned_operator' => $assignedOperator ? [
-                            'id' => $assignedOperator->id,
-                            'name' => $assignedOperator->name
-                        ] : null
+                        'assigned_operator' => null  // ✅ Always null - operators must take manually
                     ]
                 ], 201);
             } else {

@@ -191,7 +191,7 @@ class OperatorConsoleController extends Controller
             return back()->with('error', 'Operatore non disponibile');
         }
 
-        $success = $this->handoffService->assignHandoff($handoff, $operator);
+        $success = $this->handoffService->assignToOperator($handoff, $operator);
 
         if ($success) {
             return back()->with('success', 'Handoff assegnato a ' . $operator->name);
@@ -311,7 +311,7 @@ class OperatorConsoleController extends Controller
                     'reason' => 'Operatore ha preso controllo diretto della conversazione',
                     'priority' => 'normal',
                     'status' => 'assigned',
-                    'assigned_to' => $operator->id,
+                    'assigned_operator_id' => $operator->id,  // ✅ Fixed: was 'assigned_to'
                     'requested_at' => now(),
                     'assigned_at' => now()
                 ]);
@@ -352,7 +352,20 @@ class OperatorConsoleController extends Controller
     {
         $operator = Auth::user();
         
+        \Log::info('release.conversation.start', [
+            'session_id' => $session->session_id,
+            'operator_id' => $operator->id,
+            'assigned_to' => $session->assigned_operator_id,
+            'handoff_status' => $session->handoff_status,
+            'request_data' => $request->all()
+        ]);
+        
         if ($session->assigned_operator_id !== $operator->id) {
+            \Log::warning('release.unauthorized', [
+                'session_id' => $session->session_id,
+                'operator_id' => $operator->id,
+                'assigned_to' => $session->assigned_operator_id
+            ]);
             return back()->with('error', 'Non hai il controllo di questa conversazione');
         }
 
@@ -360,12 +373,26 @@ class OperatorConsoleController extends Controller
             'resolution_note' => 'nullable|string|max:500',
             'transfer_back_to_bot' => 'boolean'
         ]);
+        
+        \Log::info('release.validation_passed', [
+            'session_id' => $session->session_id,
+            'transfer_back_to_bot' => $request->boolean('transfer_back_to_bot', true)
+        ]);
 
         try {
-            DB::transaction(function () use ($session, $operator, $request) {
+            $systemMessage = null; // ✅ Initialize before transaction
+            $newStatus = null;     // ✅ Initialize for use outside closure
+            
+            DB::transaction(function () use ($session, $operator, $request, &$systemMessage, &$newStatus) {
                 // Update conversation status
                 $newStatus = $request->boolean('transfer_back_to_bot', true) ? 'active' : 'resolved';
                 $newHandoffStatus = $request->boolean('transfer_back_to_bot', true) ? 'bot_only' : 'resolved';
+                
+                \Log::info('release.transaction.start', [
+                    'session_id' => $session->session_id,
+                    'new_status' => $newStatus,
+                    'new_handoff_status' => $newHandoffStatus
+                ]);
 
                 $session->update([
                     'status' => $newStatus,
@@ -382,7 +409,7 @@ class OperatorConsoleController extends Controller
                 if ($handoffRequest) {
                     $handoffRequest->update([
                         'status' => 'resolved',
-                        'resolution_outcome' => $newStatus === 'resolved' ? 'resolved' : 'transferred_back',
+                        'resolution_outcome' => $newStatus === 'resolved' ? 'resolved_by_operator' : 'transferred_back_to_bot',
                         'resolution_notes' => $request->resolution_note,
                         'resolved_at' => now()
                     ]);
@@ -405,26 +432,47 @@ class OperatorConsoleController extends Controller
                     'sent_at' => now(),
                     'delivered_at' => now()
                 ]);
+                
+                \Log::info('release.system_message_created', [
+                    'message_id' => $systemMessage->id,
+                    'content' => $message
+                ]);
             });
+            
+            \Log::info('release.transaction_completed', [
+                'session_id' => $session->session_id,
+                'new_status' => $newStatus,
+                'system_message_id' => $systemMessage?->id
+            ]);
 
             // 📡 Broadcast evento WebSocket anche per il messaggio di sistema
             try {
-                if (isset($systemMessage)) {
+                if ($systemMessage) {
+                    \Log::info('release.broadcasting_event', ['message_id' => $systemMessage->id]);
                     \App\Events\ConversationMessageSent::dispatch($systemMessage);
+                    \Log::info('release.event_dispatched', ['message_id' => $systemMessage->id]);
+                } else {
+                    \Log::warning('release.no_system_message', ['session_id' => $session->session_id]);
                 }
             } catch (\Exception $e) {
-                \Log::warning('release.broadcast_failed', [
+                \Log::error('release.broadcast_failed', [
                     'session_id' => $session->session_id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
                 ]);
             }
 
-            $message = $newStatus === 'resolved' 
+            $successMessage = $newStatus === 'resolved' 
                 ? 'Conversazione chiusa con successo'
                 : 'Conversazione trasferita al bot';
+            
+            \Log::info('release.completed', [
+                'session_id' => $session->session_id,
+                'message' => $successMessage
+            ]);
                 
             return redirect()->route('admin.operator-console.conversations')
-                           ->with('success', $message);
+                           ->with('success', $successMessage);
 
         } catch (\Exception $e) {
             \Log::error('release.failed', [

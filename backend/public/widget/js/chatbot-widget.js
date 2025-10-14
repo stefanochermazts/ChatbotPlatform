@@ -4395,8 +4395,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     // 🔄 Check for new messages via API
     async checkForNewMessages() {
       if (!this.conversationTracker.agentSessionId) {
+        console.log('🔄 [Polling] Skipped - no session ID');
         return;
       }
+      
+      console.log('🔄 [Polling] Checking for new messages...', {
+        sessionId: this.conversationTracker.agentSessionId,
+        handoffStatus: this.conversationTracker.handoffStatus
+      });
       
       try {
         const response = await fetch(`${this.options.baseURL}/api/v1/conversations/${this.conversationTracker.agentSessionId}/messages`, {
@@ -4408,6 +4414,8 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           }
         });
         
+        console.log('🔄 [Polling] Response status:', response.status, response.ok ? '✅' : '❌');
+        
         if (response.ok) {
           const data = await response.json();
           
@@ -4418,13 +4426,17 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           
       // Check for new messages (operator or system)
       if (data.messages && Array.isArray(data.messages)) {
+        console.log('🔄 [Polling] Received', data.messages.length, 'messages');
         this.processNewMessages(data.messages);
         // Render system messages that may signal return to bot
         try {
           for (const m of data.messages) {
+            console.log('   📨 Message:', m.sender_type, '-', m.content ? m.content.substring(0, 50) + '...' : 'empty');
             if (m.sender_type === 'system' && m.content) {
               const text = (m.content || '').toLowerCase();
+              console.log('   🔍 System message detected, checking for "sono tornato"...');
               if (text.includes('sono tornato')) {
+                console.log('   ✅ OPERATOR RELEASED! Switching back to bot...');
                 // Show system message if not already in DOM via addBotMessage
                 if (typeof this.addBotMessage === 'function') {
                   this.addBotMessage(m.content, m.citations || [], false);
@@ -4436,11 +4448,16 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
                 if (this.pollingInterval) {
                   clearInterval(this.pollingInterval);
                   this.pollingInterval = null;
+                  console.log('   🎯 Polling stopped, UI reset to bot mode');
                 }
+              } else {
+                console.log('   ⚠️ System message does NOT contain "sono tornato"');
               }
             }
           }
         } catch (e) { console.warn('⚠️ Cannot render/handle system messages from polling:', e.message); }
+      } else {
+        console.log('🔄 [Polling] No messages in response');
       }
         } else if (response.status === 404) {
           // 🗑️ Conversation was deleted - clean up localStorage and stop polling
