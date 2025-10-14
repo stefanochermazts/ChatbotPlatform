@@ -399,25 +399,18 @@
 <div id="releaseModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
     <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
         <div class="mt-3">
-            <h3 class="text-lg font-medium text-gray-900 mb-4">🏁 Rilascia Conversazione</h3>
+            <h3 class="text-lg font-medium text-gray-900 mb-4">🏁 Rilascia Conversazione al Bot</h3>
             <form method="POST" action="{{ route('admin.operator-console.conversations.release', $session) }}">
                 @csrf
+                <!-- ✅ SIMPLIFIED: Always transfer back to bot, no "close conversation" option -->
+                <input type="hidden" name="transfer_back_to_bot" value="1">
+                
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Azione</label>
-                    <div class="space-y-2">
-                        <label class="flex items-center">
-                            <input type="radio" name="transfer_back_to_bot" value="1" checked class="mr-2">
-                            <span class="text-sm">🤖 Trasferisci al bot</span>
-                        </label>
-                        <label class="flex items-center">
-                            <input type="radio" name="transfer_back_to_bot" value="0" class="mr-2">
-                            <span class="text-sm">✅ Chiudi conversazione</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-4">
+                        🤖 La conversazione verrà trasferita al chatbot. L'utente potrà continuare a chattare con il bot.
+                    </p>
                     <label for="resolution_note" class="block text-sm font-medium text-gray-700 mb-2">Note di risoluzione (opzionale)</label>
-                    <textarea name="resolution_note" id="resolution_note" rows="3" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Riassunto di cosa è stato risolto..."></textarea>
+                    <textarea name="resolution_note" id="resolution_note" rows="3" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="Riassunto di cosa è stato risolto o suggerimenti per il follow-up..."></textarea>
                 </div>
                 <div class="flex space-x-3">
                     <button type="submit" class="flex-1 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500">
