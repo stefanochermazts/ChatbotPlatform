@@ -552,9 +552,10 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       });
       
       // Maschera www. URLs - versione migliorata
-      html = html.replace(/(?<!["\[>])(www\.[^\s<"']+?)(?=[\s<"']|$)/g, (match, offset, string) => {
+      html = html.replace(/(?<!["\[>])(www\.[^\s<"']+?)(?=[\s<"']|$)/g, (match, capturedGroup, offset, string) => {
         // 🔧 CRITICAL FIX: NON mascherare www. URLs che sono già dentro un markdown link
         // Cerca se questo match è parte di un pattern [text](url) guardando indietro
+        // ⚡ BUG FIX: Aggiunti tutti i parametri corretti (match, capturedGroup, offset, string)
         const beforeMatch = string.substring(Math.max(0, offset - 200), offset);
         const afterMatch = string.substring(offset, Math.min(string.length, offset + 10));
         
