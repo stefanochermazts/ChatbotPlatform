@@ -613,6 +613,28 @@ class KbSearchService
         // ⏱️ STEP 11: Citations Building  
         $stepStart = microtime(true);
         
+        // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
+        $documentIds = [];
+        foreach ($selIdx as $i) {
+            $base = $mmrRanked[$i] ?? null;
+            if ($base !== null) {
+                $documentIds[] = (int) $base['document_id'];
+            }
+        }
+        $documentIds = array_unique($documentIds);
+        
+        // Single batch query for all documents
+        $documents = [];
+        if (!empty($documentIds)) {
+            $docs = DB::select(
+                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                array_merge($documentIds, [$tenantId])
+            );
+            foreach ($docs as $doc) {
+                $documents[(int)$doc->id] = $doc;
+            }
+        }
+        
         $seen = [];
         $cits = [];
         foreach ($selIdx as $i) {
@@ -631,7 +653,8 @@ class KbSearchService
                 if ($s2) $snippet .= "\n".$s2;
             }
 
-            $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ? LIMIT 1', [$docId, $tenantId]);
+            // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
+            $doc = $documents[$docId] ?? null;
             if (!$doc) continue;
             
             // Get full chunk text for deep-link highlighting (use large limit to get full text)
@@ -1139,10 +1162,25 @@ class KbSearchService
             return null;
         }
         
+        // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
+        $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $results));
+        $documents = [];
+        if (!empty($documentIds)) {
+            $docs = DB::select(
+                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                array_merge($documentIds, [$tenantId])
+            );
+            foreach ($docs as $doc) {
+                $documents[(int)$doc->id] = $doc;
+            }
+        }
+        
         $cits = [];
         foreach ($results as $r) {
             $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 1200) ?? '');
-            $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ? LIMIT 1', [$r['document_id'], $tenantId]);
+            
+            // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
+            $doc = $documents[(int)$r['document_id']] ?? null;
             if (!$doc) { continue; }
             
             // Get full chunk text for deep-link highlighting
@@ -1427,9 +1465,22 @@ class KbSearchService
                     'method' => 'direct_database_search'
                 ]);
                 
+                // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
+                $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $directResults));
+                $documents = [];
+                if (!empty($documentIds)) {
+                    $docs = DB::select(
+                        'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                        array_merge($documentIds, [$tenantId])
+                    );
+                    foreach ($docs as $doc) {
+                        $documents[(int)$doc->id] = $doc;
+                    }
+                }
+                
                 $cits = [];
                 foreach ($directResults as $result) {
-                    $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ?', [$result['document_id'], $tenantId]);
+                    $doc = $documents[(int)$result['document_id']] ?? null;
                     if ($doc) {
                         $citation = [
                             'id' => (int) $doc->id,
@@ -1459,29 +1510,37 @@ class KbSearchService
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $debugInfo : null];
         }
         
+        // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
+        $limitedResults = array_slice($filteredResults, 0, 5);
+        $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $limitedResults));
+        $documents = [];
+        if (!empty($documentIds)) {
+            $docs = DB::select(
+                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                array_merge($documentIds, [$tenantId])
+            );
+            foreach ($docs as $doc) {
+                $documents[(int)$doc->id] = $doc;
+            }
+        }
+        
         $cits = [];
         $debugInfo['semantic_fallback']['citation_debug'] = [];
         
-        foreach (array_slice($filteredResults, 0, 5) as $i => $result) {
+        foreach ($limitedResults as $i => $result) {
             $debugInfo['semantic_fallback']['citation_debug'][$i] = [
                 'result_structure' => array_keys($result),
                 'document_id' => $result['document_id'] ?? 'missing',
                 'intent_field' => $result[$intentType] ?? 'missing',
             ];
             
-            // Prima prova con il tenant specifico
-            $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ? LIMIT 1', [$result['document_id'], $tenantId]);
+            // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
+            $doc = $documents[(int)$result['document_id']] ?? null;
             
-            // Se non trovato, prova senza filtro tenant (ma poi skippiamo se tenant diverso)
+            // Se non trovato, è perché il documento è stato cancellato o appartiene ad altro tenant
             if (!$doc) {
-                $docAnyTenant = DB::selectOne('SELECT id, title, path, source_url, tenant_id FROM documents WHERE id = ? LIMIT 1', [$result['document_id']]);
-                if ($docAnyTenant) {
-                    $debugInfo['semantic_fallback']['citation_debug'][$i]['db_query_result'] = "found_tenant_{$docAnyTenant->tenant_id}";
-                    $debugInfo['semantic_fallback']['citation_debug'][$i]['skip_reason'] = 'wrong_tenant';
-                } else {
-                    $debugInfo['semantic_fallback']['citation_debug'][$i]['db_query_result'] = 'not_found_anywhere';
-                    $debugInfo['semantic_fallback']['citation_debug'][$i]['skip_reason'] = 'document_deleted';
-                }
+                $debugInfo['semantic_fallback']['citation_debug'][$i]['db_query_result'] = 'not_found_for_tenant';
+                $debugInfo['semantic_fallback']['citation_debug'][$i]['skip_reason'] = 'document_deleted_or_wrong_tenant';
                 continue;
             }
             
@@ -2101,10 +2160,25 @@ class KbSearchService
             return [];
         }
         
+        // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
+        $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $results));
+        $documents = [];
+        if (!empty($documentIds)) {
+            $docs = DB::select(
+                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                array_merge($documentIds, [$tenantId])
+            );
+            foreach ($docs as $doc) {
+                $documents[(int)$doc->id] = $doc;
+            }
+        }
+        
         $cits = [];
         foreach ($results as $r) {
             $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 1200) ?? '');
-            $doc = DB::selectOne('SELECT id, title, path, source_url FROM documents WHERE id = ? AND tenant_id = ? LIMIT 1', [$r['document_id'], $tenantId]);
+            
+            // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
+            $doc = $documents[(int)$r['document_id']] ?? null;
             if (!$doc) { continue; }
             
             // Get full chunk text for deep-link highlighting

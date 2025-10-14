@@ -637,3 +637,4 @@ Log::info('RAG query completed', [
 1. → **[04-WIDGET-INTEGRATION-FLOW.md](04-WIDGET-INTEGRATION-FLOW.md)** - Frontend integration
 2. → **[06-QUEUE-WORKERS.md](06-QUEUE-WORKERS.md)** - Background processing
 
+git

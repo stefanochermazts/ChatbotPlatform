@@ -49,6 +49,54 @@ class OperatorConsoleController extends Controller
     }
 
     /**
+     * 🔔 Polling nuove richieste handoff (JSON)
+     */
+    public function pollNewHandoffs(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+
+        if (!$user || !$user->isOperator()) {
+            return response()->json(['new' => false], 403);
+        }
+
+        // Facoltativo: evitare duplicati lato client
+        $sinceId = $request->integer('since_id');
+
+        // Scoping: solo tenant accessibili all'utente
+        $tenantIds = $user->tenants()->pluck('tenants.id');
+
+        $handoff = HandoffRequest::with(['tenant', 'conversationSession'])
+            ->whereIn('tenant_id', $tenantIds)
+            ->where('status', 'pending')
+            ->whereNull('assigned_operator_id')
+            ->when($sinceId, fn($q) => $q->where('id', '>', $sinceId))
+            ->orderByDesc('requested_at')
+            ->first();
+
+        if (!$handoff) {
+            return response()->json(['new' => false]);
+        }
+
+        return response()->json([
+            'new' => true,
+            'handoff' => [
+                'id' => $handoff->id,
+                'priority' => $handoff->priority,
+                'reason' => $handoff->reason,
+                'requested_at' => optional($handoff->requested_at)->toISOString(),
+                'tenant' => [
+                    'id' => $handoff->tenant?->id,
+                    'name' => $handoff->tenant?->name,
+                ],
+                'session' => [
+                    'id' => $handoff->conversationSession?->id,
+                    'session_id' => $handoff->conversationSession?->session_id,
+                ],
+            ]
+        ]);
+    }
+
+    /**
      * 💬 Lista conversazioni attive
      */
     public function conversations(Request $request)
@@ -348,7 +396,7 @@ class OperatorConsoleController extends Controller
                     ? "✅ La conversazione è stata chiusa dall'operatore {$operator->name}. Grazie!"
                     : "🤖 Sono tornato! L'operatore {$operator->name} ha completato l'assistenza. Come posso aiutarti?";
 
-                ConversationMessage::create([
+                $systemMessage = ConversationMessage::create([
                     'conversation_session_id' => $session->id,
                     'tenant_id' => $session->tenant_id,
                     'sender_type' => 'system',
@@ -358,6 +406,18 @@ class OperatorConsoleController extends Controller
                     'delivered_at' => now()
                 ]);
             });
+
+            // 📡 Broadcast evento WebSocket anche per il messaggio di sistema
+            try {
+                if (isset($systemMessage)) {
+                    \App\Events\ConversationMessageSent::dispatch($systemMessage);
+                }
+            } catch (\Exception $e) {
+                \Log::warning('release.broadcast_failed', [
+                    'session_id' => $session->session_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             $message = $newStatus === 'resolved' 
                 ? 'Conversazione chiusa con successo'

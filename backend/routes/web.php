@@ -234,6 +234,7 @@ Route::post('/tenants/{tenant}/documents/rescrape-all', [DocumentAdminController
         Route::post('/conversations/{session}/release', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'releaseConversation'])->name('conversations.release');
         Route::post('/conversations/{session}/send-message', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'sendMessage'])->name('conversations.send-message');
         Route::delete('/conversations/{session}', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'deleteConversation'])->name('conversations.delete');
+        Route::get('/handoffs/poll', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'pollNewHandoffs'])->name('handoffs.poll');
         Route::get('/handoffs', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'handoffs'])->name('handoffs');
         Route::post('/handoffs/{handoff}/assign', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'assignHandoff'])->name('handoffs.assign');
         Route::post('/handoffs/{handoff}/resolve', [\App\Http\Controllers\Admin\OperatorConsoleController::class, 'resolveHandoff'])->name('handoffs.resolve');

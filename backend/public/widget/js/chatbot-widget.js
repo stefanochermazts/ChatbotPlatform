@@ -4415,10 +4415,32 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
             this.updateConversationStatus(data.conversation);
           }
           
-          // Check for new operator messages
-          if (data.messages && Array.isArray(data.messages)) {
-            this.processNewMessages(data.messages);
+      // Check for new messages (operator or system)
+      if (data.messages && Array.isArray(data.messages)) {
+        this.processNewMessages(data.messages);
+        // Render system messages that may signal return to bot
+        try {
+          for (const m of data.messages) {
+            if (m.sender_type === 'system' && m.content) {
+              const text = (m.content || '').toLowerCase();
+              if (text.includes('sono tornato')) {
+                // Show system message if not already in DOM via addBotMessage
+                if (typeof this.addBotMessage === 'function') {
+                  this.addBotMessage(m.content, m.citations || [], false);
+                }
+                // Update state to bot_only and stop polling
+                this.conversationTracker.handoffStatus = 'bot_only';
+                localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, 'bot_only');
+                this.safeHideHandoffStatus();
+                if (this.pollingInterval) {
+                  clearInterval(this.pollingInterval);
+                  this.pollingInterval = null;
+                }
+              }
+            }
           }
+        } catch (e) { console.warn('⚠️ Cannot render/handle system messages from polling:', e.message); }
+      }
         } else if (response.status === 404) {
           // 🗑️ Conversation was deleted - clean up localStorage and stop polling
           console.warn('🗑️ Conversation not found (deleted), cleaning up localStorage...');
@@ -4610,35 +4632,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         // Listen for operator messages (using public channel for testing)
         console.log('📡 Attempting to listen on public channel: conversation.' + sessionId);
         window.Echo.channel(`conversation.${sessionId}`)
+          // Support both Laravel default naming (broadcastAs) and class name
+          .listen('.message.sent', (event) => {
+            console.log('📡 WebSocket message (broadcastAs) received:', event);
+            this.handleIncomingRealtimeMessage(event);
+          })
           .listen('ConversationMessageSent', (event) => {
             console.log('📡 WebSocket message received:', event);
-            
-            if (event.message && event.message.sender_type === 'operator') {
-              console.log('👨‍💼 Operator message received via WebSocket');
-              
-              // Add the operator message to the chat (safe check)
-              try {
-                if (typeof this.addBotMessage === 'function') {
-                  this.addBotMessage(event.message.content, false);
-                } else {
-                  console.warn('⚠️ addBotMessage method not available in WebSocket handler');
-                }
-              } catch (error) {
-                console.error('🚨 Error adding WebSocket message:', error);
-              }
-              
-              // Update handoff status if needed
-              if (this.conversationTracker.handoffStatus !== 'handoff_active') {
-                this.conversationTracker.handoffStatus = 'handoff_active';
-                try {
-                  if (this.ui && this.ui.elements && this.ui.elements.handoffStatus && this.ui.elements.handoffText) {
-                    this.ui.elements.handoffText.textContent = 'Operatore connesso';
-                    this.ui.elements.handoffStatus.className = 'chatbot-handoff-status accepted';
-                    this.ui.elements.handoffStatus.style.display = 'block';
-                  }
-                } catch (e) { console.warn('⚠️ Cannot show handoff status:', e.message); }
-              }
-            }
+            this.handleIncomingRealtimeMessage(event);
           })
           .error((error) => {
             console.error('📡 WebSocket error:', error);
@@ -4648,6 +4649,50 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
 
       } catch (error) {
         console.error('📡 Failed to setup WebSocket listeners:', error);
+      }
+    }
+
+    // 🔔 Handle any realtime message (operator or system)
+    handleIncomingRealtimeMessage(event) {
+      try {
+        const message = event && event.message ? event.message : null;
+        if (!message) return;
+
+        if (message.sender_type === 'operator') {
+          console.log('👨‍💼 Operator message received via WebSocket');
+          this.handleOperatorMessage.call(this, message);
+          return;
+        }
+
+        if (message.sender_type === 'system') {
+          console.log('🤖 System message received via WebSocket');
+          // Mostra messaggio di sistema come bot message
+          try {
+            if (typeof this.addBotMessage === 'function') {
+              this.addBotMessage(message.content, message.citations || [], false);
+            } else if (this.createMessageElement && this.appendMessage) {
+              const el = this.createMessageElement('bot', message.content, message.citations || [], false);
+              if (el) this.appendMessage(el);
+            }
+          } catch (e) {
+            console.warn('⚠️ Cannot render system message:', e.message);
+          }
+
+          // Se il system message indica ritorno al bot, aggiorna stato
+          try {
+            if (this.conversationTracker && this.conversationTracker.handoffStatus !== 'bot_only') {
+              // Heuristic: se content contiene "Sono tornato" o session.handoff_status nel payload
+              const text = (message.content || '').toLowerCase();
+              if (text.includes('sono tornato') || (event.session && event.session.handoff_status === 'bot_only')) {
+                this.conversationTracker.handoffStatus = 'bot_only';
+                localStorage.setItem(CONFIG.storagePrefix + CONFIG.handoffStatusKey, 'bot_only');
+                this.safeHideHandoffStatus();
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (e) {
+        console.error('🚨 Error handling realtime message:', e);
       }
     }
   }
