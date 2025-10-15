@@ -2,74 +2,126 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Chat\ChatOrchestrationServiceInterface;
 use App\Http\Controllers\Controller;
-use App\Models\Tenant;
 use App\Models\ConversationSession;
-use App\Services\LLM\OpenAIChatService;
-use App\Services\RAG\KbSearchService;
-use App\Services\RAG\LinkConsistencyService;
-use App\Services\RAG\ContextBuilder;
-use App\Services\RAG\ConversationContextEnhancer;
-use App\Services\RAG\TenantRagConfigService;
-use App\Services\RAG\CompleteQueryDetector;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
+/**
+ * Chat Completions API Controller
+ * 
+ * OpenAI-compatible endpoint for chat completions with RAG.
+ * Delegates orchestration to ChatOrchestrationService.
+ * 
+ * @package App\Http\Controllers\Api
+ */
 class ChatCompletionsController extends Controller
 {
     public function __construct(
-        private readonly OpenAIChatService $chat,
-        private readonly KbSearchService $kb,
-        private readonly LinkConsistencyService $linkConsistency,
-        private readonly ContextBuilder $ctx,
-        private readonly ConversationContextEnhancer $conversationEnhancer,
-        private readonly TenantRagConfigService $tenantConfig,
-        private readonly CompleteQueryDetector $completeDetector,
+        private readonly ChatOrchestrationServiceInterface $orchestrator
     ) {}
-
-    public function create(Request $request): JsonResponse|\Symfony\Component\HttpFoundation\StreamedResponse
+    
+    /**
+     * Create chat completion (OpenAI-compatible)
+     * 
+     * POST /v1/chat/completions
+     * 
+     * @param Request $request
+     * @return JsonResponse|StreamedResponse
+     */
+    public function create(Request $request): JsonResponse|StreamedResponse
     {
-        $requestStartTime = microtime(true);
-        $profiling = ['request_start' => $requestStartTime, 'steps' => []];
+        // Extract tenant ID from middleware
         $tenantId = (int) $request->attributes->get('tenant_id');
 
+        // Validate request (OpenAI Chat Completions format)
         $validated = $request->validate([
             'model' => ['required', 'string', 'max:128'],
-            'messages' => ['required', 'array'],
-            'temperature' => ['nullable', 'numeric'],
+            'messages' => ['required', 'array', 'min:1'],
+            'messages.*.role' => ['required', 'string', 'in:system,user,assistant'],
+            'messages.*.content' => ['required', 'string'],
+            'temperature' => ['nullable', 'numeric', 'min:0', 'max:2'],
             'stream' => ['nullable', 'boolean'],
+            'max_tokens' => ['nullable', 'integer', 'min:1'],
             'tools' => ['nullable', 'array'],
             'tool_choice' => ['nullable'],
             'response_format' => ['nullable', 'array'],
         ]);
 
-        $tenant = Tenant::query()->find($tenantId);
-        $queryText = $this->extractUserQuery($validated['messages']);
-        
-        // 🚫 Agent Console: Blocca bot se operatore ha preso controllo
-        $sessionId = $request->header('X-Session-ID');
-        Log::info('🔍 Chat request received', [
-            'session_id_header' => $sessionId,
-            'query' => substr($queryText, 0, 50) . '...'
+        Log::info('chat.request_received', [
+            'tenant_id' => $tenantId,
+            'model' => $validated['model'],
+            'stream' => $validated['stream'] ?? false,
+            'messages_count' => count($validated['messages'])
         ]);
         
-        if ($sessionId) {
+        // 🚫 Agent Console: Block bot if operator has taken control
+        $sessionId = $request->header('X-Session-ID');
+        if ($sessionId && $this->isOperatorActive($sessionId)) {
+            return $this->buildOperatorActiveResponse($validated['model']);
+        }
+        
+        // Prepare orchestration request
+        $orchestrationRequest = array_merge($validated, [
+            'tenant_id' => $tenantId,
+        ]);
+        
+        // Delegate to orchestrator
+        $result = $this->orchestrator->orchestrate($orchestrationRequest);
+        
+        // Handle streaming vs. sync response
+        if ($result instanceof \Generator) {
+            return $this->handleStreamingResponse($result);
+        }
+        
+        // Sync response is already JsonResponse
+        return $result;
+    }
+    
+    /**
+     * Check if operator has taken control of conversation
+     * 
+     * @param string $sessionId
+     * @return bool
+     */
+    private function isOperatorActive(string $sessionId): bool
+    {
             $session = ConversationSession::where('session_id', $sessionId)->first();
-            Log::info('🔍 Session check result', [
-                'session_found' => $session ? 'YES' : 'NO',
-                'handoff_status' => $session?->handoff_status,
-                'session_id' => $session?->session_id
+        
+        if (!$session) {
+            return false;
+        }
+        
+        $isActive = $session->handoff_status === 'handoff_active';
+        
+        if ($isActive) {
+            Log::info('chat.operator_active', [
+                'session_id' => $sessionId,
+                'handoff_status' => $session->handoff_status
             ]);
-            
-            if ($session && $session->handoff_status === 'handoff_active') {
-                Log::info('🚫 Bot blocked - operator active');
+        }
+        
+        return $isActive;
+    }
+    
+    /**
+     * Build response when operator is active
+     * 
+     * @param string $model
+     * @return JsonResponse
+     */
+    private function buildOperatorActiveResponse(string $model): JsonResponse
+    {
+        Log::info('chat.bot_blocked_operator_active');
+        
                 return response()->json([
-                    'id' => 'chatcmpl-agent-handoff-' . uniqid(),
+            'id' => 'chatcmpl-operator-handoff-' . uniqid(),
                     'object' => 'chat.completion',
                     'created' => time(),
-                    'model' => $validated['model'],
+            'model' => $model,
                     'choices' => [
                         [
                             'index' => 0,
@@ -86,339 +138,44 @@ class ChatCompletionsController extends Controller
                         'total_tokens' => 0
                     ]
                 ], 200);
-            }
-        }
-        
-        // Conversational enhancement solo per retrieval (come nel tester)
-        $conversationContext = null;
-        $finalQuery = $queryText;
-        if ($this->conversationEnhancer->isEnabled() && count($validated['messages']) > 1) {
-            $conversationContext = $this->conversationEnhancer->enhanceQuery(
-                $queryText,
-                $validated['messages'],
-                $tenantId
-            );
-            if ($conversationContext['context_used']) {
-                $finalQuery = $conversationContext['enhanced_query'];
-            }
-        }
-
-        // Usa la stessa configurazione del RAG Tester (per-tenant)
-        $kb = $this->kb;
-
-        // 🔍 LOG: Configurazioni RAG applicate
-        \Log::info('ChatCompletionsController RAG Config', [
-            'tenant_id' => $tenantId,
-            'original_query' => $queryText,
-            'final_query' => $finalQuery,
-            'conversation_enhanced' => $conversationContext ? $conversationContext['context_used'] : false,
-            'hyde_enabled' => config('rag.advanced.hyde.enabled'),
-            'reranker_driver' => config('rag.reranker.driver'),
-            'min_citations' => config('rag.answer.min_citations'),
-            'min_confidence' => config('rag.answer.min_confidence'),
-            'force_if_has_citations' => config('rag.answer.force_if_has_citations'),
-            'caller' => 'ChatCompletionsController'
-        ]);
-
-        // REMOVE: Non più override nel widget - usa solo tenant config
-        
-        // 🎯 STEP: Complete Query Detection
-        $stepStart = microtime(true);
-        $completeIntent = $this->completeDetector->detectCompleteIntent($queryText);
-        $profiling['steps']['intent_detection'] = microtime(true) - $stepStart;
-        
-        // Retrieval: usa complete retrieval se rilevato intent specifico
-        $stepStart = microtime(true);
-        if ($completeIntent['is_complete_query']) {
-            Log::info('🎯 [CHAT-API] Using complete retrieval for comprehensive query', [
-                'tenant_id' => $tenantId,
-                'query' => $queryText,
-                'intent_data' => $completeIntent
-            ]);
-            $retrieval = $kb->retrieveComplete($tenantId, $queryText, $completeIntent, true);
-        } else {
-            Log::debug('🔍 [CHAT-API] Using standard semantic retrieval', [
-                'tenant_id' => $tenantId,
-                'query' => $queryText
-            ]);
-            $retrieval = $kb->retrieve($tenantId, $queryText, true);
-        }
-        $profiling['steps']['rag_retrieval'] = microtime(true) - $stepStart;
-        $citations = $retrieval['citations'] ?? [];
-        $confidence = (float) ($retrieval['confidence'] ?? 0.0);
-        
-        // DEBUG: Leggi configurazione RAG da tenant config
-        $tenantCfgSvc = app(\App\Services\RAG\TenantRagConfigService::class);
-        $advCfg = (array) $tenantCfgSvc->getAdvancedConfig($tenantId);
-        $rerankCfg = (array) $tenantCfgSvc->getRerankerConfig($tenantId);
-        $hybridCfg = (array) $tenantCfgSvc->getHybridConfig($tenantId);
-        
-        \Log::info("WIDGET RAG DEBUG START", [
-            'tenant_id' => $tenantId,
-            'query' => $queryText,
-            'citations_count' => count($citations),
-            'confidence' => $confidence,
-            'tenant_config' => [
-                'hyde_enabled' => (bool) (($advCfg['hyde']['enabled'] ?? false) === true),
-                'reranker_driver' => (string) ($rerankCfg['driver'] ?? 'embedding'),
-                'source' => 'TenantRagConfigService'
-            ]
-        ]);
-
-        // Debug esteso per tracciare configurazioni e comportamento
-        $debug = $retrieval['debug'] ?? [];
-        $debug['query_info'] = [
-            'original_query' => $queryText,
-            'final_query' => $finalQuery,
-            'conversation_used' => $conversationContext ? $conversationContext['context_used'] : false,
-        ];
-        
-        $debug['rag_config'] = [
-            'hyde_enabled' => (bool) (($advCfg['hyde']['enabled'] ?? false) === true),
-            'reranker_driver' => (string) ($rerankCfg['driver'] ?? 'embedding'),
-            'vector_top_k' => (int) ($hybridCfg['vector_top_k'] ?? 30),
-            'bm25_top_k' => (int) ($hybridCfg['bm25_top_k'] ?? 50),
-            'mmr_take' => (int) ($hybridCfg['mmr_take'] ?? 8),
-            'mmr_lambda' => (float) ($hybridCfg['mmr_lambda'] ?? 0.3),
-            'neighbor_radius' => (int) ($hybridCfg['neighbor_radius'] ?? 1),
-            'reranker_top_n' => (int) ($rerankCfg['top_n'] ?? 10),
-            'source' => 'TenantRagConfigService',
-        ];
-        $debug['kb_info'] = [
-            'selected_kb' => $retrieval['debug']['selected_kb'] ?? null,
-            'tenant_id' => $tenantId,
-        ];
-        $retrieval['debug'] = $debug;
-
-        // 🔗 FILTRO LINK: Migliora coerenza link prima di costruire contesto
-        $stepStart = microtime(true);
-        $filteredCitations = $this->linkConsistency->filterLinksInContext($citations, $queryText);
-        $profiling['steps']['link_filtering'] = microtime(true) - $stepStart;
-
-        // Costruzione contextText con citazioni filtrate
-        $stepStart = microtime(true);
-        $contextText = $this->buildRagTesterContextText($tenant, $queryText, $filteredCitations);
-        $profiling['steps']['context_building'] = microtime(true) - $stepStart;
-
-        // 🔗 ANALISI QUALITÀ LINK: Log statistiche filtro
-        $linkQuality = $this->linkConsistency->analyzeLinkQuality($citations);
-        $linkQualityFiltered = $this->linkConsistency->analyzeLinkQuality($filteredCitations);
-
-        // DEBUG: Log citazioni e contesto
-        \Log::info("WIDGET RAG CITATIONS", [
-            'citations_preview' => array_map(function($c) {
-                return [
-                    'id' => $c['id'] ?? null,
-                    'document_id' => $c['document_id'] ?? null,
-                    'chunk_index' => $c['chunk_index'] ?? null,
-                    'score' => $c['score'] ?? null,
-                    'snippet_length' => mb_strlen($c['snippet'] ?? ''),
-                    'chunk_text_length' => mb_strlen($c['chunk_text'] ?? ''),
-                    'phones' => $c['phones'] ?? [],
-                    'phone' => $c['phone'] ?? null,
-                    'email' => $c['email'] ?? null,
-                    'title' => mb_substr($c['title'] ?? '', 0, 50),
-                    'snippet_preview' => mb_substr($c['snippet'] ?? '', 0, 200),
-                    'filtered' => $c['filtered'] ?? false,
-                ];
-            }, array_slice($filteredCitations, 0, 8)),
-            'context_length' => mb_strlen($contextText),
-            'context_preview' => mb_substr($contextText, 0, 500),
-            'link_quality_original' => $linkQuality,
-            'link_quality_filtered' => $linkQualityFiltered,
-        ]);
-
-        // Costruisci payload partendo dai messaggi forniti, ma inserendo system prompt e context come nel tester
-        $payload = $validated;
-
-        // Converti parametri numerici da stringhe a numeri
-        if (isset($payload['temperature'])) {
-            $payload['temperature'] = (float) $payload['temperature'];
-        }
-        if (isset($payload['max_tokens'])) {
-            $payload['max_tokens'] = (int) $payload['max_tokens'];
-        }
-        if (isset($payload['max_completion_tokens'])) {
-            $payload['max_completion_tokens'] = (int) $payload['max_completion_tokens'];
-        }
-
-        // 🚀 CONFIGURAZIONE WIDGET: Usa configurazione per-tenant
-        $widgetConfig = $this->tenantConfig->getWidgetConfig($tenantId);
-        
-        // Modello: prima da request, poi da widget config, infine da global config
-        if (!isset($payload['model'])) {
-            $payload['model'] = $widgetConfig['model'] ?? config('openai.chat_model', 'gpt-4o-mini');
-        }
-        
-        // Temperature: da widget config se non specificata
-        if (!isset($payload['temperature'])) {
-            $payload['temperature'] = (float) ($widgetConfig['temperature'] ?? 0.2);
-        }
-        
-        // Max tokens: da widget config se non specificato
-        if (!isset($payload['max_tokens']) && !isset($payload['max_completion_tokens'])) {
-            $payload['max_tokens'] = (int) ($widgetConfig['max_tokens'] ?? 1000); // ⚡ Increased from 800 to prevent link truncation
-        }
-
-        // Inserisci system prompt: custom del tenant oppure default migliorato
-        $systemPrompt = $tenant && !empty($tenant->custom_system_prompt)
-            ? $tenant->custom_system_prompt
-            : 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se il contesto contiene tabelle, estrai e formatta i dati in modo chiaro e leggibile. Se non sono sufficienti, rispondi: "Non lo so". 
-
-IMPORTANTE per le TABELLE:
-- OBBLIGATORIO: Ogni riga della tabella deve essere separata da una nuova linea (\n)
-- FORMATO RICHIESTO:
-| Nominativo | Ruolo | Organo |
-|------------|-------|--------|
-| Nome1 | Ruolo1 | Organo1 |
-| Nome2 | Ruolo2 | Organo2 |
-- NON scrivere tutto su una riga sola
-- SEMPRE includere la riga separatore con i trattini
-
-IMPORTANTE per i link:
-- Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
-- Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
-- NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
-- NON creare link se non conosci l\'URL esatto della fonte
-- Usa il titolo originale del documento, non descrizioni generiche
-- CRITICO: Assicurati che ogni link markdown sia correttamente chiuso con parentesi: [testo](url) - mai link incompleti
-- Se metti un link alla fine di una frase, aggiungi sempre uno spazio prima del punto finale: [link](url) .';
-        $payload['messages'] = array_merge([
-            ['role' => 'system', 'content' => $systemPrompt],
-        ], $payload['messages']);
-
-        // Appendi il contextText all'ultimo messaggio user, prefissando "Domanda: ..."
-        for ($i = count($payload['messages']) - 1; $i >= 0; $i--) {
-            if (($payload['messages'][$i]['role'] ?? '') === 'user') {
-                $original = (string) ($payload['messages'][$i]['content'] ?? $queryText);
-                $payload['messages'][$i]['content'] = 'Domanda: '.$queryText.(
-                    $contextText !== '' ? "\n".$contextText : ''
-                );
-                break;
-            }
-        }
-
-        // DEBUG: Log payload finale all'LLM
-        \Log::info("WIDGET RAG LLM PAYLOAD", [
-            'model' => $payload['model'] ?? null,
-            'temperature' => $payload['temperature'] ?? null,
-            'max_tokens' => $payload['max_tokens'] ?? null,
-            'system_prompt' => $payload['messages'][0]['content'] ?? null,
-            'user_message_length' => mb_strlen($payload['messages'][count($payload['messages'])-1]['content'] ?? ''),
-            'user_message_preview' => mb_substr($payload['messages'][count($payload['messages'])-1]['content'] ?? '', 0, 300),
-        ]);
-
-        // 🚀 STREAMING: Se richiesto, usa SSE invece di risposta sincrona
-        $stepStart = microtime(true);
-        $isStreaming = ($validated['stream'] ?? false) === true;
-        
-        if ($isStreaming) {
-            return $this->handleStreamingResponse($payload, $profiling, $requestStartTime);
-        }
-        
-        $result = $this->chat->chatCompletions($payload);
-        $profiling['steps']['llm_completion'] = microtime(true) - $stepStart;
-
-        // Mantieni salvaguardia contro output più povero se era presente un'expansion (ma non sovrascrivere per schedule)
-        if (!empty($retrieval['response_text'])) {
-            $expansionText = (string) $retrieval['response_text'];
-            $expectsAddress = str_contains($expansionText, '📍') || str_contains($expansionText, 'Indirizzo');
-            $expectsPhone   = str_contains($expansionText, '📞') || str_contains($expansionText, 'Telefono');
-            $expectsEmail   = str_contains($expansionText, '📧') || str_contains($expansionText, 'Email');
-            $expectsHours   = str_contains($expansionText, '🕒') || str_contains($expansionText, 'Orari');
-            $finalContent = (string) ($result['choices'][0]['message']['content'] ?? '');
-            $hasAddress = str_contains($finalContent, '📍') || str_contains($finalContent, 'Indirizzo');
-            $hasPhone   = str_contains($finalContent, '📞') || str_contains($finalContent, 'Telefono');
-            $hasEmail   = str_contains($finalContent, '📧') || str_contains($finalContent, 'Email');
-            $hasHours   = str_contains($finalContent, '🕒') || str_contains($finalContent, 'Orari');
-            $isScheduleFocus = $expectsHours && !$expectsAddress && !$expectsPhone && !$expectsEmail;
-            $missing = ($expectsAddress && !$hasAddress) || ($expectsPhone && !$hasPhone) || ($expectsEmail && !$hasEmail) || ($expectsHours && !$hasHours);
-            if ($missing && !$isScheduleFocus) {
-                $result['choices'][0]['message']['content'] = $expansionText;
-            }
-        }
-
-        // Fallback controllato (stesse soglie del tester/per-tenant)
-        $minCit = (int) config('rag.answer.min_citations', 1);
-        $minConf = (float) config('rag.answer.min_confidence', 0.05);
-        $forceIfHas = (bool) config('rag.answer.force_if_has_citations', true);
-        if ((count($citations) < $minCit || $confidence < $minConf) && !($forceIfHas && count($citations) > 0)) {
-            $fallback = (string) config('rag.answer.fallback_message');
-            $result['choices'][0]['message']['content'] = $fallback;
-        }
-
-        // ❌ RIMOSSO: Fonte principale eliminata per evitare link sbagliati
-
-        // DEBUG: Log risposta finale LLM 
-        \Log::info("WIDGET RAG LLM RESPONSE", [
-            'llm_response_length' => mb_strlen($result['choices'][0]['message']['content'] ?? ''),
-            'llm_response_preview' => mb_substr($result['choices'][0]['message']['content'] ?? '', 0, 300),
-            'fallback_applied' => ($result['choices'][0]['message']['content'] ?? '') === (string) config('rag.answer.fallback_message'),
-            'final_citations_count' => count($citations),
-            'final_confidence' => $confidence,
-        ]);
-
-        $result['citations'] = $citations;
-        $result['retrieval'] = [ 'confidence' => $confidence ];
-        if ($conversationContext && $conversationContext['context_used']) {
-            $result['conversation_debug'] = [
-                'original_query' => $conversationContext['original_query'],
-                'enhanced_query' => $conversationContext['enhanced_query'],
-                'conversation_summary' => $conversationContext['conversation_summary'],
-                'processing_time_ms' => $conversationContext['processing_time_ms'],
-                'context_used' => true,
-            ];
-        }
-
-        // 📊 PROFILAZIONE COMPLETA WIDGET
-        $totalRequestTime = microtime(true) - $requestStartTime;
-        $profiling['total_request_time'] = $totalRequestTime;
-        
-        \Log::info("📊 [WIDGET PROFILING] Complete Request Breakdown", [
-            'tenant_id' => $tenantId,
-            'query' => $queryText,
-            'total_request_time_ms' => round($totalRequestTime * 1000, 2),
-            'profiling_steps' => array_map(function($time) {
-                return round($time * 1000, 2) . 'ms';
-            }, $profiling['steps'] ?? []),
-            'response_length' => mb_strlen($result['choices'][0]['message']['content'] ?? ''),
-            'citations_count' => count($citations)
-        ]);
-        
-        \Log::info("WIDGET RAG DEBUG END");
-        return response()->json($result);
     }
-
+    
     /**
-     * Handle streaming response using Server-Sent Events (SSE)
+     * Convert Generator to Server-Sent Events (SSE) stream
+     * 
+     * @param \Generator $generator
+     * @return StreamedResponse
      */
-    private function handleStreamingResponse(array $payload, array $profiling, float $requestStartTime)
+    private function handleStreamingResponse(\Generator $generator): StreamedResponse
     {
-        return response()->stream(function () use ($payload, $profiling, $requestStartTime) {
-            // Set headers for SSE
+        return response()->stream(function () use ($generator) {
+            // Set SSE headers
             header('Content-Type: text/event-stream');
             header('Cache-Control: no-cache');
             header('Connection: keep-alive');
             header('X-Accel-Buffering: no'); // Disable nginx buffering
             
-            $accumulated = '';
-            $chunkCount = 0;
-            
             try {
-                $result = $this->chat->chatCompletionsStream($payload, function ($delta, $chunkData) use (&$accumulated, &$chunkCount) {
-                    $accumulated .= $delta;
-                    $chunkCount++;
-                    
-                    // Send SSE chunk
-                    echo "data: " . json_encode($chunkData) . "\n\n";
+                foreach ($generator as $chunk) {
+                    // Handle different chunk types
+                    if (isset($chunk['type'])) {
+                        switch ($chunk['type']) {
+                            case 'headers':
+                                // Headers already set above, skip
+                                break;
+                                
+                            case 'chunk':
+                                // Send SSE data chunk
+                                echo "data: " . json_encode($chunk['data']) . "\n\n";
                     
                     // Flush output buffer
                     if (ob_get_level() > 0) {
                         ob_flush();
                     }
                     flush();
-                });
+                                break;
                 
+                            case 'done':
                 // Send final [DONE] message
                 echo "data: [DONE]\n\n";
                 
@@ -426,19 +183,24 @@ IMPORTANTE per i link:
                     ob_flush();
                 }
                 flush();
+                                break;
+                                
+                            case 'error':
+                                // Send error as SSE
+                                echo "data: " . json_encode($chunk['data']) . "\n\n";
+                                
+                                if (ob_get_level() > 0) {
+                                    ob_flush();
+                                }
+                                flush();
+                                break;
+                        }
+                    }
+                }
                 
-                $totalRequestTime = microtime(true) - $requestStartTime;
-                
-                \Log::info("STREAMING CHAT COMPLETED", [
-                    'chunks_sent' => $chunkCount,
-                    'total_length' => strlen($accumulated),
-                    'total_time_ms' => round($totalRequestTime * 1000, 2),
-                    'model' => $result['model'] ?? 'unknown',
-                    'usage' => $result['usage'] ?? []
-                ]);
-                
-            } catch (\Exception $e) {
-                \Log::error("STREAMING ERROR", [
+            } catch (\Throwable $e) {
+                // Log streaming error
+                Log::error('chat.streaming_error', [
                     'error' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
                 ]);
@@ -446,7 +208,7 @@ IMPORTANTE per i link:
                 // Send error as SSE
                 echo "data: " . json_encode([
                     'error' => [
-                        'message' => 'Streaming failed: ' . $e->getMessage(),
+                        'message' => 'Streaming error: ' . $e->getMessage(),
                         'type' => 'stream_error'
                     ]
                 ]) . "\n\n";
@@ -463,326 +225,4 @@ IMPORTANTE per i link:
             'X-Accel-Buffering' => 'no',
         ]);
     }
-
-    private function extractUserQuery(array $messages): string
-    {
-        for ($i = count($messages) - 1; $i >= 0; $i--) {
-            if (($messages[$i]['role'] ?? null) === 'user') {
-                return (string) ($messages[$i]['content'] ?? '');
-            }
-        }
-        return '';
-    }
-
-    private function forceAdvancedRagConfiguration(): \App\Services\RAG\KbSearchService
-    {
-        // Allineato al RAG Tester: nessun override forzato; si usano i valori per-tenant
-        return $this->kb;
-    }
-
-    private function buildRagTesterContextText(?Tenant $tenant, string $query, array $citations): string
-    {
-        // 🚀 CONFIGURAZIONE WIDGET: Usa configurazione per-tenant
-        $widgetConfig = $this->tenantConfig->getWidgetConfig($tenant->id ?? 0);
-        $maxCitationChars = (int) ($widgetConfig['max_citation_chars'] ?? 2000);
-        $maxContextChars = (int) ($widgetConfig['max_context_chars'] ?? 15000);
-        $enableTruncation = (bool) ($widgetConfig['enable_context_truncation'] ?? true);
-        
-        $contextText = '';
-        if (!empty($citations)) {
-            $contextParts = [];
-            foreach ($citations as $c) {
-                $title = $c['title'] ?? ('Doc '.$c['id']);
-                // Usa snippet con limite configurabile per citation
-                $content = trim((string) ($c['snippet'] ?? $c['chunk_text'] ?? ''));
-                
-                // 🔧 FIX UTF-8: Pulisci caratteri malformati per evitare json_encode errors
-                $content = $this->cleanUtf8($content);
-                $title = $this->cleanUtf8($title);
-                
-                if ($enableTruncation && strlen($content) > $maxCitationChars) {
-                    $content = substr($content, 0, $maxCitationChars) . '...';
-                }
-                $extra = '';
-                if (!empty($c['phone'])) {
-                    $extra = "\nTelefono: " . $this->cleanUtf8($c['phone']);
-                }
-                if (!empty($c['email'])) {
-                    $extra .= "\nEmail: " . $this->cleanUtf8($c['email']);
-                }
-                if (!empty($c['address'])) {
-                    $extra .= "\nIndirizzo: " . $this->cleanUtf8($c['address']);
-                }
-                if (!empty($c['schedule'])) {
-                    $extra .= "\nOrario: " . $this->cleanUtf8($c['schedule']);
-                }
-                // 🔗 Aggiungi URL fonte per evitare allucinazioni nei link
-                $sourceInfo = '';
-                if (!empty($c['document_source_url'])) {
-                    // 🔧 FIX: Non usare parentesi quadre perché confondono l'LLM facendogli pensare
-                    // che sia un link markdown incompleto, portandolo ad inventare ###URLMASK###
-                    $sourceInfo = "\nFonte originale: ".$this->cleanUtf8($c['document_source_url']);
-                }
-                
-                if ($content !== '') {
-                    $contextParts[] = "[".$title."]\n".$content.$extra.$sourceInfo;
-                } elseif ($extra !== '') {
-                    $contextParts[] = "[".$title."]\n".$extra.$sourceInfo;
-                }
-            }
-            if ($contextParts !== []) {
-                $rawContext = implode("\n\n---\n\n", $contextParts);
-                
-                // 🚀 CONFIGURAZIONE WIDGET: Limita contesto totale basato su config
-                if ($enableTruncation && strlen($rawContext) > $maxContextChars) {
-                    $rawContext = substr($rawContext, 0, $maxContextChars) . "\n\n[...contesto troncato per performance...]";
-                }
-                
-                // Usa il template personalizzato del tenant se disponibile
-                if ($tenant && !empty($tenant->custom_context_template)) {
-                    $contextText = "\n\n" . str_replace('{context}', $rawContext, $tenant->custom_context_template);
-                } else {
-                    $contextText = "\n\nContesto (estratti rilevanti):\n".$rawContext;
-                }
-            }
-        }
-        return $contextText;
-    }
-
-    /**
-     * Pulisce caratteri UTF-8 malformati per evitare errori json_encode
-     */
-    private function cleanUtf8(string $text): string
-    {
-        // Converte caratteri malformati UTF-8 in caratteri validi
-        $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
-        
-        // Rimuove caratteri di controllo non stampabili (tranne newline e tab)
-        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text);
-        
-        // Fix comuni per caratteri malformati dall'encoding
-        $replacements = [
-            'â€™' => "'",      // apostrofo
-            'Ã ' => 'à',       // a con accento grave
-            'Ã¨' => 'è',       // e con accento grave  
-            'Ã©' => 'é',       // e con accento acuto
-            'Ã¬' => 'ì',       // i con accento grave
-            'Ã¯' => 'ï',       // i con dieresi
-            'Ã²' => 'ò',       // o con accento grave
-            'Ã¹' => 'ù',       // u con accento grave
-            'â€œ' => '"',       // virgolette aperte
-            'â€' => '"',        // virgolette chiuse
-            'â€"' => '-',       // trattino lungo
-            'â€¦' => '...',     // ellissi
-            'lâ' => "l'",       // apostrofo specifico del log
-            'sarÃ ' => 'sarà',  // caso specifico del log
-        ];
-        
-        $text = str_replace(array_keys($replacements), array_values($replacements), $text);
-        
-        // Assicurati che sia UTF-8 valido
-        if (!mb_check_encoding($text, 'UTF-8')) {
-            $text = utf8_encode($text);
-        }
-        
-        return $text;
-    }
-
-    // RIMOSSO: Metodi di prioritizzazione personalizzati - usa logica RAG Tester
-
-    // ❌ RIMOSSO: getBestSourceUrl() - metodo non più necessario
-
-    /**
-     * 🧮 Calcola score intelligente per una citazione considerando tutti i fattori
-     */
-    // ❌ RIMOSSO: metodo non utilizzato
-    private function calculateSmartSourceScore(array $citation, array $allCitations): float
-    {
-        $score = 0.0;
-        $weights = [
-            'rag_score' => 0.35,        // Score RAG originale (35%)
-            'content_quality' => 0.25,   // Qualità contenuto (25%)
-            'intent_match' => 0.20,      // Match intent specifico (20%)
-            'source_authority' => 0.15,  // Autorità fonte (15%)
-            'semantic_relevance' => 0.05 // Rilevanza semantica (5%)
-        ];
-
-        // 1. 📊 RAG Score (vettoriale + BM25 fusion)
-        $ragScore = (float) ($citation['score'] ?? 0.0);
-        $score += $ragScore * $weights['rag_score'];
-
-        // 2. 📝 Content Quality Score
-        $contentQualityScore = $this->calculateContentQualityScore($citation);
-        $score += $contentQualityScore * $weights['content_quality'];
-
-        // 3. 🎯 Intent Match Score  
-        $intentMatchScore = $this->calculateIntentMatchScore($citation);
-        $score += $intentMatchScore * $weights['intent_match'];
-
-        // 4. 🏛️ Source Authority Score
-        $sourceAuthorityScore = $this->calculateSourceAuthorityScore($citation);
-        $score += $sourceAuthorityScore * $weights['source_authority'];
-
-        // 5. 🔍 Semantic Relevance Score (basato su posizione nella lista)
-        $semanticRelevanceScore = $this->calculateSemanticRelevanceScore($citation, $allCitations);
-        $score += $semanticRelevanceScore * $weights['semantic_relevance'];
-
-        return $score;
-    }
-
-    /**
-     * 📝 Calcola score qualità contenuto
-     */
-    private function calculateContentQualityScore(array $citation): float
-    {
-        $score = 0.0;
-        
-        // Lunghezza chunk (contenuto più lungo = più informativo)
-        $chunkText = $citation['chunk_text'] ?? $citation['snippet'] ?? '';
-        $textLength = mb_strlen($chunkText);
-        if ($textLength > 800) $score += 0.3;
-        elseif ($textLength > 400) $score += 0.2;
-        elseif ($textLength > 200) $score += 0.1;
-
-        // Completezza snippet
-        $snippet = $citation['snippet'] ?? '';
-        if (mb_strlen($snippet) > 150) $score += 0.2;
-
-        // Presenza title significativo
-        $title = $citation['title'] ?? '';
-        if (!empty($title) && mb_strlen($title) > 10) $score += 0.2;
-
-        // Contenuto strutturato (evidenze di lista, paragrafi, etc.)
-        if (preg_match('/[-•·]\s+|\d+\.\s+|\n\s*\n/', $chunkText)) $score += 0.15;
-
-        // Presenza informazioni specifiche
-        if (preg_match('/\b(?:telefono|email|indirizzo|orari?|contatti?)\b/i', $chunkText)) $score += 0.15;
-
-        return min(1.0, $score); // Cap a 1.0
-    }
-
-    /**
-     * 🎯 Calcola score match intent specifico
-     */
-    private function calculateIntentMatchScore(array $citation): float
-    {
-        $score = 0.0;
-        
-        // Campi intent specifici presenti
-        $intentFields = ['phone', 'email', 'address', 'schedule'];
-        foreach ($intentFields as $field) {
-            if (!empty($citation[$field])) {
-                $score += 0.25; // 25% per ogni tipo intent
-            }
-        }
-
-        // Bonus se ha più tipi di contatto
-        $contactTypes = array_filter($intentFields, fn($f) => !empty($citation[$f]));
-        if (count($contactTypes) >= 2) $score += 0.1;
-
-        // Pattern content matching
-        $chunkText = $citation['chunk_text'] ?? $citation['snippet'] ?? '';
-        
-        // Telefoni
-        if (preg_match('/(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/', $chunkText)) $score += 0.1;
-        
-        // Email
-        if (preg_match('/@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', $chunkText)) $score += 0.1;
-        
-        // Indirizzi
-        if (preg_match('/\b(?:via|viale|piazza|corso|largo)\s+[A-Z]/i', $chunkText)) $score += 0.1;
-        
-        // Orari strutturati
-        if (preg_match('/\d{1,2}[:\.]?\d{0,2}\s*[-–—]\s*\d{1,2}[:\.]?\d{0,2}/', $chunkText)) $score += 0.1;
-
-        return min(1.0, $score); // Cap a 1.0
-    }
-
-    /**
-     * 🏛️ Calcola score autorità fonte
-     */
-    private function calculateSourceAuthorityScore(array $citation): float
-    {
-        $score = 0.0;
-        
-        $sourceUrl = $citation['document_source_url'] ?? '';
-        $documentType = $citation['document_type'] ?? '';
-        $title = $citation['title'] ?? '';
-
-        // Bonus per domini governativi/istituzionali
-        if (preg_match('/\.(gov|edu|org|comune\.|provincia\.|regione\.)/i', $sourceUrl)) {
-            $score += 0.4;
-        }
-
-        // Bonus per tipo documento
-        switch (strtolower($documentType)) {
-            case 'pdf': $score += 0.2; break;  // PDF spesso più formali
-            case 'doc':
-            case 'docx': $score += 0.15; break;
-            case 'txt':
-            case 'md': $score += 0.1; break;
-        }
-
-        // Bonus per URL con path specifici (non homepage)
-        if (preg_match('/\/[^\/]+\/[^\/]+/', $sourceUrl)) {
-            $score += 0.15;
-        }
-
-        // Bonus per titoli istituzionali
-        if (preg_match('/\b(?:comune|provincia|regione|ufficio|servizio|informazioni)\b/i', $title)) {
-            $score += 0.15;
-        }
-
-        // Malus per URL molto lunghe (spesso auto-generate)
-        if (mb_strlen($sourceUrl) > 150) {
-            $score -= 0.1;
-        }
-
-        return max(0.0, min(1.0, $score)); // Tra 0 e 1
-    }
-
-    /**
-     * 🔍 Calcola score rilevanza semantica (basato su posizione)
-     */
-    private function calculateSemanticRelevanceScore(array $citation, array $allCitations): float
-    {
-        $citationId = $citation['id'] ?? 0;
-        $chunkIndex = $citation['chunk_index'] ?? 0;
-        
-        // Trova posizione nella lista (posizioni più alte = più rilevanti)
-        foreach ($allCitations as $index => $c) {
-            if (($c['id'] ?? 0) === $citationId && ($c['chunk_index'] ?? 0) === $chunkIndex) {
-                $position = $index + 1;
-                $totalCitations = count($allCitations);
-                
-                // Score inverso: primi risultati hanno score più alto
-                return max(0.0, 1.0 - ($position - 1) / max(1, $totalCitations - 1));
-            }
-        }
-        
-        return 0.5; // Default se non trovato
-    }
-
-    /**
-     * 📊 Ottieni breakdown dettagliato del score per debugging
-     */
-    private function getScoreBreakdown(array $citation, array $allCitations): array
-    {
-        return [
-            'rag_score' => round((float) ($citation['score'] ?? 0.0), 3),
-            'content_quality' => round($this->calculateContentQualityScore($citation), 3),
-            'intent_match' => round($this->calculateIntentMatchScore($citation), 3),
-            'source_authority' => round($this->calculateSourceAuthorityScore($citation), 3),
-            'semantic_relevance' => round($this->calculateSemanticRelevanceScore($citation, $allCitations), 3),
-            'document_type' => $citation['document_type'] ?? 'unknown',
-            'title_preview' => mb_substr($citation['title'] ?? '', 0, 50),
-            'content_length' => mb_strlen($citation['chunk_text'] ?? $citation['snippet'] ?? ''),
-        ];
-    }
 }
-
-
-
-
-
-

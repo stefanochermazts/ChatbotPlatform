@@ -174,6 +174,21 @@ return [
         'temperature' => (float) env('RAG_WIDGET_TEMPERATURE', 0.2), // Temperatura per consistenza
         'timeout_seconds' => (int) env('RAG_WIDGET_TIMEOUT', 30), // Timeout chiamate OpenAI
     ],
+    
+    // 🎯 Citation Scoring Configuration
+    // Multi-dimensional scoring for ranking RAG citations
+    'scoring' => [
+        // Minimum composite score threshold for filtering (0.0-1.0)
+        'min_confidence' => (float) env('RAG_SCORING_MIN_CONFIDENCE', 0.30),
+        
+        // Dimension weights (must sum to ~1.0)
+        'weights' => [
+            'source' => (float) env('RAG_SCORING_WEIGHT_SOURCE', 0.20),        // Source quality (file type, domain, freshness)
+            'quality' => (float) env('RAG_SCORING_WEIGHT_QUALITY', 0.30),      // Content quality (length, structure)
+            'authority' => (float) env('RAG_SCORING_WEIGHT_AUTHORITY', 0.25),  // Authority (official docs boost)
+            'intent_match' => (float) env('RAG_SCORING_WEIGHT_INTENT', 0.25),  // Intent-specific field presence
+        ],
+    ],
 
 ];
 
