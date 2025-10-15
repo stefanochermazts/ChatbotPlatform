@@ -118,7 +118,8 @@ class IngestUploadedDocumentJob implements ShouldQueue
             // Standard chunking for non-table, non-directory text
             $standardChunks = [];
             if (count($directoryChunks) < 5 && trim($textWithoutTables) !== '') {
-                $standardChunks = $chunking->chunk($textWithoutTables, $chunkOptions);
+                // ✅ FIXED: Pass $tenantId to chunk() (Step 4/9)
+                $standardChunks = $chunking->chunk($textWithoutTables, $doc->tenant_id, $chunkOptions);
             }
             
             // Merge all chunks
