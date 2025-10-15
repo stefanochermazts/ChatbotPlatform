@@ -99,15 +99,31 @@ class TenantRagConfigService
     
     /**
      * Ottiene parametri di chunking per tenant
+     * 
+     * Returns tenant-specific chunking configuration with fallback to global config.
+     * Supports 3-level hierarchy: tenant-specific → profile → global defaults.
+     * 
+     * @param int $tenantId The tenant ID to retrieve chunking config for
+     * @return array{max_chars: int, overlap_chars: int} Chunking parameters
+     * 
+     * @example
+     * // For tenant with custom config
+     * $config = $service->getChunkingConfig(5);
+     * // Returns: ['max_chars' => 3000, 'overlap_chars' => 300]
+     * 
+     * // For tenant without custom config
+     * $config = $service->getChunkingConfig(1);
+     * // Returns: ['max_chars' => 2200, 'overlap_chars' => 250] (from global config)
      */
     public function getChunkingConfig(int $tenantId): array
     {
         $config = $this->getConfig($tenantId);
         
-        // Fallback ai parametri globali se non configurati per tenant
+        // ✅ FIXED: Use flattened config keys (Step 1 fix)
+        // Priority: tenant.chunking → global rag.chunk_max_chars → hardcoded default
         return [
-            'max_chars' => $config['chunking']['max_chars'] ?? config('rag.chunk.max_chars', 2200),
-            'overlap_chars' => $config['chunking']['overlap_chars'] ?? config('rag.chunk.overlap_chars', 250),
+            'max_chars' => $config['chunking']['max_chars'] ?? config('rag.chunk_max_chars', 2200),
+            'overlap_chars' => $config['chunking']['overlap_chars'] ?? config('rag.chunk_overlap_chars', 250),
         ];
     }
 
