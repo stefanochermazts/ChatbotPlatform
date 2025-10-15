@@ -414,8 +414,21 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
             'max_tokens' => (int) ($request['max_tokens'] ?? ($widgetConfig['max_tokens'] ?? 1000)),
         ];
         
-        // Add system prompt
-        $systemPrompt = config('rag.system_prompt', 'Sei un assistente. Rispondi in italiano.');
+        // Add system prompt (use tenant custom or strict default)
+        $tenant = \App\Models\Tenant::find($tenantId);
+        if ($tenant && !empty($tenant->custom_system_prompt)) {
+            $systemPrompt = $tenant->custom_system_prompt;
+        } else {
+            // Use same strict prompt as RAG Tester to prevent hallucinations
+            $systemPrompt = 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
+
+IMPORTANTE per i link:
+- Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
+- Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
+- NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
+- NON creare link se non conosci l\'URL esatto della fonte
+- Usa il titolo originale del documento, non descrizioni generiche';
+        }
         array_unshift($payload['messages'], ['role' => 'system', 'content' => $systemPrompt]);
         
         // Append context to last user message
