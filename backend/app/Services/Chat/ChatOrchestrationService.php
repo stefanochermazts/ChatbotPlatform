@@ -128,7 +128,20 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
             // Step 5: Citation Scoring (NEW!)
             $stepStart = microtime(true);
             if (!empty($citations)) {
-                $scoredCitations = $this->scorer->scoreCitations($citations, [
+                // Normalize citation format for scorer (expects 'content' field)
+                $normalizedCitations = array_map(function ($citation) {
+                    if (!isset($citation['content'])) {
+                        // Map snippet/chunk_text to content for compatibility
+                        $citation['content'] = $citation['snippet'] ?? $citation['chunk_text'] ?? '';
+                    }
+                    // Ensure document_id exists (scorer expects it)
+                    if (!isset($citation['document_id']) && isset($citation['id'])) {
+                        $citation['document_id'] = $citation['id'];
+                    }
+                    return $citation;
+                }, $citations);
+                
+                $scoredCitations = $this->scorer->scoreCitations($normalizedCitations, [
                     'query' => $queryText,
                     'intent' => $intentData['intent'] ?? '',
                     'tenant_id' => $tenantId,
