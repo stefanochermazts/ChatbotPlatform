@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Ingestion;
 
 use App\Services\Ingestion\ChunkingService;
+use App\Services\RAG\TenantRagConfigService;
 use Tests\TestCase;
 
 /**
@@ -10,15 +11,27 @@ use Tests\TestCase;
  * 
  * Tests the most critical Service in the ingestion pipeline.
  * ChunkingService is responsible for semantic chunking with multiple strategies.
+ * 
+ * ✅ UPDATED: Now tests tenant-aware chunking (Step 5/9)
  */
 class ChunkingServiceTest extends TestCase
 {
     private ChunkingService $service;
+    private int $testTenantId = 999; // Test tenant ID
     
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new ChunkingService();
+        
+        // ✅ FIXED: Mock TenantRagConfigService for isolated unit tests
+        $mockConfig = $this->createMock(TenantRagConfigService::class);
+        $mockConfig->method('getChunkingConfig')
+            ->willReturn([
+                'max_chars' => 2200,
+                'overlap_chars' => 250,
+            ]);
+        
+        $this->service = new ChunkingService($mockConfig);
     }
     
     /** @test */
@@ -26,7 +39,8 @@ class ChunkingServiceTest extends TestCase
     {
         $text = "This is a short text that should not be split.";
         
-        $result = $this->service->chunk($text, [
+        // ✅ FIXED: Pass $tenantId (Step 5/9)
+        $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 2200,
             'overlap_chars' => 250
         ]);
@@ -45,7 +59,8 @@ class ChunkingServiceTest extends TestCase
         
         $text = $paragraph1 . "\n\n" . $paragraph2 . "\n\n" . $paragraph3;
         
-        $result = $this->service->chunk($text, [
+        // ✅ FIXED: Pass $tenantId (Step 5/9)
+        $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 1500,
             'overlap_chars' => 200
         ]);
@@ -64,7 +79,8 @@ class ChunkingServiceTest extends TestCase
     {
         $text = str_repeat("Lorem ipsum dolor sit amet. ", 500); // ~14,000 chars
         
-        $result = $this->service->chunk($text, [
+        // ✅ FIXED: Pass $tenantId (Step 5/9)
+        $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 2200,
             'overlap_chars' => 250
         ]);
@@ -159,7 +175,8 @@ class ChunkingServiceTest extends TestCase
     /** @test */
     public function it_handles_empty_text_gracefully()
     {
-        $result = $this->service->chunk('', [
+        // ✅ FIXED: Pass $tenantId (Step 5/9)
+        $result = $this->service->chunk('', $this->testTenantId, [
             'max_chars' => 2200,
             'overlap_chars' => 250
         ]);
@@ -174,7 +191,8 @@ class ChunkingServiceTest extends TestCase
                 "Second paragraph with different topic.\n\n" .
                 "Third paragraph continues the discussion.";
         
-        $result = $this->service->chunk($text, [
+        // ✅ FIXED: Pass $tenantId (Step 5/9)
+        $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 100, // Force splitting
             'overlap_chars' => 20
         ]);
