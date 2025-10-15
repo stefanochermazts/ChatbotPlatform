@@ -161,7 +161,8 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
             
             // Step 7: Context Building
             $stepStart = microtime(true);
-            $contextText = $this->contextBuilder->build($filteredCitations, $queryText);
+            $contextResult = $this->contextBuilder->build($filteredCitations);
+            $contextText = is_array($contextResult) ? ($contextResult['context'] ?? '') : $contextResult;
             
             $this->profiler->profile([
                 'step' => 'context_building',
