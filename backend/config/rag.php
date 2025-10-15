@@ -10,11 +10,10 @@ return [
     'embedding_model' => $model,
     'embedding_dim' => (int) env('OPENAI_EMBEDDING_DIM', $dim),
 
-    // Parametri di chunking testo
-    'chunk' => [
-        'max_chars' => (int) env('RAG_CHUNK_MAX_CHARS', 2200), // 🔧 Aumentato per tabelle
-        'overlap_chars' => (int) env('RAG_CHUNK_OVERLAP_CHARS', 250), // 🔧 Aumentato overlap
-    ],
+    // ✅ Parametri di chunking testo (flat keys for TenantRagConfigService consistency)
+    // Naming: chunk_max_chars (not chunk.max_chars) to match service expectations
+    'chunk_max_chars' => (int) env('RAG_CHUNK_MAX_CHARS', 2200), // 🔧 Aumentato per tabelle
+    'chunk_overlap_chars' => (int) env('RAG_CHUNK_OVERLAP_CHARS', 250), // 🔧 Aumentato overlap
 
     // Configurazione adapter indice vettoriale (pluggable)
     'vector' => [
