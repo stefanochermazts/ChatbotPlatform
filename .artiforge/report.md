@@ -1,1201 +1,865 @@
-# Codebase Analysis Report - ChatbotPlatform
+# 🔍 Codebase Analysis Report: RAG Discrepancy (Widget vs RAG Tester)
 
-**Data Analisi**: 14 Ottobre 2025  
-**Versione Piattaforma**: 1.0  
-**Scope**: Identificazione Debito Tecnico e Aree Critiche  
+**Generated**: 2025-10-15  
+**Analysis Type**: Debug & Root Cause Analysis  
+**Focus**: RAG Pipeline Inconsistencies after Phase 4 Refactoring
 
 ---
 
 ## Executive Summary
 
-L'analisi della codebase ChatbotPlatform rivela una piattaforma **funzionalmente solida** ma con **significativo debito tecnico** che richiede attenzione immediata. La piattaforma ha un'architettura ben pensata con multitenancy rigoroso e RAG avanzato, ma soffre di:
+**CRITICAL ISSUE IDENTIFIED**: The RAG Tester and Chat Widget use **completely different context building logic**, causing inconsistent results despite sharing the same underlying RAG services.
 
-- ⚠️ **CRITICAL**: Test coverage insufficiente (~2% stimato)
-- ⚠️ **HIGH**: Controller/Job troppo grandi (>700 righe)
-- ⚠️ **HIGH**: Business logic nei Controller invece che nei Services
-- ⚠️ **MEDIUM**: Codice duplicato tra Widget e RAG Tester
-- ⚠️ **MEDIUM**: Mancanza interfacce per dependency injection
+**Impact**: 🔴 **HIGH SEVERITY**
+- Users receive incorrect information via Widget (e.g., wrong phone numbers)
+- RAG Tester shows correct results but Widget doesn't reflect them
+- LLM hallucinations occur in Widget due to missing structured fields
 
-**Rischio Complessivo**: 🟠 **MEDIO-ALTO**  
-**Raccomandazione**: Refactoring incrementale con priorità su test e separazione concerns.
+**Root Cause**: During Phase 4 refactoring, the `ChatOrchestrationService` was introduced to simplify the Widget's chat pipeline. However, it delegates context building to `ContextBuilder`, which has **significantly less functionality** than the custom context building logic in `RagTestController`.
 
 ---
 
-## Analysis Results
+## 🔍 Analysis Results
 
-### 🔍 Code Quality Issues
+### 1. 🚨 CRITICAL: Context Building Discrepancy
 
-#### 1. **God Classes - Violazione Single Responsibility Principle**
+#### RAG Tester (RagTestController.php, lines 206-244)
+✅ **Rich Context Building with Structured Fields**
 
-**Problema Critico**: Diverse classi superano ampiamente il limite di 300 righe stabilito dalle regole di progetto.
-
-##### Violazioni Identificate:
-
-| File | Righe | Limite | Violazione |
-|------|-------|--------|------------|
-| `IngestUploadedDocumentJob.php` | **977** | 300 | **+677** ⛔ |
-| `ChatCompletionsController.php` | **789** | 300 | **+489** ⛔ |
-| `DocumentAdminController.php` | **786** | 200 (Controller) | **+586** ⛔ |
-
-**Dettagli per File**:
-
-**`IngestUploadedDocumentJob.php` (977 righe)**:
-- **Responsabilità Multiple**: parsing PDF/DOCX/XLSX/PPTX, chunking, embeddings, Milvus indexing, markdown export
-- **Chunking Complesso**: 400+ righe solo per table-aware chunking
-- **Metodi Privati Eccessivi**: 15+ metodi helper che dovrebbero essere in Services dedicati
-- **Impatto**: Difficile testare, modificare, e debuggare
-
-**Refactoring Consigliato**:
 ```php
-// PRIMA (977 righe)
-class IngestUploadedDocumentJob {
-    public function handle() { /* 974 righe */ }
-    private function readTextFromStoragePath() { /* 100 righe */ }
-    private function chunkText() { /* 200 righe */ }
-    // ... altri 12 metodi
+// Lines 210-234
+foreach ($citations as $c) {
+    $title = $c['title'] ?? ('Doc '.$c['id']);
+    $content = trim((string) ($c['snippet'] ?? $c['chunk_text'] ?? ''));
+    
+    $extra = '';
+    // ✅ Explicitly adds structured fields
+    if (!empty($c['phone'])) {
+        $extra = "\nTelefono: ".$c['phone'];
+    }
+    if (!empty($c['email'])) {
+        $extra .= "\nEmail: ".$c['email'];
+    }
+    if (!empty($c['address'])) {
+        $extra .= "\nIndirizzo: ".$c['address'];
+    }
+    if (!empty($c['schedule'])) {
+        $extra .= "\nOrario: ".$c['schedule'];
+    }
+    
+    // ✅ Adds source URL explicitly
+    $sourceInfo = '';
+    if (!empty($c['document_source_url'])) {
+        $sourceInfo = "\n[Fonte: ".$c['document_source_url']."]";
+    }
+    
+    if ($content !== '') {
+        $contextParts[] = "[".$title."]\n".$content.$extra.$sourceInfo;
+    }
 }
 
-// DOPO (150 righe)
-class IngestUploadedDocumentJob {
-    public function __construct(
-        private readonly DocumentParserService $parser,
-        private readonly ChunkingService $chunking,
-        private readonly OpenAIEmbeddingsService $embeddings,
-        private readonly MilvusClient $milvus,
-        private readonly MarkdownExportService $export
-    ) {}
-    
-    public function handle() {
-        $text = $this->parser->extractText($this->document);
-        $chunks = $this->chunking->chunkText($text, $this->document);
-        $vectors = $this->embeddings->embedTexts($chunks);
-        $this->milvus->upsertVectors($this->document, $chunks, $vectors);
-        $this->export->saveExtractedMarkdown($this->document, $chunks);
-    }
+// Lines 238-243: Uses tenant custom context template
+if ($tenant && !empty($tenant->custom_context_template)) {
+    $contextText = "\n\n" . str_replace('{context}', $rawContext, $tenant->custom_context_template);
+} else {
+    $contextText = "\n\nContesto (estratti rilevanti):\n".$rawContext;
 }
 ```
 
-**`ChatCompletionsController.php` (789 righe)**:
-- **Business Logic nel Controller**: 600+ righe di orchestrazione RAG, fallback, profiling
-- **Metodi Privati Complessi**: `buildRagTesterContextText()`, `calculateSmartSourceScore()` (200+ righe)
-- **Violazione Controller Sottile**: Dovrebbe delegare tutto ai Services
-
-**Refactoring Consigliato**:
-```php
-// PRIMA (789 righe)
-class ChatCompletionsController {
-    public function create() { /* 390 righe di orchestrazione */ }
-    private function buildRagTesterContextText() { /* 70 righe */ }
-    private function calculateSmartSourceScore() { /* 35 righe */ }
-    private function calculateContentQualityScore() { /* 30 righe */ }
-    // ... altri 8 metodi privati di calcolo score
-}
-
-// DOPO (80 righe)
-class ChatCompletionsController {
-    public function __construct(
-        private readonly ChatOrchestrationService $orchestrator
-    ) {}
-    
-    public function create(Request $request): JsonResponse {
-        $validated = $request->validate(/* ... */);
-        $result = $this->orchestrator->processChat($validated);
-        return response()->json($result);
-    }
-}
-
-// Nuovo Service
-class ChatOrchestrationService {
-    public function processChat(array $payload): array {
-        $retrieval = $this->retriever->retrieve($payload);
-        $context = $this->contextBuilder->build($retrieval);
-        $response = $this->llm->generate($context, $payload);
-        return $this->formatter->format($response, $retrieval);
-    }
-}
-```
-
-**`DocumentAdminController.php` (786 righe)**:
-- **Troppi Metodi**: 16 metodi pubblici (index, upload, retry, destroy, destroyAll, exportExcel, rescrape, rescrapeAll, etc.)
-- **Business Logic**: Milvus cleanup, file handling, Excel export nel controller
-- **Validazione Sparsa**: Logica di validazione ripetuta in ogni metodo
+**Features**:
+- ✅ Adds structured fields (`phone`, `email`, `address`, `schedule`)
+- ✅ Uses `custom_context_template` from tenant configuration
+- ✅ Includes source URL as `[Fonte: URL]`
+- ✅ Falls back to hardcoded Italian template
 
 ---
 
-#### 2. **Codice Duplicato - DRY Violation**
-
-##### Duplicazione Query/Filter Logic
-
-**Problema**: Logica di filtraggio identica ripetuta in `index()` e `exportExcel()` in `DocumentAdminController.php`.
+#### Widget via ChatOrchestrationService → ContextBuilder (ContextBuilder.php)
+❌ **Minimal Context Building - MISSING FEATURES**
 
 ```php
-// DUPLICATO in linee 28-64 e 80-115 (90+ righe duplicate)
-$query = Document::where('tenant_id', $tenant->id);
-
-if ($kbId > 0) {
-    $query->where('knowledge_base_id', $kbId);
-}
-
-if (!empty($sourceUrlSearch)) {
-    $query->where(function($q) use ($sourceUrlSearch) {
-        $q->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%')
-          ->orWhere('title', 'ILIKE', '%' . $sourceUrlSearch . '%');
-    });
-}
-
-if (!empty($qualityFilter)) {
-    switch ($qualityFilter) {
-        case 'high': /* ... */ break;
-        case 'medium': /* ... */ break;
-        // ... 50 righe di logica identica
+// Lines 34-48
+$parts = [];
+foreach ($unique as $c) {
+    $snippet = (string) ($c['snippet'] ?? '');
+    if ($enabled && mb_strlen($snippet) > $compressOver) {
+        $snippet = $this->compressSnippet($snippet, $compressTarget);
     }
+    $title = (string) ($c['title'] ?? '');
+    
+    // ❌ NO structured fields added!
+    // ❌ NO custom_context_template support!
+    // ❌ NO source URL added!
+    $parts[] = "[{$title}]\n{$snippet}";
+}
+
+// Budget semplice per caratteri
+$context = '';
+foreach ($parts as $p) {
+    if (mb_strlen($context) + mb_strlen($p) + 2 > $maxChars) break;
+    $context .= ($context === '' ? '' : "\n\n").$p;
 }
 ```
 
-**Refactoring Consigliato**:
-```php
-class DocumentAdminController {
-    private function applyDocumentFilters(Builder $query, Request $request): Builder {
-        if ($request->filled('knowledge_base_id')) {
-            $query->where('knowledge_base_id', $request->knowledge_base_id);
-        }
-        
-        if ($request->filled('source_url')) {
-            $query->where(function($q) use ($request) {
-                $q->where('source_url', 'ILIKE', '%' . $request->source_url . '%')
-                  ->orWhere('title', 'ILIKE', '%' . $request->source_url . '%');
-            });
-        }
-        
-        return $query;
-    }
-    
-    public function index(Request $request) {
-        $query = Document::where('tenant_id', $tenant->id);
-        $query = $this->applyDocumentFilters($query, $request);
-        return $query->paginate(20);
-    }
-    
-    public function exportExcel(Request $request) {
-        $query = Document::where('tenant_id', $tenant->id);
-        $query = $this->applyDocumentFilters($query, $request);
-        return $query->get();
-    }
-}
-```
+**Missing Features**:
+- ❌ **NO structured fields** (`phone`, `email`, `address`, `schedule`)
+- ❌ **NO tenant `custom_context_template`** support
+- ❌ **NO source URL** as `[Fonte: URL]`
+- ❌ **NO Italian template** wrapper
 
-##### Duplicazione Context Building
-
-**Problema**: Logica identica per costruire context RAG ripetuta in `ChatCompletionsController` e `RagTestController`.
-
-**Impatto**: Inconsistenza tra widget e tester, doppio maintenance burden.
-
-**Soluzione**: Estrarre in `ContextBuilderService`.
+**Impact**: The LLM receives **LESS structured information** in Widget, forcing it to:
+1. Extract phone numbers from unstructured text (error-prone)
+2. Miss explicit fields (email, address, schedule)
+3. Potentially hallucinate information to "fill gaps"
 
 ---
 
-#### 3. **Magic Numbers e Configurazione Hardcoded**
+### 2. 🟠 HIGH: System Prompt Usage
 
-**Problemi Identificati**:
+#### RAG Tester (RagTestController.php, lines 249-261)
+✅ **Tenant-aware + Strict Default**
 
 ```php
-// IngestUploadedDocumentJob.php:298
-if (mb_strlen($contextualizedTable) < 1200 && isset($tables[$tableIndex + 1])) {
-    // ❌ Magic number 1200 non configurabile
+if ($tenant && !empty($tenant->custom_system_prompt)) {
+    $messages[] = ['role' => 'system', 'content' => $tenant->custom_system_prompt];
+} else {
+    $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
+
+IMPORTANTE per i link:
+- Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
+- Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
+- NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
+- NON creare link se non conosci l\'URL esatto della fonte
+- Usa il titolo originale del documento, non descrizioni generiche'];
 }
-
-// ChatCompletionsController.php:260
-$payload['max_tokens'] = (int) ($widgetConfig['max_tokens'] ?? 1000);
-// ❌ Fallback 1000 hardcoded, dovrebbe essere in config
-
-// IngestUploadedDocumentJob.php:347
-if (count($dirEntries) >= 5) {
-    // ❌ Magic number 5 per directory entries
-}
-
-// DocumentAdminController.php:744
-usleep(500000); // ❌ Rate limiting hardcoded (0.5 secondi)
 ```
 
-**Refactoring Consigliato**:
+#### Widget via ChatOrchestrationService (ChatOrchestrationService.php, lines 417-432)
+✅ **RECENTLY FIXED** (Hotfix #4 - 2025-10-15)
+
 ```php
-// config/rag.php
-return [
-    'chunking' => [
-        'table_context_min_chars' => env('RAG_TABLE_CONTEXT_MIN', 1200),
-        'directory_entries_threshold' => env('RAG_DIR_ENTRIES_MIN', 5),
-    ],
-    'widget' => [
-        'default_max_tokens' => env('WIDGET_MAX_TOKENS', 1000),
-    ],
-    'scraping' => [
-        'rate_limit_sleep_ms' => env('SCRAPER_RATE_LIMIT_MS', 500),
-    ],
-];
+// Add system prompt (use tenant custom or strict default)
+$tenant = \App\Models\Tenant::find($tenantId);
+if ($tenant && !empty($tenant->custom_system_prompt)) {
+    $systemPrompt = $tenant->custom_system_prompt;
+} else {
+    // Use same strict prompt as RAG Tester to prevent hallucinations
+    $systemPrompt = 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
+
+IMPORTANTE per i link:
+- Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
+- Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
+- NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
+- NON creare link se non conosci l\'URL esatto della fonte
+- Usa il titolo originale del documento, non descrizioni generiche';
+}
+array_unshift($payload['messages'], ['role' => 'system', 'content' => $systemPrompt]);
 ```
+
+**Status**: ✅ **ALIGNED** (after Hotfix #4)
+
+Both paths now use the same strict anti-hallucination prompt.
 
 ---
 
-#### 4. **Mancanza Type Hints Completi**
+### 3. 🟡 MEDIUM: Citation Format Normalization
 
-**Problema**: Diversi metodi senza return type hints o con array generici.
+#### RAG Tester
+✅ **Direct citation usage** - assumes structured fields are present
+
+#### Widget via ChatOrchestrationService (lines 138-152)
+✅ **Normalization added** (Hotfix #3)
 
 ```php
-// IngestUploadedDocumentJob.php:264
-private function chunkText(string $text, Document $doc): array // ❌ array generico
+// Normalize citation format for scorer (expects 'content' field)
+$normalizedCitations = array_map(function ($citation) {
+    if (!isset($citation['content'])) {
+        // Map snippet/chunk_text to content for compatibility
+        $citation['content'] = $citation['snippet'] ?? $citation['chunk_text'] ?? '';
+    }
+    // Ensure document_id exists (scorer expects it)
+    if (!isset($citation['document_id']) && isset($citation['id'])) {
+        $citation['document_id'] = $citation['id'];
+    }
+    return $citation;
+}, $citations);
+```
+
+**Status**: ✅ **FIXED** (Hotfix #3) - ensures `ContextScoringService` compatibility
+
+---
+
+### 4. 🔵 INFO: Architecture Differences
+
+| Component | RAG Tester | Widget (via ChatOrchestrationService) |
+|-----------|-----------|---------------------------------------|
+| **Controller** | `RagTestController` (Admin) | `ChatCompletionsController` (API) |
+| **Context Building** | **Custom inline logic** (lines 206-244) | **ContextBuilder Service** |
+| **Structured Fields** | ✅ **Explicitly added** | ❌ **NOT added** |
+| **Custom Template** | ✅ **tenant.custom_context_template** | ❌ **NOT supported** |
+| **Source URL** | ✅ **[Fonte: URL]** | ❌ **NOT added** |
+| **System Prompt** | ✅ Tenant-aware + strict | ✅ Tenant-aware + strict (after Hotfix #4) |
+| **Citation Scoring** | ❌ **NOT applied** | ✅ **Applied** (ContextScoringService) |
+| **Profiling** | ✅ Manual timing | ✅ **ChatProfilingService** |
+| **Fallback** | ❌ **NOT implemented** | ✅ **FallbackStrategyService** |
+| **Streaming** | ❌ Sync only | ✅ **SSE supported** |
+
+---
+
+## ⚡ Performance Bottlenecks
+
+### 1. N+1 Query Risk in ChatOrchestrationService
+**Location**: `ChatOrchestrationService.php:418`
+
+```php
+$tenant = \App\Models\Tenant::find($tenantId);
+```
+
+**Issue**: Fetches tenant model **inside** `buildLLMPayload()`, which is called on every request.
+
+**Impact**:
+- Unnecessary DB query if tenant is already loaded in controller
+- Potential N+1 if multiple orchestration calls in same request
+
+**Recommendation**: 
+- Inject tenant model from controller instead of fetching inside service
+- Use eager loading or cache tenant configurations
+
+---
+
+### 2. Context Compression via LLM
+**Location**: `ContextBuilder.php:58-74`
+
+```php
+private function compressSnippet(string $text, int $targetChars): string
 {
-    // ...
-}
-
-// ChatCompletionsController.php:483
-private function buildRagTesterContextText(?Tenant $tenant, string $query, array $citations): string
-{
-    // ❌ array $citations non tipizzato
-}
-
-// DocumentAdminController.php:397
-private function findTablesInText(string $text): array // ❌ array generico
-{
-    // ...
-}
-```
-
-**Refactoring Consigliato**:
-```php
-/** @return array<int, string> Chunk strings */
-private function chunkText(string $text, Document $doc): array { }
-
-/** @param array<int, Citation> $citations */
-private function buildRagTesterContextText(
-    ?Tenant $tenant, 
-    string $query, 
-    array $citations
-): string { }
-
-/** @return array<int, TableData> */
-private function findTablesInText(string $text): array { }
-```
-
----
-
-### ⚡ Performance Bottlenecks
-
-#### 1. **N+1 Query Problems**
-
-**Problema Potenziale**: `DocumentAdminController::rescrapeAll()` itera su documenti senza eager loading.
-
-```php
-// DocumentAdminController.php:666
-$documents = $query->get(); // ❌ Nessun eager loading
-
-foreach ($documents as $document) {
-    // Potenziale N+1 se scraperService accede a relationships
-    $result = $scraperService->forceRescrapDocument($document->id);
-}
-```
-
-**Fix Consigliato**:
-```php
-$documents = $query
-    ->with(['knowledgeBase', 'tenant']) // Eager load relationships
-    ->get();
-```
-
----
-
-#### 2. **Batch Processing Inefficiente**
-
-**Problema**: `DocumentAdminController::rescrapeAll()` processa documenti in modo sincrono con rate limiting artificiale.
-
-```php
-// DocumentAdminController.php:744
-usleep(500000); // 0.5 secondi sleep per ogni documento
-
-// ❌ Con 100 documenti = 50 secondi solo di sleep
-// ❌ Request HTTP può andare in timeout
-```
-
-**Soluzione Migliore**:
-```php
-// Dispatch job batch invece di processing sincrono
-public function rescrapeAll(Request $request, Tenant $tenant) {
-    $documents = $query->get();
-    
-    // Batch job processing con queue
-    $batch = Bus::batch([
-        $documents->map(fn($doc) => new RescrapeDocumentJob($doc->id))
-    ])->dispatch();
-    
-    return response()->json([
-        'batch_id' => $batch->id,
-        'total_jobs' => $documents->count(),
-        'message' => 'Batch re-scraping avviato in background'
-    ]);
-}
-```
-
----
-
-#### 3. **Missing Database Indexes**
-
-**Problema Critico**: Scoping `tenant_id` usato in 490+ query, ma potrebbero mancare indici compositi ottimali.
-
-**Verifica Necessaria**: Controllare migrazioni per indici su:
-```sql
--- CRITICAL per performance RAG
-CREATE INDEX idx_document_chunks_tenant_kb_search 
-ON document_chunks(tenant_id, knowledge_base_id, content); -- Per BM25
-
--- CRITICAL per admin filtering
-CREATE INDEX idx_documents_tenant_kb_status 
-ON documents(tenant_id, knowledge_base_id, ingestion_status);
-
--- CRITICAL per source URL lookup
-CREATE INDEX idx_documents_tenant_source_url_hash 
-ON documents(tenant_id, source_url, content_hash); -- Per dedup
-```
-
----
-
-#### 4. **Cache Non Utilizzato**
-
-**Problema**: Nessun caching evidente per query RAG frequenti.
-
-**Opportunità**:
-```php
-// KbSearchService.php - Aggiungi caching
-public function retrieve(int $tenantId, string $query, bool $includeDebug): array 
-{
-    $cacheKey = "rag:retrieve:{$tenantId}:" . md5($query);
-    
-    return Cache::remember($cacheKey, 3600, function() use ($tenantId, $query) {
-        // Retrieval logic
-    });
-}
-
-// Invalidazione su document update
-// DocumentObserver::updated()
-Cache::tags(["tenant:{$tenantId}:rag"])->flush();
-```
-
----
-
-### 🏗️ Architectural Concerns
-
-#### 1. **Business Logic nei Controller**
-
-**Problema Grave**: Controller contengono business logic che dovrebbe essere nei Services.
-
-**Esempio - `ChatCompletionsController.php`**:
-
-```php
-// Linee 599-631: Calcolo score per source selection NEL CONTROLLER ❌
-private function calculateSmartSourceScore(array $citation, array $allCitations): float
-{
-    $score = 0.0;
-    $weights = [
-        'rag_score' => 0.35,
-        'content_quality' => 0.25,
-        // ... 50 righe di business logic
+    // Calls OpenAI to compress text!
+    $payload = [
+        'model' => $model,
+        'messages' => [
+            ['role' => 'system', 'content' => 'Sei un compressore di passaggi per RAG...'],
+            ['role' => 'user', 'content' => $prompt],
+        ],
+        'temperature' => $temperature,
     ];
-    return $score;
+    $res = $this->chat->chatCompletions($payload);
+    $out = (string) ($res['choices'][0]['message']['content'] ?? '');
+    return $out !== '' ? $out : mb_substr($text, 0, $targetChars);
 }
 ```
 
-**Soluzione**:
-```php
-// Nuovo Service
-class SourceRankingService {
-    public function rankSources(array $citations): array {
-        return collect($citations)
-            ->map(fn($c) => [
-                'citation' => $c,
-                'score' => $this->calculateScore($c)
-            ])
-            ->sortByDesc('score')
-            ->pluck('citation')
-            ->toArray();
-    }
-}
+**Issue**: 
+- Calls OpenAI API for **every snippet** > 600 chars
+- Adds significant latency (100-500ms per snippet)
+- Increases costs (each compression is a separate API call)
 
-// Controller diventa sottile
-class ChatCompletionsController {
-    public function create() {
-        $citations = $this->kb->retrieve(...);
-        $rankedCitations = $this->sourceRanking->rankSources($citations);
-        // ...
-    }
-}
-```
+**Recommendation**:
+- Use simpler text truncation/summarization logic
+- Cache compressed snippets by content hash
+- Consider disabling compression for real-time widget responses
 
 ---
 
-#### 2. **Mancanza Interfacce per Dependency Injection**
+## 🏗️ Architectural Concerns
 
-**Problema**: Services hardcoded senza interfacce, difficile testing e swapping implementazioni.
+### 1. 🚨 CRITICAL: Context Building Logic Duplication
+
+**Problem**: Two completely different implementations of the same conceptual task:
+
+1. **RAG Tester**: Custom inline logic with structured fields (206 lines of code)
+2. **Widget**: `ContextBuilder` service without structured fields (75 lines of code)
+
+**Architectural Violation**: 
+- ❌ **Violates DRY principle** (Don't Repeat Yourself)
+- ❌ **Violates Single Source of Truth**
+- ❌ **Causes behavior divergence** (same input, different output)
+
+**Impact**:
+- Changes to context building must be applied in **TWO places**
+- RAG Tester acts as a "fake reference" that doesn't match production
+- Developers waste time debugging discrepancies
+
+**Recommended Architecture**:
 
 ```php
-// ChatCompletionsController.php - Dependency Injection senza interfacce
-public function __construct(
-    private readonly OpenAIChatService $chat,           // ❌ Classe concreta
-    private readonly KbSearchService $kb,               // ❌ Classe concreta
-    private readonly MilvusClient $milvus,              // ❌ Classe concreta
-) {}
-```
-
-**Refactoring Consigliato**:
-```php
-// Definisci interfacce
-interface LLMChatServiceInterface {
-    public function chatCompletions(array $payload): array;
-}
-
-interface VectorStoreInterface {
-    public function search(array $embedding, int $tenantId, array $kbIds): array;
-    public function upsertVectors(int $tenantId, int $docId, array $chunks, array $vectors): void;
-}
-
-// Implementazioni
-class OpenAIChatService implements LLMChatServiceInterface { }
-class MilvusClient implements VectorStoreInterface { }
-
-// Service Provider
-$this->app->bind(LLMChatServiceInterface::class, OpenAIChatService::class);
-$this->app->bind(VectorStoreInterface::class, MilvusClient::class);
-
-// Controller usa interfacce
-public function __construct(
-    private readonly LLMChatServiceInterface $chat,
-    private readonly VectorStoreInterface $vectorStore,
-) {}
-```
-
-**Benefici**:
-- ✅ Facile mock per testing
-- ✅ Swap implementazioni (es. Claude invece di OpenAI)
-- ✅ Rispetta Dependency Inversion Principle
-
----
-
-#### 3. **Tight Coupling tra Componenti**
-
-**Problema**: `IngestUploadedDocumentJob` chiama direttamente `MilvusClient`, `OpenAIEmbeddingsService`, `Storage`.
-
-**Impatto**: Impossibile testare ingestion senza setup completo di Milvus + OpenAI + Storage.
-
-**Soluzione**:
-```php
-// Nuovo orchestrator Service
-class DocumentIngestionOrchestrator {
-    public function __construct(
-        private readonly DocumentParserInterface $parser,
-        private readonly ChunkingServiceInterface $chunking,
-        private readonly EmbeddingsServiceInterface $embeddings,
-        private readonly VectorStoreInterface $vectorStore
-    ) {}
-    
-    public function ingest(Document $document): IngestionResult {
-        // Orchestrazione con interfacce
-    }
-}
-
-// Job diventa thin wrapper
-class IngestUploadedDocumentJob {
-    public function handle(DocumentIngestionOrchestrator $orchestrator): void {
-        $orchestrator->ingest($this->document);
-    }
-}
-```
-
----
-
-#### 4. **Mancanza Repository Pattern**
-
-**Problema**: Query DB complesse sparse nei Controller invece che in Repositories.
-
-**Esempio - `DocumentAdminController.php:209`**:
-```php
-// ❌ Query raw nel Controller
-$chunks = DB::table('document_chunks')
-    ->where('tenant_id', $tenant->id)
-    ->where('document_id', $document->id)
-    ->orderBy('chunk_index')
-    ->get(['chunk_index','content']);
-```
-
-**Soluzione**:
-```php
-// Repository
-class DocumentChunkRepository {
-    public function getByDocument(int $tenantId, int $documentId): Collection {
-        return DB::table('document_chunks')
-            ->where('tenant_id', $tenantId)
-            ->where('document_id', $documentId)
-            ->orderBy('chunk_index')
-            ->get();
-    }
-}
-
-// Controller
-$chunks = $this->chunkRepository->getByDocument($tenant->id, $document->id);
-```
-
----
-
-### 🔒 Security Assessment
-
-#### 1. **✅ TENANT SCOPING - Implementato Correttamente**
-
-**Analisi**: 490 occorrenze di `tenant_id` in 106 file confermano scoping rigoroso.
-
-**Esempi Positivi**:
-```php
-// DocumentAdminController.php:28
-$query = Document::where('tenant_id', $tenant->id); // ✅
-
-// ChatCompletionsController.php:185
-$chunks = DB::table('document_chunks')
-    ->where('tenant_id', $tenantId) // ✅
-    ->where('document_id', $document->id)
-    ->get();
-```
-
-**Raccomandazione**: Continuare monitoring con Linter custom per verificare che OGNI query abbia tenant scoping.
-
----
-
-#### 2. **⚠️ POTENTIAL IDOR Vulnerabilities**
-
-**Problema**: Alcuni endpoint potrebbero non validare ownership del tenant sulle risorse.
-
-**Esempio Potenzialmente Vulnerabile**:
-```php
-// DocumentAdminController.php:205
-public function chunks(Request $request, Tenant $tenant, Document $document)
+interface ContextBuilderInterface
 {
-    abort_unless($document->tenant_id === $tenant->id, 404); // ✅ Buono
-    
-    // Ma se $tenant proviene da route parameter senza validazione?
-    // Route: /admin/tenants/{tenant}/documents/{document}/chunks
-    // ❓ Chi valida che l'utente autenticato ha accesso a quel tenant?
+    /**
+     * Build context from citations, respecting tenant configuration.
+     * 
+     * @param array<int, array> $citations
+     * @param int $tenantId
+     * @param array{max_chars?: int, with_structured_fields?: bool} $options
+     * @return array{context: string, sources: array, metadata: array}
+     */
+    public function build(array $citations, int $tenantId, array $options = []): array;
 }
 ```
 
-**Verifica Necessaria**: Controllare middleware `EnsureTenantAccess` è applicato a TUTTE le route admin.
+**Refactored `ContextBuilder` should**:
+- ✅ Accept `$tenantId` parameter
+- ✅ Fetch and apply `custom_context_template` if available
+- ✅ Add structured fields (`phone`, `email`, `address`, `schedule`) by default
+- ✅ Add source URLs as `[Fonte: URL]`
+- ✅ Support options like `with_structured_fields`, `max_chars`, `compression_enabled`
 
-**Fix Consigliato**:
+**Then both paths would use**:
 ```php
-// routes/web.php
-Route::middleware(['auth', 'tenant.access'])->prefix('admin')->group(function() {
-    Route::get('/tenants/{tenant}/documents/{document}/chunks', [
-        DocumentAdminController::class, 'chunks'
-    ])->name('admin.documents.chunks');
+$contextResult = $this->contextBuilder->build($citations, $tenantId, [
+    'max_chars' => 4000,
+    'with_structured_fields' => true,
+    'compression_enabled' => false, // Disable for Widget (latency)
+]);
+```
+
+---
+
+### 2. 🟠 Service Responsibility Overlap
+
+**Issue**: `ChatOrchestrationService` has grown to 500+ lines, violating SRP.
+
+**Responsibilities**:
+1. Query extraction
+2. Conversation enhancement delegation
+3. Intent detection delegation
+4. RAG retrieval delegation
+5. Citation scoring delegation
+6. Link filtering delegation
+7. Context building delegation
+8. LLM payload construction
+9. Streaming response handling
+10. Sync response handling
+11. Fallback error handling
+12. Profiling
+
+**Recommendation**: Further split into:
+- `ChatPipelineOrchestrator` (main flow control)
+- `LLMPayloadBuilder` (payload construction)
+- `StreamingResponseHandler` (SSE logic)
+
+---
+
+### 3. 🟡 Configuration Inconsistency
+
+**Issue**: RAG Tester uses different parameter sources than Widget:
+
+| Parameter | RAG Tester | Widget |
+|-----------|-----------|---------|
+| `model` | `config('openai.chat_model')` | `$widgetConfig['model']` OR `config('openai.chat_model')` |
+| `max_tokens` | `$data['max_output_tokens']` OR `config('openai.max_output_tokens')` | `$widgetConfig['max_tokens']` OR 1000 |
+| `temperature` | ❌ NOT SET (uses OpenAI default 1.0) | `$widgetConfig['temperature']` OR 0.2 |
+
+**Impact**: 
+- RAG Tester may produce more "creative" (hallucinated) answers due to higher temperature
+- Widget has different token budgets, potentially truncating responses
+
+**Recommendation**: 
+- Use same config resolution logic in both paths
+- Document which config source takes precedence
+- Add config validation to prevent inconsistencies
+
+---
+
+## 🔒 Security Assessment
+
+### 1. ✅ Input Validation (Good)
+
+Both paths validate input:
+- RAG Tester: Uses Laravel validation in controller
+- Widget: Uses validation in `ChatCompletionsController`
+
+**No issues found.**
+
+---
+
+### 2. ⚠️ Tenant Scoping Consistency
+
+**RAG Tester**: ✅ Explicit tenant scoping via route parameter
+```php
+Route::post('/admin/tenants/{tenant}/rag-test', ...)
+```
+
+**Widget**: ✅ Tenant extracted from middleware
+```php
+$tenantId = (int) $request->attributes->get('tenant_id');
+```
+
+**Potential Issue**: If `tenant_id` middleware is bypassed or misconfigured, Widget could leak data.
+
+**Recommendation**: 
+- Add assertion in `ChatOrchestrationService` to ensure `$tenantId > 0`
+- Add integration tests for cross-tenant isolation
+
+---
+
+### 3. 🟡 PII in Logs
+
+**Location**: Multiple places, e.g., `RagTestController.php:194-201`
+
+```php
+\Log::error('RAG Tester Citations Debug', [
+    'tenant_id' => $tenantId,
+    'query' => $finalQuery, // ⚠️ May contain PII
+    'citations_count' => count($citations),
+    'first_citation_snippet_preview' => isset($citations[0]) ? substr($citations[0]['snippet'] ?? '', 0, 200) : 'no_citations',
+    'phones_in_first_snippet' => isset($citations[0]) ? (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $citations[0]['snippet'] ?? '', $matches) ? $matches[0] : []) : []
+]);
+```
+
+**Issue**: 
+- User queries may contain PII (names, addresses, phone numbers)
+- Snippets contain phone numbers, emails (logged at ERROR level!)
+
+**Recommendation**: 
+- Mask PII in logs (use `\Str::mask()` or custom regex)
+- Change log level from `error` to `debug` for non-error debugging
+- Add PII redaction middleware for production logs
+
+---
+
+## 🔧 Technical Debt
+
+### 1. 🔴 HIGH PRIORITY: Fix Context Building Parity
+
+**Effort**: 4-6 hours  
+**Impact**: CRITICAL  
+
+**Tasks**:
+1. Refactor `ContextBuilder` to accept `$tenantId`
+2. Add structured fields logic (`phone`, `email`, `address`, `schedule`)
+3. Add `custom_context_template` support
+4. Add source URL as `[Fonte: URL]`
+5. Update `ChatOrchestrationService` to pass `$tenantId`
+6. Refactor `RagTestController` to use the unified `ContextBuilder`
+7. Add integration tests comparing outputs
+
+**Acceptance Criteria**:
+- RAG Tester and Widget produce **identical context strings** for same citations
+- All structured fields appear in both paths
+- Tenant custom templates work in both paths
+
+---
+
+### 2. 🟠 MEDIUM PRIORITY: Add Unit Tests for Context Builder
+
+**Current Coverage**: ❌ **ZERO tests** for `ContextBuilder`
+
+**Required Tests**:
+```php
+// tests/Unit/Services/RAG/ContextBuilderTest.php
+
+test('builds context with structured fields', function () {
+    $citations = [
+        [
+            'title' => 'Contatti',
+            'snippet' => 'Il comune si trova in via...',
+            'phone' => '06.95898223',
+            'email' => 'info@comune.it',
+            'document_source_url' => 'https://example.com/contatti'
+        ]
+    ];
+    
+    $result = $this->contextBuilder->build($citations, tenantId: 1);
+    
+    expect($result['context'])
+        ->toContain('Telefono: 06.95898223')
+        ->toContain('Email: info@comune.it')
+        ->toContain('[Fonte: https://example.com/contatti]');
 });
 
-// Middleware TenantAccess
-class EnsureTenantAccess {
-    public function handle(Request $request, Closure $next) {
-        $tenant = $request->route('tenant');
-        
-        if (!auth()->user()->canAccessTenant($tenant)) {
-            abort(403, 'Unauthorized tenant access');
-        }
-        
-        return $next($request);
-    }
-}
+test('respects tenant custom_context_template', function () {
+    $tenant = Tenant::factory()->create([
+        'custom_context_template' => 'CUSTOM TEMPLATE: {context}'
+    ]);
+    
+    $citations = [...];
+    $result = $this->contextBuilder->build($citations, $tenant->id);
+    
+    expect($result['context'])->toStartWith('CUSTOM TEMPLATE:');
+});
+
+test('deduplicates citations by content hash', function () { ... });
+
+test('respects max_chars budget', function () { ... });
+
+test('compresses long snippets when enabled', function () { ... });
 ```
 
 ---
 
-#### 3. **Input Validation - Incompleta**
+### 3. 🟡 LOW PRIORITY: Refactor ChatOrchestrationService
 
-**Problema**: Validazione presente ma non sempre sufficiente.
+**Goal**: Split into smaller, focused services
 
-**Esempio**:
-```php
-// DocumentAdminController.php:499
-$data = $request->validate([
-    'url' => 'required|url|max:500', // ✅ Buono
-    'target_kb' => 'required|integer|exists:knowledge_bases,id' // ❌ Non valida tenant ownership!
-]);
+**Suggested Structure**:
 ```
-
-**Fix**:
-```php
-$data = $request->validate([
-    'url' => 'required|url|max:500',
-    'target_kb' => [
-        'required', 
-        'integer',
-        Rule::exists('knowledge_bases', 'id')->where('tenant_id', $tenant->id) // ✅ Tenant scoping
-    ]
-]);
+App\Services\Chat\
+├── ChatOrchestrationService.php (main orchestrator, ~150 lines)
+├── LLM/
+│   ├── PayloadBuilder.php (build LLM payloads, ~100 lines)
+│   └── ResponseFormatter.php (format responses, ~80 lines)
+├── Streaming/
+│   ├── StreamingResponseHandler.php (SSE logic, ~120 lines)
+│   └── StreamChunkFormatter.php (format SSE chunks)
+└── Pipeline/
+    ├── PipelineStepProfiler.php (wrap profiling)
+    └── PipelineContext.php (DTO for pipeline state)
 ```
 
 ---
 
-#### 4. **⚠️ PII Exposure nei Log**
+## 📊 Metrics & Statistics
 
-**Problema**: Log potrebbero esporre PII senza redaction.
+### Code Duplication
 
-**Esempi Potenziali**:
-```php
-// ChatCompletionsController.php:224
-\Log::info("WIDGET RAG CITATIONS", [
-    'phones' => $c['phones'] ?? [], // ❌ Telefoni in log
-    'email' => $c['email'] ?? null, // ❌ Email in log
-]);
+| Logic | RAG Tester | Widget | Lines Duplicated |
+|-------|-----------|---------|------------------|
+| Context building | Lines 206-244 (38 lines) | `ContextBuilder.php` (75 lines) | ~30 lines (functional overlap) |
+| System prompt | Lines 249-261 (12 lines) | `ChatOrchestrationService` lines 417-432 (15 lines) | ~12 lines (now aligned) |
 
-// DocumentAdminController.php:298
-\Log::error('Upload document failed', [
-    'file' => $original ?? 'unknown', // ❓ Filename potrebbe contenere PII
-    'error' => $e->getMessage(),
-]);
-```
-
-**Soluzione**:
-```php
-// Helper per redact PII
-class LogSanitizer {
-    public static function sanitize(array $data): array {
-        return collect($data)->map(function($value, $key) {
-            if (in_array($key, ['phone', 'phones', 'email', 'address'])) {
-                return '***REDACTED***';
-            }
-            return $value;
-        })->toArray();
-    }
-}
-
-// Usage
-\Log::info("WIDGET RAG CITATIONS", LogSanitizer::sanitize([
-    'phones' => $c['phones'] ?? [],
-    'email' => $c['email'] ?? null,
-]));
-```
+**Total Duplication**: ~42 lines that should be in a shared service
 
 ---
 
-### 🔧 Technical Debt
+### Test Coverage
 
-#### 1. **⚠️ CRITICAL: Test Coverage Insufficiente**
+| Component | Unit Tests | Integration Tests | Coverage |
+|-----------|-----------|-------------------|----------|
+| `ContextBuilder` | ❌ 0 | ❌ 0 | **0%** |
+| `ChatOrchestrationService` | ❌ 0 | ❌ 0 | **0%** |
+| `ContextScoringService` | ❌ 0 | ❌ 0 | **0%** |
+| `FallbackStrategyService` | ❌ 0 | ❌ 0 | **0%** |
+| `ChatProfilingService` | ❌ 0 | ❌ 0 | **0%** |
+| `RagTestController` | ❌ 0 | ❌ 0 | **0%** |
+| `ChatCompletionsController` | ❌ 0 | ❌ 0 | **0%** |
 
-**Stato Attuale**:
-- **Test Files**: 4 file (ExampleTest x2, MessageSystemSendTest, ConversationMessageSentEventTest)
-- **Coverage Stimato**: ~2%
-- **Test per RAG Core**: **0** ❌
-- **Test per Ingestion**: **0** ❌
-- **Test per Multitenancy**: **0** ❌
+**Overall Coverage**: 🔴 **0%** for RAG chat pipeline
 
-**Rischio**: Alta probabilità di regressioni, impossibile refactoring sicuro.
-
-**Priorità di Test Mancanti**:
-
-1. **CRITICAL - Multitenancy Scoping**:
-```php
-// tests/Unit/TenantScopingTest.php
-class TenantScopingTest extends TestCase {
-    /** @test */
-    public function cannot_access_other_tenant_documents() {
-        $tenant1 = Tenant::factory()->create();
-        $tenant2 = Tenant::factory()->create();
-        
-        $doc = Document::factory()->for($tenant1)->create();
-        
-        $this->actingAs(User::factory()->for($tenant2)->create());
-        
-        $response = $this->get(route('admin.documents.show', [
-            'tenant' => $tenant2,
-            'document' => $doc
-        ]));
-        
-        $response->assertStatus(404); // Non deve accedere
-    }
-}
-```
-
-2. **CRITICAL - RAG Retrieval**:
-```php
-// tests/Feature/RagRetrievalTest.php
-class RagRetrievalTest extends TestCase {
-    /** @test */
-    public function retrieves_correct_chunks_for_query() {
-        $tenant = Tenant::factory()->create();
-        $kb = KnowledgeBase::factory()->for($tenant)->create();
-        
-        $doc = Document::factory()->for($kb)->create();
-        DocumentChunk::factory()->for($doc)->count(10)->create();
-        
-        $service = app(KbSearchService::class);
-        $result = $service->retrieve($tenant->id, 'test query', false);
-        
-        $this->assertNotEmpty($result['citations']);
-        $this->assertArrayHasKey('confidence', $result);
-    }
-}
-```
-
-3. **HIGH - Document Ingestion**:
-```php
-// tests/Feature/DocumentIngestionTest.php
-class DocumentIngestionTest extends TestCase {
-    /** @test */
-    public function ingests_pdf_successfully() {
-        $tenant = Tenant::factory()->create();
-        $kb = KnowledgeBase::factory()->for($tenant)->create();
-        
-        Storage::fake('public');
-        
-        $doc = Document::factory()->for($kb)->create([
-            'path' => 'kb/' . $tenant->id . '/test.pdf'
-        ]);
-        
-        Storage::disk('public')->put($doc->path, file_get_contents(base_path('tests/fixtures/sample.pdf')));
-        
-        IngestUploadedDocumentJob::dispatchSync($doc->id);
-        
-        $doc->refresh();
-        $this->assertEquals('completed', $doc->ingestion_status);
-        $this->assertDatabaseHas('document_chunks', [
-            'document_id' => $doc->id,
-            'tenant_id' => $tenant->id
-        ]);
-    }
-}
-```
-
-**Target Coverage**: Minimo 60% entro 3 mesi.
+**Recommendation**: Add at least 70% coverage before Phase 5
 
 ---
 
-#### 2. **Documentazione Code Insufficiente**
+### Performance Metrics (Estimated)
 
-**Problema**: Metodi complessi senza DocBlock descrittivi.
+| Path | Avg Latency | Bottlenecks |
+|------|-------------|-------------|
+| RAG Tester | ~800ms | Manual context building (fast), No compression |
+| Widget (no compression) | ~750ms | Similar performance |
+| Widget (with compression) | ~1500-2500ms | ❌ **LLM compression calls** |
 
-**Esempi**:
+**Recommendation**: Disable snippet compression for Widget (set `RAG_CONTEXT_ENABLED=false`)
+
+---
+
+## 🎯 Recommendations
+
+### High Priority Actions (Within 1 Week)
+
+#### 1. 🔴 CRITICAL: Unify Context Building Logic
+
+**Action**: Refactor `ContextBuilder` to match RAG Tester functionality
+
+**Steps**:
+1. Add `$tenantId` parameter to `ContextBuilder->build()`
+2. Fetch `Tenant` model and read `custom_context_template`
+3. Add structured fields logic (phone, email, address, schedule)
+4. Add source URL as `[Fonte: URL]`
+5. Update `ChatOrchestrationService` to pass tenant ID
+6. Refactor `RagTestController` to use unified `ContextBuilder`
+7. Add integration test comparing outputs
+
+**Expected Outcome**: RAG Tester and Widget produce identical results
+
+**Acceptance Criteria**:
+- Query: "telefono comando polizia locale"
+- RAG Tester output: "06.95898223"
+- Widget output: "06.95898223" ✅ **IDENTICAL**
+
+**Estimate**: 6 hours  
+**Risk**: Medium (requires careful refactoring + testing)
+
+---
+
+#### 2. 🟠 HIGH: Add Integration Tests for Chat Pipeline
+
+**Action**: Add end-to-end tests comparing RAG Tester vs Widget
+
+**Required Tests**:
 ```php
-// IngestUploadedDocumentJob.php:264 - ❌ Nessun DocBlock
-private function chunkText(string $text, Document $doc): array {
-    // 130 righe di logica complessa senza spiegazione
-}
+// tests/Feature/ChatPipelineParityTest.php
 
-// ChatCompletionsController.php:599 - ❌ DocBlock incompleto
-/**
- * 🧮 Calcola score intelligente per una citazione considerando tutti i fattori
- */
-private function calculateSmartSourceScore(array $citation, array $allCitations): float
+test('widget and rag tester produce identical context for same query', function () {
+    $tenant = Tenant::factory()->create();
+    $query = 'telefono comando polizia locale';
+    
+    // Call RAG Tester endpoint
+    $ragTesterResponse = $this->postJson("/admin/tenants/{$tenant->id}/rag-test", [
+        'query' => $query,
+        'with_answer' => true
+    ]);
+    
+    // Call Widget endpoint
+    $widgetResponse = $this->postJson('/v1/chat/completions', [
+        'model' => 'gpt-4o-mini',
+        'messages' => [
+            ['role' => 'user', 'content' => $query]
+        ]
+    ], [
+        'Authorization' => 'Bearer ' . $tenant->api_key
+    ]);
+    
+    $ragContext = $ragTesterResponse->json('trace.llm_context');
+    $widgetContext = $widgetResponse->json('debug.context'); // Add debug field
+    
+    expect($ragContext)->toBe($widgetContext);
+});
+
+test('widget includes structured fields in context', function () {
+    // Setup citation with phone number
+    $citation = DocumentChunk::factory()->create([
+        'chunk_text' => 'Contatti: Polizia Locale',
+        'entities' => json_encode(['phones' => ['06.95898223']])
+    ]);
+    
+    // Call widget
+    $response = $this->postJson('/v1/chat/completions', [...]);
+    
+    $context = $response->json('debug.context');
+    expect($context)->toContain('Telefono: 06.95898223');
+});
+```
+
+**Estimate**: 4 hours  
+**Risk**: Low
+
+---
+
+### Medium Priority Improvements (Within 2 Weeks)
+
+#### 3. 🟡 Optimize Context Building Performance
+
+**Action**: Disable LLM-based snippet compression for Widget
+
+**Config Change**:
+```php
+// .env
+RAG_CONTEXT_ENABLED=false  # Disable compression for low latency
+RAG_CONTEXT_MAX_CHARS=4000  # Increase budget to compensate
+```
+
+**Expected Impact**: 
+- Latency reduction: ~1000ms per request
+- Cost reduction: ~50% (no compression API calls)
+
+**Trade-off**: Slightly longer context tokens (but within budget)
+
+**Estimate**: 30 minutes  
+**Risk**: Low
+
+---
+
+#### 4. 🟡 Add Tenant Config Caching
+
+**Action**: Cache tenant configurations to avoid N+1 queries
+
+**Implementation**:
+```php
+// ChatOrchestrationService.php
+
+private function getTenantConfig(int $tenantId): Tenant
 {
-    // ❌ Non spiega formula, weights, o algoritmo
-}
-```
-
-**Standard Consigliato**:
-```php
-/**
- * Chunka il testo del documento in segmenti ottimizzati per RAG.
- * 
- * Strategia:
- * 1. Preserva tabelle markdown complete in chunk dedicati (ignora limiti)
- * 2. Estrae directory entries (Nome/Tel/Indirizzo) in chunk key:value
- * 3. Applica chunking semantico su resto (paragraph → sentence → char)
- * 4. Usa overlap configurabile tra chunk consecutivi
- * 
- * @param string $text Testo completo estratto dal documento
- * @param Document $doc Documento per recuperare config tenant-specific
- * @return array<int, string> Array di chunk testuali pronti per embedding
- * @throws \RuntimeException Se testo vuoto o chunking fallisce
- */
-private function chunkText(string $text, Document $doc): array { }
-```
-
----
-
-#### 3. **Gestione Errori Incompleta**
-
-**Problema**: Error handling presente ma non sempre completo.
-
-**Esempio**:
-```php
-// IngestUploadedDocumentJob.php:120-123
-catch (\Throwable $e) {
-    Log::error('ingestion.failed', ['document_id' => $doc->id, 'error' => $e->getMessage()]);
-    $this->updateDoc($doc, ['ingestion_status' => 'failed', 'last_error' => $e->getMessage()]);
-    // ❌ Non rilancia eccezione - job viene marcato succeeded anche se fallito
-    // ❌ Non invia notifica admin
-    // ❌ Non traccia in monitoring esterno
-}
-```
-
-**Fix Consigliato**:
-```php
-catch (\Throwable $e) {
-    Log::error('ingestion.failed', [
-        'document_id' => $doc->id,
-        'error' => $e->getMessage(),
-        'trace' => $e->getTraceAsString()
-    ]);
-    
-    $this->updateDoc($doc, [
-        'ingestion_status' => 'failed',
-        'last_error' => $e->getMessage()
-    ]);
-    
-    // Notifica admin se documento importante
-    if ($doc->priority === 'high') {
-        Notification::route('mail', config('admin.email'))
-            ->notify(new IngestionFailedNotification($doc, $e));
-    }
-    
-    // Report a monitoring (Sentry, etc.)
-    report($e);
-    
-    // Rilancia per far fallire il job (retry automatico)
-    throw $e;
-}
-```
-
----
-
-#### 4. **Migrazioni Non Sempre Safe**
-
-**Problema**: Alcune migrazioni potrebbero causare downtime o data loss se non gestite correttamente.
-
-**Verifica Necessaria**: Controllare che tutte le migrazioni seguano best practices:
-
-```php
-// ❌ UNSAFE Migration Example
-public function up() {
-    Schema::table('documents', function (Blueprint $table) {
-        $table->dropColumn('old_field'); // DANGER: data loss
-        $table->string('new_field')->nullable(); // OK ma potrebbe causare NULL issues
-    });
-}
-
-// ✅ SAFE Migration Example
-public function up() {
-    Schema::table('documents', function (Blueprint $table) {
-        $table->string('new_field')->nullable();
-    });
-    
-    // Migrate data
-    DB::table('documents')->update([
-        'new_field' => DB::raw('old_field')
-    ]);
-    
-    // Drop in separate migration dopo deploy
-}
-
-public function down() {
-    Schema::table('documents', function (Blueprint $table) {
-        $table->dropColumn('new_field');
+    return Cache::remember("tenant_config_{$tenantId}", 3600, function () use ($tenantId) {
+        return Tenant::find($tenantId);
     });
 }
 ```
 
+**Expected Impact**: 
+- ~5-10ms latency reduction per request
+- Reduced DB load
+
+**Estimate**: 1 hour  
+**Risk**: Low (ensure cache invalidation on tenant updates)
+
 ---
 
-#### 5. **Mancanza Feature Flags**
+### Long-term Enhancements (Within 1 Month)
 
-**Problema**: Nuove feature deployate direttamente senza toggle.
+#### 5. 🔵 Add Structured Field Extraction Pipeline
 
-**Rischio**: Impossibile rollback rapido in caso di problemi produzione.
+**Goal**: Ensure all citations have structured fields (`phone`, `email`, `address`, `schedule`)
 
-**Soluzione Consigliata**:
+**Components**:
+1. **Entity Extractor** (already exists: `CompleteIntentDetector`)
+2. **Field Normalizer** (new): Normalize phone formats, email validation
+3. **Metadata Enricher** (new): Add structured fields to `DocumentChunk.entities` JSON
+
+**Architecture**:
+```
+Ingestion → Chunking → Entity Extraction → Metadata Enrichment → Vector Indexing
+                                ↓
+                        Update DocumentChunk.entities
+```
+
+**Expected Outcome**: All citations include structured fields by default
+
+**Estimate**: 2 days  
+**Risk**: Medium (requires ingestion pipeline changes)
+
+---
+
+#### 6. 🔵 Implement Context Builder Interface
+
+**Goal**: Enforce consistent context building across all components
+
+**Interface**:
 ```php
-// config/features.php
-return [
-    'rag' => [
-        'hyde_expansion' => env('FEATURE_HYDE', false),
-        'llm_reranking' => env('FEATURE_LLM_RERANKING', false),
-        'conversation_context' => env('FEATURE_CONVERSATION_CONTEXT', true),
-    ],
-    'widget' => [
-        'streaming' => env('FEATURE_WIDGET_STREAMING', false),
-        'feedback' => env('FEATURE_WIDGET_FEEDBACK', true),
-    ],
-];
+namespace App\Contracts\RAG;
 
-// Usage con facade Laravel
-if (Features::enabled('rag.hyde_expansion')) {
-    $query = $this->hydeExpander->expand($query);
+interface ContextBuilderInterface
+{
+    public function build(
+        array $citations,
+        int $tenantId,
+        array $options = []
+    ): array;
 }
 ```
 
----
+**Implementations**:
+- `ContextBuilder` (current)
+- `StreamingContextBuilder` (for SSE - progressive context building)
+- `TestContextBuilder` (for unit tests)
 
-## Recommendations
-
-### 🔴 High Priority Actions (1-2 mesi)
-
-#### 1. **Implementare Test Suite Completa**
-
-**Obiettivo**: Coverage 60% minimo, focus su critical paths.
-
-**Roadmap**:
-```
-Week 1-2: Setup testing infrastructure
-- Configurare Pest con coverage report
-- Creare factories per tutti i Models
-- Setup database testing con transactions
-
-Week 3-4: Unit tests core services
-- KbSearchService (retrieval, KB selection)
-- DocumentParserService (PDF, DOCX, XLSX parsing)
-- ChunkingService (table-aware, directory entries)
-
-Week 5-6: Feature tests critical flows
-- Document ingestion end-to-end
-- RAG retrieval con multitenancy scoping
-- Widget chat completions API
-
-Week 7-8: Security tests
-- Tenant isolation (IDOR prevention)
-- Input validation
-- Authorization checks
-```
-
-**Stima Effort**: 40-60 ore (1.5 mesi con 1 developer part-time)
+**Estimate**: 4 hours  
+**Risk**: Low (improves testability)
 
 ---
 
-#### 2. **Refactoring God Classes**
+## 🎓 Lessons Learned
 
-**Priorità**:
-1. `IngestUploadedDocumentJob` (977 righe) → Estrarre Services
-2. `ChatCompletionsController` (789 righe) → Estrarre Orchestrator
-3. `DocumentAdminController` (786 righe) → Estrarre Repository + Services
+### What Went Wrong in Phase 4 Refactoring
 
-**Approccio Incrementale**:
-```
-Phase 1 (Week 1-2): Estrarre parsing logic da IngestUploadedDocumentJob
-- Creare DocumentParserService (PDF/DOCX/XLSX/PPTX)
-- Creare ChunkingService con table-aware logic
-- Creare MarkdownExportService
-→ IngestUploadedDocumentJob scende a 150 righe
+1. **Context Builder was extracted without feature parity check**
+   - RAG Tester's custom logic was not analyzed before refactoring
+   - Assumed `ContextBuilder` was already used by RAG Tester (it wasn't)
 
-Phase 2 (Week 3-4): Estrarre business logic da ChatCompletionsController
-- Creare ChatOrchestrationService
-- Creare SourceRankingService
-- Creare ResponseFormatterService
-→ ChatCompletionsController scende a 80 righe
+2. **No integration tests to catch parity issues**
+   - Refactoring proceeded without comparing outputs
+   - Manual testing only checked for errors, not result quality
 
-Phase 3 (Week 5-6): Estrarre query logic da DocumentAdminController
-- Creare DocumentRepository
-- Creare DocumentFilterService
-- Creare ExcelExportService
-→ DocumentAdminController scende a 200 righe (within limit)
-```
+3. **Documentation didn't capture custom logic**
+   - RAG Tester's custom context building was not documented
+   - Developers assumed both paths used same services
 
-**Stima Effort**: 60-80 ore (2 mesi con 1 developer part-time)
+### Best Practices for Future Refactoring
 
----
+1. ✅ **Audit all code paths before refactoring**
+   - Use `grep` to find all usages of a service
+   - Check if any path has custom logic that should be preserved
 
-#### 3. **Aggiungere Interfacce per Dependency Injection**
+2. ✅ **Write parity tests BEFORE refactoring**
+   - Capture current behavior in integration tests
+   - Ensure new implementation passes same tests
 
-**Target Services**:
-- `OpenAIChatService` → `LLMChatServiceInterface`
-- `OpenAIEmbeddingsService` → `EmbeddingsServiceInterface`
-- `MilvusClient` → `VectorStoreInterface`
-- `WebScraperService` → `ScraperServiceInterface`
+3. ✅ **Document custom logic and edge cases**
+   - If RAG Tester has special behavior, document WHY
+   - Link to GitHub issues or requirements
 
-**Beneficio**: Testabilità immediata con mock implementations.
-
-**Stima Effort**: 16-24 ore (1 mese con 1 developer part-time)
+4. ✅ **Use feature flags for gradual rollout**
+   - Add `use_new_context_builder` flag in tenant config
+   - Test with subset of tenants before full rollout
 
 ---
 
-#### 4. **Implementare Monitoring e Alerting**
+## 📝 Conclusion
 
-**Metriche Critiche da Tracciare**:
-- Ingestion success rate (<95% → alert)
-- RAG latency P95 (>2.5s → alert)
-- Milvus query failures
-- OpenAI API errors
-- Tenant isolation violations (CRITICAL)
+### Current State (Post-Hotfix #5)
 
-**Tool Consigliati**: Laravel Pulse + Sentry
+| Component | Status | Notes |
+|-----------|--------|-------|
+| System Prompt | ✅ **ALIGNED** | Both use strict anti-hallucination prompt |
+| Context Building | ❌ **MISALIGNED** | RAG Tester has structured fields, Widget doesn't |
+| Citation Scoring | ✅ **WORKING** | Widget uses `ContextScoringService` |
+| Fallback Strategy | ✅ **WORKING** | Widget has robust error handling |
+| Profiling | ✅ **WORKING** | Widget uses `ChatProfilingService` |
 
-**Stima Effort**: 8-16 ore
+### Next Steps
 
----
+1. **IMMEDIATE (Today)**:
+   - Re-test Widget after Hotfix #4 (system prompt)
+   - If still wrong, confirm context building is the root cause
 
-### 🟡 Medium Priority Improvements (3-6 mesi)
+2. **URGENT (This Week)**:
+   - Implement unified `ContextBuilder` with structured fields
+   - Refactor RAG Tester to use unified service
+   - Add integration tests for parity
 
-#### 1. **Implementare Caching Strategico**
+3. **IMPORTANT (Next Week)**:
+   - Disable LLM compression for Widget (performance)
+   - Add tenant config caching
+   - Add unit tests for all chat services (0% → 70%)
 
-**Target**:
-- RAG query results (TTL: 1 ora)
-- Tenant configuration (TTL: 5 minuti)
-- KB metadata (TTL: 10 minuti)
-
-**Invalidazione**: Tag-based cache con flush su update.
-
-**Stima Effort**: 16-24 ore
-
----
-
-#### 2. **Repository Pattern per Query Complesse**
-
-**Target**:
-- `DocumentRepository`
-- `DocumentChunkRepository`
-- `ConversationRepository`
-
-**Stima Effort**: 24-32 ore
+4. **STRATEGIC (This Month)**:
+   - Implement `ContextBuilderInterface` for consistency
+   - Add entity extraction to ingestion pipeline
+   - Review and refactor `ChatOrchestrationService` (reduce complexity)
 
 ---
 
-#### 3. **Feature Flags System**
+## 🏁 Final Assessment
 
-**Implementazione**: Laravel Pennant o pacchetto custom.
+**Overall Code Quality**: 🟡 **GOOD** (post-refactoring)  
+**Test Coverage**: 🔴 **POOR** (0% for chat services)  
+**Performance**: 🟢 **ACCEPTABLE** (with compression disabled)  
+**Security**: 🟢 **GOOD** (input validation, tenant scoping)  
+**Maintainability**: 🟡 **FAIR** (context building duplication is critical debt)
 
-**Feature da Flaggare**:
-- HyDE expansion
-- LLM reranking
-- Streaming responses
-- Conversation context enhancement
-
-**Stima Effort**: 8-12 ore
-
----
-
-#### 4. **Performance Optimization**
-
-**Azioni**:
-- Audit e creazione indici DB mancanti
-- Implementare query caching
-- Ottimizzare batch processing (Jobs con batching)
-- Lazy loading immagini widget
-
-**Stima Effort**: 32-48 ore
+**Critical Blockers**: 1 (Context building parity)  
+**High Priority Issues**: 2 (Integration tests, compression optimization)  
+**Medium Priority Issues**: 2 (Caching, config consistency)  
+**Low Priority Issues**: 3 (Refactoring, interface design, documentation)
 
 ---
 
-### 🟢 Long-term Enhancements (6-12 mesi)
-
-#### 1. **Microservices Architecture (Opzionale)**
-
-Estrarre componenti pesanti in microservices:
-- **Ingestion Service** (parsing + chunking + embeddings)
-- **RAG Service** (vector search + reranking + LLM)
-- **Scraping Service** (Puppeteer rendering)
-
-**Beneficio**: Scalabilità indipendente, isolamento failures.
-
-**Stima Effort**: 200-300 ore (progetto maggiore)
+**Report Generated by**: Artiforge Codebase Scanner  
+**Analysis Duration**: ~15 minutes  
+**Files Analyzed**: 8 critical files  
+**Lines of Code Reviewed**: ~1200 lines  
 
 ---
 
-#### 2. **Alternative LLM Providers**
+## 📎 Appendix: Quick Reference
 
-Implementare support per:
-- Anthropic Claude
-- Google Gemini
-- Azure OpenAI
-- Self-hosted models (Ollama)
+### Key Files
 
-**Prerequisito**: Interfacce già implementate (High Priority #3).
+| File | Role | Lines | Complexity |
+|------|------|-------|------------|
+| `RagTestController.php` | RAG Tester endpoint | ~500 | High (custom logic) |
+| `ChatCompletionsController.php` | Widget API endpoint | ~150 | Low (thin controller) |
+| `ChatOrchestrationService.php` | Main RAG orchestrator | ~500 | High (many responsibilities) |
+| `ContextBuilder.php` | Context building service | ~75 | Low (simple logic) |
+| `ContextScoringService.php` | Citation ranking | ~200 | Medium (multi-dimensional scoring) |
+| `FallbackStrategyService.php` | Error handling | ~180 | Medium (retry/cache logic) |
+| `ChatProfilingService.php` | Performance tracking | ~100 | Low (Redis streams) |
 
-**Stima Effort**: 40-60 ore per provider
+### Config Files
 
----
+| File | Purpose | Critical Settings |
+|------|---------|-------------------|
+| `config/rag.php` | RAG pipeline config | `scoring.weights`, `context.max_chars`, `context.enabled` |
+| `config/openai.php` | OpenAI client config | `chat_model`, `max_output_tokens` |
+| `backend/.env` | Environment variables | `RAG_CONTEXT_ENABLED`, `RAG_CHUNK_MAX_CHARS` |
 
-#### 3. **Advanced RAG Features**
+### Database Schema
 
-- Query decomposition
-- Multi-hop reasoning
-- Agentic workflows
-- Advanced reranking (Cohere, cross-encoder models)
-
-**Stima Effort**: 80-120 ore
-
----
-
-#### 4. **Compliance Automation**
-
-- Automated PII detection e masking
-- GDPR audit trail completo
-- Data retention policies enforcement
-- Consent management
-
-**Stima Effort**: 60-80 ore
+| Table | Key Columns | Purpose |
+|-------|-------------|---------|
+| `tenants` | `custom_system_prompt`, `custom_context_template` | Tenant-level RAG customization |
+| `documents` | `source_url`, `content_hash` | Document metadata |
+| `document_chunks` | `chunk_text`, `entities`, `embedding` | Chunked content with structured fields |
+| `knowledge_bases` | `name`, `tenant_id` | KB organization |
 
 ---
 
-## Metrics & Statistics
-
-### Code Metrics
-
-| Metrica | Valore Attuale | Target | Status |
-|---------|---------------|--------|--------|
-| **Test Coverage** | ~2% | 60% | 🔴 Critical |
-| **Avg Controller Size** | ~300 righe | <200 | 🟡 Medium |
-| **Max Class Size** | 977 righe | <300 | 🔴 Critical |
-| **N+1 Queries** | Unknown | 0 | 🟡 Verify |
-| **DB Index Coverage** | Unknown | 95% | 🟡 Verify |
-| **Deployment Freq** | Unknown | Daily | - |
-
-### Technical Debt Breakdown
-
-```
-Debt Severity Distribution:
-🔴 CRITICAL: 35% (Test coverage, God classes, IDOR risks)
-🟡 HIGH:     40% (Business logic in controllers, missing interfaces)
-🟢 MEDIUM:   25% (Code duplication, magic numbers, docs)
-```
-
-### Estimated Refactoring Effort
-
-| Categoria | Ore Stimate | Priorità |
-|-----------|-------------|----------|
-| Test Suite Implementation | 60 | 🔴 CRITICAL |
-| God Classes Refactoring | 80 | 🔴 CRITICAL |
-| Interfaces + DI | 24 | 🔴 HIGH |
-| Security Hardening | 16 | 🔴 HIGH |
-| Caching Implementation | 24 | 🟡 MEDIUM |
-| Performance Optimization | 48 | 🟡 MEDIUM |
-| **TOTAL** | **252 ore** | **~2 mesi full-time** |
-
----
-
-## Conclusion
-
-La codebase ChatbotPlatform è **funzionalmente robusta** con un'architettura RAG avanzata e multitenancy rigoroso. Tuttavia, presenta **debito tecnico significativo** che richiede attenzione immediata per:
-
-1. **Prevenire regressioni** (test coverage critico)
-2. **Migliorare maintainability** (refactoring God classes)
-3. **Garantire scalabilità** (performance optimization)
-4. **Hardening security** (IDOR verification, PII redaction)
-
-### Next Steps Immediate
-
-**Week 1-2**:
-1. ✅ Setup Pest testing framework con coverage report
-2. ✅ Creare factories per Models principali
-3. ✅ Scrivere primi 10 test critici (tenant scoping, RAG retrieval basics)
-
-**Week 3-4**:
-4. ✅ Estrarre `DocumentParserService` da `IngestUploadedDocumentJob`
-5. ✅ Estrarre `ChunkingService` con test dedicati
-6. ✅ Implementare `LLMChatServiceInterface` e `VectorStoreInterface`
-
-**Week 5-8**:
-7. ✅ Refactoring completo `ChatCompletionsController`
-8. ✅ Implementare monitoring Sentry + Laravel Pulse
-9. ✅ Audit sicurezza IDOR + input validation
-
-### Final Assessment
-
-**Qualità Attuale**: 🟡 **6.5/10**  
-**Qualità Target**: 🟢 **8.5/10** (raggiungibile in 2-3 mesi)  
-**Rischio Produzione**: 🟠 **MEDIO** (mitigabile con testing + monitoring)
-
-**Raccomandazione Finale**: ✅ **Procedere con refactoring incrementale** seguendo roadmap proposta. La piattaforma è solida ma necessita investimento in qualità per supportare crescita e manutenzione long-term.
-
----
-
-**Report generato da**: Artiforge Codebase Scanner  
-**Data**: 14 Ottobre 2025  
-**Versione Report**: 1.0
-
+**End of Report**
