@@ -397,8 +397,8 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
         $payload = [
             'model' => $request['model'] ?? ($widgetConfig['model'] ?? config('openai.chat_model', 'gpt-4o-mini')),
             'messages' => $request['messages'],
-            'temperature' => $request['temperature'] ?? ($widgetConfig['temperature'] ?? 0.2),
-            'max_tokens' => $request['max_tokens'] ?? ($widgetConfig['max_tokens'] ?? 1000),
+            'temperature' => (float) ($request['temperature'] ?? ($widgetConfig['temperature'] ?? 0.2)),
+            'max_tokens' => (int) ($request['max_tokens'] ?? ($widgetConfig['max_tokens'] ?? 1000)),
         ];
         
         // Add system prompt
