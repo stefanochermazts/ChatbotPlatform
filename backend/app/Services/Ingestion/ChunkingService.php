@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Ingestion;
 
 use App\Contracts\Ingestion\ChunkingServiceInterface;
+use App\Services\RAG\TenantRagConfigService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -15,17 +16,31 @@ use Illuminate\Support\Facades\Log;
  * - Table-aware chunking
  * - Directory entry extraction
  * 
+ * ✅ FIXED: Now respects tenant-specific RAG configuration (Step 3/9)
+ * 
  * @package App\Services\Ingestion
  */
 class ChunkingService implements ChunkingServiceInterface
 {
     /**
-     * {@inheritDoc}
+     * @param TenantRagConfigService $tenantConfig Service for retrieving tenant-specific config
      */
-    public function chunk(string $text, array $options = []): array
+    public function __construct(
+        private readonly TenantRagConfigService $tenantConfig
+    ) {}
+    
+    /**
+     * {@inheritDoc}
+     * 
+     * ✅ FIXED: Now requires $tenantId for tenant-aware chunking (Step 3/9)
+     */
+    public function chunk(string $text, int $tenantId, array $options = []): array
     {
-        $maxChars = $options['max_chars'] ?? config('rag.chunk_max_chars', 2200);
-        $overlapChars = $options['overlap_chars'] ?? config('rag.chunk_overlap_chars', 250);
+        // ✅ FIXED: Get tenant-specific config instead of global config
+        $tenantChunkConfig = $this->tenantConfig->getChunkingConfig($tenantId);
+        
+        $maxChars = $options['max_chars'] ?? $tenantChunkConfig['max_chars'];
+        $overlapChars = $options['overlap_chars'] ?? $tenantChunkConfig['overlap_chars'];
         $strategy = $options['strategy'] ?? 'standard';
         
         $text = trim($text);

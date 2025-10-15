@@ -15,19 +15,22 @@ namespace App\Contracts\Ingestion;
 interface ChunkingServiceInterface
 {
     /**
-     * Chunk text using semantic boundaries
+     * Chunk text using semantic boundaries (TENANT-AWARE)
      * 
      * Splits text respecting:
      * - Paragraph boundaries
      * - Sentence boundaries
-     * - Maximum character limit
-     * - Overlap for context continuity
+     * - Maximum character limit (from tenant config)
+     * - Overlap for context continuity (from tenant config)
+     * 
+     * ✅ FIXED: Now requires $tenantId to apply tenant-specific RAG config (Step 3/9)
      * 
      * @param string $text Clean text to chunk
-     * @param array{max_chars?: int, overlap_chars?: int, strategy?: string} $options Chunking configuration
+     * @param int $tenantId Tenant ID for tenant-specific chunking config
+     * @param array{max_chars?: int, overlap_chars?: int, strategy?: string} $options Optional overrides for chunking configuration
      * @return array<int, array{text: string, type: string, position: int, metadata: array<string, mixed>}> Array of chunks
      */
-    public function chunk(string $text, array $options = []): array;
+    public function chunk(string $text, int $tenantId, array $options = []): array;
 
     /**
      * Chunk tables separately with table-aware logic
