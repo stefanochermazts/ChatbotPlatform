@@ -473,6 +473,53 @@ php artisan tenant:synonyms:manage 5 --remove="biblioteca"
 ],
 ```
 
+### **Parametri di Chunking Tenant-Aware** ✅
+
+Il sistema di chunking è ora **tenant-aware** e supporta configurazioni personalizzate per ogni tenant:
+
+```php
+// Global defaults (config/rag.php)
+'chunk_max_chars' => 2200,      // Massimo caratteri per chunk
+'chunk_overlap_chars' => 250,   // Sovrapposizione tra chunk
+
+// Tenant-specific overrides (DB: tenants.rag_settings JSON)
+[
+    'chunking' => [
+        'max_chars' => 3000,       // Override per questo tenant
+        'overlap_chars' => 300      // Override per questo tenant
+    ]
+]
+```
+
+**Come Funziona:**
+
+1. **`TenantRagConfigService`** gestisce la configurazione tenant
+2. **`ChunkingService`** richiede `$tenantId` per ogni operazione
+3. **Fallback a 3 livelli**: tenant-specific → profile → global defaults
+
+**Gestione tramite Admin UI:**
+- Admin Panel → Clienti → Modifica Cliente → Tab "Configurazione RAG"
+- Sezione "Parametri di Chunking"
+- I parametri non impostati usano i valori globali di default
+
+**Esempio: Tenant con Documenti Tecnici Lunghi**
+```php
+// Tenant 5: Comune con delibere lunghe
+'chunking' => [
+    'max_chars' => 3000,    // ✅ Chunk più grandi per paragrafi completi
+    'overlap_chars' => 300  // ✅ Overlap maggiore per continuità
+]
+```
+
+**Impatto:**
+- ✅ Ogni tenant può ottimizzare il chunking per il proprio tipo di contenuti
+- ✅ Delibere, PDF tecnici, tabelle complesse richiedono chunk più grandi
+- ✅ FAQ brevi possono usare chunk più piccoli
+- ✅ La configurazione è applicata automaticamente durante l'ingestion
+
+**Nota Importante:**  
+⚠️ Dopo aver modificato i parametri di chunking per un tenant, è necessario **re-ingerire i documenti** esistenti per applicare i nuovi chunk. I nuovi documenti caricati useranno automaticamente la nuova configurazione.
+
 ### **Tuning per Casi d'Uso**
 
 **PA/Enti Pubblici**:

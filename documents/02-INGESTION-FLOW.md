@@ -69,13 +69,20 @@ La pipeline di ingestion trasforma documenti raw (PDF, DOCX, TXT, Markdown) in c
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ 5. CHUNKING                                                     │
+│ 5. CHUNKING (✅ TENANT-AWARE)                                   │
 │ ┌──────────────────────────────────────────────────────────────┐│
-│ │ ChunkingService::chunkText($text, $config)                   ││
+│ │ ChunkingService::chunk($text, $tenantId, $options)           ││
 │ │                                                               ││
-│ │ Config (da .env via config/rag.php):                         ││
-│ │ - RAG_CHUNK_MAX_CHARS: 2200 (default)                        ││
-│ │ - RAG_CHUNK_OVERLAP_CHARS: 250 (default)                     ││
+│ │ ✅ Tenant-Aware Configuration (3-level hierarchy):           ││
+│ │ 1. Tenant-specific (DB: tenants.rag_settings JSON)          ││
+│ │ 2. Profile defaults (future)                                 ││
+│ │ 3. Global defaults (config/rag.php)                          ││
+│ │                                                               ││
+│ │ Config Resolution:                                           ││
+│ │ - TenantRagConfigService::getChunkingConfig($tenantId)       ││
+│ │ - RAG_CHUNK_MAX_CHARS: 2200 (global default)                 ││
+│ │ - RAG_CHUNK_OVERLAP_CHARS: 250 (global default)              ││
+│ │ - Tenant-specific overrides: e.g., Tenant 5 uses 3000 chars ││
 │ │                                                               ││
 │ │ Strategia:                                                   ││
 │ │ 1. Split su paragraph boundaries (\n\n)                      ││
@@ -90,6 +97,9 @@ La pipeline di ingestion trasforma documenti raw (PDF, DOCX, TXT, Markdown) in c
 │ │ - content (string)                                           ││
 │ │ - position (int, ordine nel documento)                       ││
 │ │ - char_count (int)                                           ││
+│ │                                                               ││
+│ │ ⚠️ NOTA: I parametri di chunking sono applicati per tenant.  ││
+│ │ Modifiche ai parametri richiedono re-ingestion documenti.   ││
 │ └──────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
                                ↓
