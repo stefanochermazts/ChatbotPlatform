@@ -146,3 +146,4 @@ class ScraperProgress extends Model
 
 
 
+
