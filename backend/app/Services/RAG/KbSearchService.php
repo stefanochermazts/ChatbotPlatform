@@ -2398,6 +2398,15 @@ class KbSearchService
             // Sinonimi per servizi postali
             'poste' => 'ufficio postale poste italiane',
             'ufficio postale' => 'poste poste italiane',
+            // Sinonimi per informazioni di contatto
+            'telefono' => 'tel phone numero contatto',
+            'numero di telefono' => 'tel telefono phone numero contatto',
+            'recapito telefonico' => 'tel telefono phone numero contatto',
+            'indirizzo email' => 'email mail posta elettronica',
+            'email' => 'mail posta elettronica indirizzo',
+            'indirizzo' => 'sede via dove ubicazione',
+            'orari' => 'orario apertura chiusura quando',
+            'orario' => 'orari apertura chiusura quando',
             // SOW / Statement of Work (documenti progetto)
             'sow' => 'statement of work documento di lavoro contratto quadro',
             'statement of work' => 'sow documento di lavoro contratto quadro',

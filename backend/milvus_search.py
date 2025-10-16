@@ -190,6 +190,39 @@ def count_by_tenant(collection_name, tenant_id):
             "error_type": type(e).__name__
         }
 
+def count_by_document(collection_name, tenant_id, document_id):
+    """Conta i chunk per uno specifico documento"""
+    try:
+        connect_milvus()
+        collection = Collection(collection_name)
+        collection.load()
+        
+        # Query per contare con entrambi i filtri
+        expr = f"tenant_id == {tenant_id} && document_id == {document_id}"
+        results = collection.query(
+            expr=expr,
+            output_fields=["id", "chunk_index"],
+            limit=1000
+        )
+        
+        # Estrai chunk_indices per debug
+        chunk_indices = [r.get('chunk_index', -1) for r in results]
+        
+        return {
+            "success": True,
+            "count": len(results),
+            "chunk_indices": sorted(chunk_indices),
+            "tenant_id": tenant_id,
+            "document_id": document_id
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
 def health_check(collection_name):
     """Controllo salute di Milvus"""
     try:
@@ -351,6 +384,16 @@ def main():
                 sys.exit(1)
             
             result = count_by_tenant(collection_name, tenant_id)
+            
+        elif operation == 'count_by_document':
+            tenant_id = int(params.get('tenant_id', 0))
+            document_id = int(params.get('document_id', 0))
+            
+            if tenant_id <= 0 or document_id <= 0:
+                print(json.dumps({"success": False, "error": "valid tenant_id and document_id required"}))
+                sys.exit(1)
+            
+            result = count_by_document(collection_name, tenant_id, document_id)
             
         elif operation == 'health':
             result = health_check(collection_name)
