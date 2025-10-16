@@ -1353,8 +1353,12 @@ class KbSearchService
                     $synonymLower = mb_strtolower($synonym);
                     
                     // Evita duplicati: non aggiungere se già presente nella query o nei sinonimi aggiunti
+                    // FIX: Use word boundary regex instead of str_contains to avoid false positives
+                    // (e.g., "tel" should not match inside "telefono")
+                    $alreadyInQuery = preg_match('/\b' . preg_quote($synonymLower, '/') . '\b/u', $queryLower);
+                    
                     if ($synonym !== '' && 
-                        !str_contains($queryLower, $synonymLower) && 
+                        !$alreadyInQuery && 
                         !in_array($synonymLower, $addedSynonyms, true)) {
                         $addedSynonyms[] = $synonymLower;
                     }
