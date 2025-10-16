@@ -126,6 +126,87 @@ class TenantRagConfigService
             'overlap_chars' => $config['chunking']['overlap_chars'] ?? config('rag.chunk_overlap_chars', 250),
         ];
     }
+    
+    /**
+     * Ottiene parametri di retrieval ibrido per tenant
+     * 
+     * Returns tenant-specific retrieval configuration with fallback to global config.
+     * Supports 3-level hierarchy: tenant-specific → profile → global defaults.
+     * This is the SINGLE SOURCE OF TRUTH for all RAG retrieval parameters.
+     * 
+     * @param int $tenantId The tenant ID to retrieve config for
+     * @return array{
+     *   vector_top_k: int,
+     *   bm25_top_k: int,
+     *   mmr_take: int,
+     *   mmr_lambda: float,
+     *   rrf_k: int,
+     *   neighbor_radius: int
+     * } Validated retrieval parameters
+     * 
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If tenant does not exist
+     * 
+     * @example
+     * // For tenant with custom config (e.g., rag_settings.hybrid.vector_top_k = 200)
+     * $config = $service->getRetrievalConfig(5);
+     * // Returns: ['vector_top_k' => 200, 'bm25_top_k' => 50, ...]
+     * 
+     * // For tenant without custom config
+     * $config = $service->getRetrievalConfig(1);
+     * // Returns: ['vector_top_k' => 100, 'bm25_top_k' => 30, ...] (from global config)
+     */
+    public function getRetrievalConfig(int $tenantId): array
+    {
+        $config = $this->getConfig($tenantId);
+        $hybrid = $config['hybrid'] ?? [];
+        
+        // Load global defaults as fallback
+        $globalHybrid = config('rag.hybrid', []);
+        
+        // Merge with type casting and validation
+        $retrievalConfig = [
+            'vector_top_k'    => (int) ($hybrid['vector_top_k'] ?? $globalHybrid['vector_top_k'] ?? 100),
+            'bm25_top_k'      => (int) ($hybrid['bm25_top_k'] ?? $globalHybrid['bm25_top_k'] ?? 30),
+            'mmr_take'        => (int) ($hybrid['mmr_take'] ?? $globalHybrid['mmr_take'] ?? 50),
+            'mmr_lambda'      => (float) ($hybrid['mmr_lambda'] ?? $globalHybrid['mmr_lambda'] ?? 0.1),
+            'rrf_k'           => (int) ($hybrid['rrf_k'] ?? $globalHybrid['rrf_k'] ?? 60),
+            'neighbor_radius' => (int) ($hybrid['neighbor_radius'] ?? $globalHybrid['neighbor_radius'] ?? 5),
+        ];
+        
+        // Validate ranges
+        $retrievalConfig = $this->validateRetrievalConfig($retrievalConfig);
+        
+        return $retrievalConfig;
+    }
+    
+    /**
+     * Valida e sanitizza i parametri di retrieval
+     * 
+     * @param array $config Raw retrieval config
+     * @return array Validated and sanitized config
+     */
+    private function validateRetrievalConfig(array $config): array
+    {
+        // Clamp vector_top_k between 1 and 1000
+        $config['vector_top_k'] = max(1, min(1000, $config['vector_top_k']));
+        
+        // Clamp bm25_top_k between 1 and 1000
+        $config['bm25_top_k'] = max(1, min(1000, $config['bm25_top_k']));
+        
+        // Clamp mmr_take between 1 and 200
+        $config['mmr_take'] = max(1, min(200, $config['mmr_take']));
+        
+        // Clamp mmr_lambda between 0.0 and 1.0
+        $config['mmr_lambda'] = max(0.0, min(1.0, $config['mmr_lambda']));
+        
+        // Clamp rrf_k between 1 and 100
+        $config['rrf_k'] = max(1, min(100, $config['rrf_k']));
+        
+        // Clamp neighbor_radius between 0 and 20
+        $config['neighbor_radius'] = max(0, min(20, $config['neighbor_radius']));
+        
+        return $config;
+    }
 
     /**
      * Aggiorna la configurazione RAG per un tenant

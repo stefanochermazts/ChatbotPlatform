@@ -51,13 +51,16 @@ return [
     ],
 
     // Retrieval ibrido e ranking
+    // ✅ FIXED: No env() calls - use only hardcoded defaults
+    // Tenants can override via rag_settings.hybrid.* JSON field
+    // TenantRagConfigService::getRetrievalConfig() is the SINGLE SOURCE OF TRUTH
     'hybrid' => [
-        'vector_top_k' => (int) env('RAG_VECTOR_TOP_K', 100), // 🔧 MASSIMO per recuperare tutti i chunk
-        'bm25_top_k'   => (int) env('RAG_BM25_TOP_K', 30), // 🔧 RIDOTTO per dare più peso al semantico
-        'rrf_k'        => (int) env('RAG_RRF_K', 60),
-        'mmr_lambda'   => (float) env('RAG_MMR_LAMBDA', 0.1), // 🔧 Ridotto per più diversità
-        'mmr_take'     => (int) env('RAG_MMR_TAKE', 50), // 🔧 MASSIMO per tutti i risultati
-        'neighbor_radius' => (int) env('RAG_NEIGHBOR_RADIUS', 5), // 🔧 Aumentato per più contesto
+        'vector_top_k'    => 100, // Numero max di risultati vector search (1-1000)
+        'bm25_top_k'      => 30,  // Numero max di risultati BM25 text search (1-1000)
+        'rrf_k'           => 60,  // Parametro K per Reciprocal Rank Fusion (1-100)
+        'mmr_lambda'      => 0.1, // Peso diversità vs rilevanza in MMR (0.0-1.0, lower = more diversity)
+        'mmr_take'        => 50,  // Numero chunk da passare a MMR reranking (1-200)
+        'neighbor_radius' => 5,   // Raggio per neighbor expansion (0-20)
     ],
 
     // Multi-query expansion (parafrasi della query utente)

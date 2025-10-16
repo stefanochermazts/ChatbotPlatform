@@ -169,21 +169,22 @@ class KbSearchService
                     $result['debug']['intent_detection'] = $intentDebug;
                     $result['debug']['selected_kb'] = $kbSelIntent;
 
-                    // Esponi anche params hybrid e driver reranker per coerenza UI
-                    $cfg = $this->tenantConfig->getHybridConfig($tenantId);
-                    $vecTopK   = (int) ($cfg['vector_top_k'] ?? 30);
-                    $bmTopK    = (int) ($cfg['bm25_top_k']   ?? 50);
-                    $rrfK      = (int) ($cfg['rrf_k']        ?? 60);
-                    $mmrLambda = (float) ($cfg['mmr_lambda'] ?? 0.3);
-                    $mmrTake   = (int) ($cfg['mmr_take']     ?? 8);
-                    $neighbor  = (int) ($cfg['neighbor_radius'] ?? 1);
+                    // ✅ FIXED: Use getRetrievalConfig() for validated params with correct defaults
+                    $retrievalConfig = $this->tenantConfig->getRetrievalConfig($tenantId);
+                    $vecTopK        = $retrievalConfig['vector_top_k'];
+                    $bmTopK         = $retrievalConfig['bm25_top_k'];
+                    $rrfK           = $retrievalConfig['rrf_k'];
+                    $mmrLambda      = $retrievalConfig['mmr_lambda'];
+                    $mmrTake        = $retrievalConfig['mmr_take'];
+                    $neighborRadius = $retrievalConfig['neighbor_radius'];
+                    
                     $result['debug']['hybrid_config'] = [
-                        'vector_top_k' => $vecTopK,
-                        'bm25_top_k' => $bmTopK,
-                        'rrf_k' => $rrfK,
-                        'mmr_lambda' => $mmrLambda,
-                        'mmr_take' => $mmrTake,
-                        'neighbor_radius' => $neighbor,
+                        'vector_top_k'    => $vecTopK,
+                        'bm25_top_k'      => $bmTopK,
+                        'rrf_k'           => $rrfK,
+                        'mmr_lambda'      => $mmrLambda,
+                        'mmr_take'        => $mmrTake,
+                        'neighbor_radius' => $neighborRadius,
                     ];
                     $advCfg = (array) $this->tenantConfig->getAdvancedConfig($tenantId);
                     $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
@@ -208,13 +209,14 @@ class KbSearchService
             'fallback_type' => 'hybrid_search'
         ]);
 
-        $cfg = $this->tenantConfig->getHybridConfig($tenantId);
-        $vecTopK   = (int) ($cfg['vector_top_k'] ?? 30);
-        $bmTopK    = (int) ($cfg['bm25_top_k']   ?? 50);
-        $rrfK      = (int) ($cfg['rrf_k']        ?? 60);
-        $mmrLambda = (float) ($cfg['mmr_lambda'] ?? 0.3);
-        $mmrTake   = (int) ($cfg['mmr_take']     ?? 8);
-        $neighbor  = (int) ($cfg['neighbor_radius'] ?? 1);
+        // ✅ FIXED: Use getRetrievalConfig() for validated params with correct defaults
+        $retrievalConfig = $this->tenantConfig->getRetrievalConfig($tenantId);
+        $vecTopK        = $retrievalConfig['vector_top_k'];
+        $bmTopK         = $retrievalConfig['bm25_top_k'];
+        $rrfK           = $retrievalConfig['rrf_k'];
+        $mmrLambda      = $retrievalConfig['mmr_lambda'];
+        $mmrTake        = $retrievalConfig['mmr_take'];
+        $neighborRadius = $retrievalConfig['neighbor_radius'];
         
         Log::info('⚙️ [RETRIEVE] Configurazione hybrid search', [
             'vector_top_k' => $vecTopK,
@@ -231,7 +233,7 @@ class KbSearchService
                 'rrf_k' => $rrfK,
                 'mmr_lambda' => $mmrLambda,
                 'mmr_take' => $mmrTake,
-                'neighbor_radius' => $neighbor,
+                'neighbor_radius' => $neighborRadius,
             ];
         }
 
@@ -506,7 +508,7 @@ class KbSearchService
             // 🚀 OTTIMIZZAZIONE: Testi più corti per reranking veloce
             $text = $this->text->getChunkSnippet($docId, $chunkIndex, 300) ?? '';
             // Riduci neighbor_radius per reranking (solo ±1 invece di configurato)
-            $rerankNeighbor = min(1, $neighbor);
+            $rerankNeighbor = min(1, $neighborRadius);
             for ($d = -$rerankNeighbor; $d <= $rerankNeighbor; $d++) {
                 if ($d === 0) continue;
                 $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 200);
@@ -536,7 +538,7 @@ class KbSearchService
         };
         
         // Cache key include driver e neighbor_radius per evitare conflitti
-        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN},{$neighbor}";
+        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN},{$neighborRadius}";
         
         // Per LLM reranking, usa TTL più breve ma mantieni cache
         // (TTL gestito dalla RagCache class)
@@ -580,8 +582,9 @@ class KbSearchService
         // ⏱️ STEP 10: MMR (Maximal Marginal Relevance)
         $stepStart = microtime(true);
         
-        // 🚀 OPTIMIZATION: Cache MMR based on query + ranked documents hash
-        $mmrCacheKey = "mmr:" . sha1($normalizedQuery . serialize(array_map(fn($r) => $r['document_id'] . ':' . $r['chunk_index'], $ranked)));
+        // 🚀 OPTIMIZATION: Cache MMR based on query + ranked documents hash + MMR params
+        // ✅ FIXED: Include mmrLambda and mmrTake in cache key to avoid stale cache
+        $mmrCacheKey = "mmr:" . sha1($normalizedQuery . serialize(array_map(fn($r) => $r['document_id'] . ':' . $r['chunk_index'], $ranked)) . ":{$mmrLambda}:{$mmrTake}");
         
         $qEmb = $this->embeddings->embedTexts([$normalizedQuery])[0] ?? null;
         
@@ -646,7 +649,7 @@ class KbSearchService
             $seen[$docId] = true;
 
             $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 50000) ?? '';
-            for ($d = -$neighbor; $d <= $neighbor; $d++) {
+            for ($d = -$neighborRadius; $d <= $neighborRadius; $d++) {
                 if ($d === 0) continue;
                 // Aumenta il limite per includere righe di contatto (es. tel: ...)
                 $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 2000);
@@ -1379,6 +1382,10 @@ class KbSearchService
      */
     private function executeSemanticFallback(string $intentType, int $tenantId, string $name, string $originalQuery, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
+        // ✅ FIXED: Get tenant-aware retrieval config
+        $retrievalConfig = $this->tenantConfig->getRetrievalConfig($tenantId);
+        $vecTopK = $retrievalConfig['vector_top_k'];
+        
         // Costruisci query semantica combinando termine originale + sinonimi
         $semanticQuery = $this->buildSemanticQuery($name, $intentType, $tenantId);
         
@@ -1402,7 +1409,7 @@ class KbSearchService
         }
         
         // Prendi più risultati per compensare la ricerca più ampia
-        $semanticHits = $this->milvus->searchTopK($tenantId, $embedding, 100);
+        $semanticHits = $this->milvus->searchTopK($tenantId, $embedding, $vecTopK);
         
         $debugInfo['semantic_fallback']['semantic_results_found'] = count($semanticHits);
         $debugInfo['semantic_fallback']['top_semantic_hits'] = array_slice($semanticHits, 0, 5);
@@ -1418,7 +1425,9 @@ class KbSearchService
             });
             $minimalEmb = $this->embeddings->embedTexts([$minimalQuery])[0] ?? null;
             if ($minimalEmb) {
-                $retryHits = $this->milvus->searchTopK($tenantId, $minimalEmb, 20);
+                // Use reduced top_k for retry (20% of configured value, min 10, max 50)
+                $retryTopK = max(10, min(50, (int)($vecTopK * 0.2)));
+                $retryHits = $this->milvus->searchTopK($tenantId, $minimalEmb, $retryTopK);
                 $debugInfo['semantic_fallback']['retry_query'] = $minimalQuery;
                 $debugInfo['semantic_fallback']['retry_results_found'] = count($retryHits);
                 if (!empty($retryHits)) {
