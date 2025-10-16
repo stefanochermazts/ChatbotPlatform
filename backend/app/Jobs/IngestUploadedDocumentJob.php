@@ -111,11 +111,14 @@ class IngestUploadedDocumentJob implements ShouldQueue
             // Table-aware chunking was causing context loss and information mixing.
             if ($isScrapedDocument) {
                 // SIMPLE: Pure semantic chunking with ALL text (tables inline)
+                // ✅ SECOND FIX: Remove boilerplate (URL, "Scraped on", etc.) to improve semantic similarity
+                $chunkOptions['remove_boilerplate'] = true;
                 $allChunks = $chunking->chunk($normalizedText, $doc->tenant_id, $chunkOptions);
                 
                 Log::info("chunking.scraped_semantic_only", [
                     'chunks_created' => count($allChunks),
-                    'reason' => 'scraped_markdown_well_formatted'
+                    'reason' => 'scraped_markdown_well_formatted',
+                    'boilerplate_removed' => true
                 ]);
             } else {
                 // COMPLEX: Table-aware chunking for uploaded files (PDF, DOCX, etc.)

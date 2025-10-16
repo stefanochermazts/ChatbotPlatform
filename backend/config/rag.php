@@ -53,7 +53,7 @@ return [
     // Retrieval ibrido e ranking
     'hybrid' => [
         'vector_top_k' => (int) env('RAG_VECTOR_TOP_K', 100), // 🔧 MASSIMO per recuperare tutti i chunk
-        'bm25_top_k'   => (int) env('RAG_BM25_TOP_K', 150), // 🔧 MASSIMO per BM25
+        'bm25_top_k'   => (int) env('RAG_BM25_TOP_K', 30), // 🔧 RIDOTTO per dare più peso al semantico
         'rrf_k'        => (int) env('RAG_RRF_K', 60),
         'mmr_lambda'   => (float) env('RAG_MMR_LAMBDA', 0.1), // 🔧 Ridotto per più diversità
         'mmr_take'     => (int) env('RAG_MMR_TAKE', 50), // 🔧 MASSIMO per tutti i risultati
@@ -81,7 +81,7 @@ return [
     'reranker' => [
         // Driver: embedding | cohere | llm
         'driver' => env('RAG_RERANK_DRIVER', 'embedding'), // 🔧 Embedding per velocità (widget), llm per accuratezza (admin)
-        'top_n'  => (int) env('RAG_RERANK_TOP_N', 50), // 🔧 Ridotto per velocità (era 100)
+        'top_n'  => (int) env('RAG_RERANK_TOP_N', 100), // 🔧 AUMENTATO per includere più chunks
 
         // Cohere
         'cohere' => [

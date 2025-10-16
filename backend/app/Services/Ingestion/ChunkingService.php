@@ -42,17 +42,24 @@ class ChunkingService implements ChunkingServiceInterface
         $maxChars = $options['max_chars'] ?? $tenantChunkConfig['max_chars'];
         $overlapChars = $options['overlap_chars'] ?? $tenantChunkConfig['overlap_chars'];
         $strategy = $options['strategy'] ?? 'standard';
+        $removeBoilerplate = $options['remove_boilerplate'] ?? false;
         
         $text = trim($text);
         if ($text === '') {
             return [];
         }
         
+        // ✅ FIX: Remove boilerplate for web_scraper documents to improve semantic similarity
+        if ($removeBoilerplate) {
+            $text = $this->removeScraperBoilerplate($text);
+        }
+        
         Log::debug("chunking.start", [
             'text_length' => strlen($text),
             'max_chars' => $maxChars,
             'overlap_chars' => $overlapChars,
-            'strategy' => $strategy
+            'strategy' => $strategy,
+            'remove_boilerplate' => $removeBoilerplate
         ]);
         
         return match ($strategy) {
@@ -61,6 +68,29 @@ class ChunkingService implements ChunkingServiceInterface
             'hard' => $this->performHardChunking($text, $maxChars, $overlapChars),
             default => $this->performStandardChunking($text, $maxChars, $overlapChars)
         };
+    }
+    
+    /**
+     * Remove scraper boilerplate (URL, "Scraped on", etc.) from text
+     * 
+     * @param string $text Text with potential boilerplate
+     * @return string Cleaned text
+     */
+    private function removeScraperBoilerplate(string $text): string
+    {
+        // Remove lines starting with "# " followed by domain (e.g., "# www.comune.sancesareo.rm.it")
+        $text = preg_replace('/^#\s+[a-z0-9\-\.]+\s*$/m', '', $text);
+        
+        // Remove "**URL:** ..." lines
+        $text = preg_replace('/^\*\*URL:\*\*.*$/m', '', $text);
+        
+        // Remove "**Scraped on:** ..." lines
+        $text = preg_replace('/^\*\*Scraped on:\*\*.*$/m', '', $text);
+        
+        // Remove multiple consecutive blank lines
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);
+        
+        return trim($text);
     }
     
     /**
