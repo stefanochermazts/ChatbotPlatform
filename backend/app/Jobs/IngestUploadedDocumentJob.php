@@ -80,7 +80,9 @@ class IngestUploadedDocumentJob implements ShouldQueue
             // ========================================
             $normalizedText = $parsing->normalize($text);
             $normalizedText = $parsing->removeNoise($normalizedText);
-            $tables = $parsing->findTables($normalizedText);
+            
+            // Check if scraped document (Markdown is already well-formatted)
+            $isScrapedDocument = in_array($doc->source, ['web_scraper', 'web_scraper_linked'], true);
             
             // ========================================
             // STEP 3: Chunk text
@@ -98,32 +100,55 @@ class IngestUploadedDocumentJob implements ShouldQueue
                 'document_id' => $doc->id,
                 'max_chars' => $chunkOptions['max_chars'],
                 'overlap_chars' => $chunkOptions['overlap_chars'],
-                'text_length' => strlen($normalizedText)
+                'text_length' => strlen($normalizedText),
+                'is_scraped' => $isScrapedDocument,
+                'chunking_strategy' => $isScrapedDocument ? 'semantic_only' : 'table_aware'
             ]);
             
-            // Chunk tables separately
-            $tableChunks = $chunking->chunkTables($tables);
-            
-            // Chunk remaining text (without tables)
-            $textWithoutTables = $parsing->removeTables($normalizedText, $tables);
-            
-            // Skip directory extraction for scraped documents (Markdown is already well-formatted)
-            $isScrapedDocument = in_array($doc->source, ['web_scraper', 'web_scraper_linked'], true);
-            
-            $directoryChunks = [];
-            if (!$isScrapedDocument && trim($textWithoutTables) !== '') {
-                $directoryChunks = $chunking->extractDirectoryEntries($textWithoutTables);
+            // ✅ FIX: For scraped documents, SKIP table extraction completely
+            // Scraped Markdown is well-formatted. Large chunks (e.g., 3000 chars for Tenant 5)
+            // can contain entire tables with context, preserving narrative flow.
+            // Table-aware chunking was causing context loss and information mixing.
+            if ($isScrapedDocument) {
+                // SIMPLE: Pure semantic chunking with ALL text (tables inline)
+                $allChunks = $chunking->chunk($normalizedText, $doc->tenant_id, $chunkOptions);
+                
+                Log::info("chunking.scraped_semantic_only", [
+                    'chunks_created' => count($allChunks),
+                    'reason' => 'scraped_markdown_well_formatted'
+                ]);
+            } else {
+                // COMPLEX: Table-aware chunking for uploaded files (PDF, DOCX, etc.)
+                $tables = $parsing->findTables($normalizedText);
+                
+                // Chunk tables separately
+                $tableChunks = $chunking->chunkTables($tables);
+                
+                // Chunk remaining text (without tables)
+                $textWithoutTables = $parsing->removeTables($normalizedText, $tables);
+                
+                // Extract directory entries for uploaded documents
+                $directoryChunks = [];
+                if (trim($textWithoutTables) !== '') {
+                    $directoryChunks = $chunking->extractDirectoryEntries($textWithoutTables);
+                }
+                
+                // Standard chunking for non-table, non-directory text
+                $standardChunks = [];
+                if (count($directoryChunks) < 5 && trim($textWithoutTables) !== '') {
+                    $standardChunks = $chunking->chunk($textWithoutTables, $doc->tenant_id, $chunkOptions);
+                }
+                
+                // Merge all chunks
+                $allChunks = array_merge($tableChunks, $directoryChunks, $standardChunks);
+                
+                Log::info("chunking.uploaded_table_aware", [
+                    'table_chunks' => count($tableChunks),
+                    'directory_chunks' => count($directoryChunks),
+                    'standard_chunks' => count($standardChunks),
+                    'total_chunks' => count($allChunks)
+                ]);
             }
-            
-            // Standard chunking for non-table, non-directory text
-            $standardChunks = [];
-            if (count($directoryChunks) < 5 && trim($textWithoutTables) !== '') {
-                // ✅ FIXED: Pass $tenantId to chunk() (Step 4/9)
-                $standardChunks = $chunking->chunk($textWithoutTables, $doc->tenant_id, $chunkOptions);
-            }
-            
-            // Merge all chunks
-            $allChunks = array_merge($tableChunks, $directoryChunks, $standardChunks);
             
             if (empty($allChunks)) {
                 throw new \RuntimeException('Nessun chunk generato');

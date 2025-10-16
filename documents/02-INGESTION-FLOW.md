@@ -69,7 +69,7 @@ La pipeline di ingestion trasforma documenti raw (PDF, DOCX, TXT, Markdown) in c
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ 5. CHUNKING (✅ TENANT-AWARE)                                   │
+│ 5. CHUNKING (✅ TENANT-AWARE, SOURCE-AWARE)                     │
 │ ┌──────────────────────────────────────────────────────────────┐│
 │ │ ChunkingService::chunk($text, $tenantId, $options)           ││
 │ │                                                               ││
@@ -84,7 +84,21 @@ La pipeline di ingestion trasforma documenti raw (PDF, DOCX, TXT, Markdown) in c
 │ │ - RAG_CHUNK_OVERLAP_CHARS: 250 (global default)              ││
 │ │ - Tenant-specific overrides: e.g., Tenant 5 uses 3000 chars ││
 │ │                                                               ││
-│ │ Strategia:                                                   ││
+│ │ ✅ Source-Aware Chunking Strategy:                           ││
+│ │                                                               ││
+│ │ FOR SCRAPED DOCUMENTS (source='web_scraper'):               ││
+│ │ - SEMANTIC ONLY: Pure semantic chunking                      ││
+│ │ - Tables kept INLINE in text (preserves context)            ││
+│ │ - Large chunks (3000) contain entire tables + context       ││
+│ │ - NO table extraction, NO directory extraction              ││
+│ │ - Rationale: Markdown already well-formatted                ││
+│ │                                                               ││
+│ │ FOR UPLOADED DOCUMENTS (PDF, DOCX, TXT):                    ││
+│ │ - TABLE-AWARE: Complex chunking with table extraction       ││
+│ │ - findTables() + chunkTables() + extractDirectoryEntries()  ││
+│ │ - Rationale: Unstructured text needs extraction             ││
+│ │                                                               ││
+│ │ Semantic Chunking Strategia:                                ││
 │ │ 1. Split su paragraph boundaries (\n\n)                      ││
 │ │ 2. Se paragraph > MAX_CHARS:                                 ││
 │ │    → Split su sentence boundaries (. ! ?)                    ││
