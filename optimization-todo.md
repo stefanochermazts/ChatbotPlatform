@@ -9,14 +9,15 @@
 ## 📊 Progress Overview
 
 ```
-COMPLETED: ████░░░░░░░░░░░░░░░░ 2/12 (17%)
+COMPLETED: ████░░░░░░░░░░░░░░░░ 3/13 (23%)
 CRITICAL:  ███░░░░░░░░░░░░░░░░░ 2/6  (33%)
 HIGH:      ░░░░░░░░░░░░░░░░░░░░ 0/2  (0%)
 MEDIUM:    ░░░░░░░░░░░░░░░░░░░░ 0/4  (0%)
+ADDITIONAL: █░░░░░░░░░░░░░░░░░░░ 1/1  (100%) [ChunkingService Tenant-Aware]
 ```
 
 **Estimated Total Effort**: 36 ore (~1 settimana full-time)  
-**Actual Time Spent**: 2h
+**Actual Time Spent**: 4h (2h optimizations + 2h chunking fix)
 
 ---
 
@@ -584,6 +585,83 @@ git revert <commit-hash>
 
 ---
 
+### 🆕 Additional Fix #1: ChunkingService Tenant-Aware Configuration
+**Date**: 2025-10-16  
+**Priority**: 🔴 CRITICAL (Technical Debt)  
+**Status**: ✅ COMPLETED (Step 1-6/9)  
+**Category**: Configuration Management / Multitenancy  
+
+**Problem Identified**:
+- `ChunkingService` was bypassing tenant-specific RAG configuration
+- All tenants used global `config('rag.chunk_max_chars')` defaults (2200 chars)
+- Tenant-specific chunking parameters in `tenants.rag_settings` JSON were ignored
+- Tenant 5 had custom `max_chars=3000` that was never applied
+
+**Solution Implemented** (9-step plan):
+1. ✅ Flattened `config/rag.php` chunk keys: `chunk_max_chars`, `chunk_overlap_chars`
+2. ✅ Updated `TenantRagConfigService::getChunkingConfig()` to use flattened keys
+3. ✅ Injected `TenantRagConfigService` into `ChunkingService` constructor
+4. ✅ Updated `chunk()` signature: `chunk(string $text, int $tenantId, array $options = [])`
+5. ✅ Updated caller: `IngestUploadedDocumentJob` now passes `$doc->tenant_id`
+6. ✅ Updated unit tests: `ChunkingServiceTest` with mock service (9/9 tests passing)
+7. ⏭️ Deprecation notice: SKIPPED (breaking change handled with tests)
+8. ✅ Admin UI: Already exists in `rag-config.blade.php` Tab "Chunking"
+9. ⏳ Manual testing: Required by user
+
+**Files Modified**:
+- `backend/config/rag.php` (flattened structure)
+- `backend/app/Services/RAG/TenantRagConfigService.php` (updated getChunkingConfig)
+- `backend/app/Services/Ingestion/ChunkingService.php` (tenant-aware)
+- `backend/app/Contracts/Ingestion/ChunkingServiceInterface.php` (updated signature)
+- `backend/app/Jobs/IngestUploadedDocumentJob.php` (pass $tenantId)
+- `backend/tests/Unit/Services/Ingestion/ChunkingServiceTest.php` (updated tests)
+- `docs/rag.md` (added tenant-aware chunking section)
+- `documents/02-INGESTION-FLOW.md` (updated CHUNKING flow diagram)
+
+**Commits** (6 total, all pushed to `main`):
+- `e71b156`: Fix config/rag.php naming (Step 1/9)
+- `4901746`: Update TenantRagConfigService (Step 2/9)
+- `97a5e5e`: Inject TenantRagConfigService (Step 3/9)
+- `709d39f`: Update IngestUploadedDocumentJob (Step 4/9)
+- `ee854d5`: Update ChunkingServiceTest (Step 5/9)
+- `711ab80`: Update documentation (Step 6/9)
+
+**Configuration Hierarchy** (now enforced):
+1. Tenant-specific: `tenants.rag_settings['chunking']['max_chars']` (e.g., Tenant 5 = 3000)
+2. Profile defaults: (future implementation)
+3. Global defaults: `config('rag.chunk_max_chars')` = 2200
+
+**Testing Status**:
+- ✅ Unit tests: 9/9 passing, 48 assertions
+- ✅ Linting: No errors
+- ⏳ Integration test: User to verify with Tenant 5 document ingestion
+- ⏳ Expected result: Tenant 5 chunks ~3000 chars (not 2200)
+
+**Impact**:
+- ✅ Tenant 5 can now use 3000-char chunks for complex delibere
+- ✅ Other tenants respect global defaults (2200)
+- ✅ Admin UI ready for per-tenant configuration
+- ⚠️ Breaking change: `chunk()` method signature requires `$tenantId` parameter
+- ⚠️ Existing documents require re-ingestion to apply new chunk sizes
+
+**Issues Encountered**: None (smooth implementation)  
+**Actual Time**: 2h  
+**Actual Gain**: Correctness fix (no performance impact, but enables tenant customization)  
+
+**References**:
+- Artiforge Report: `.artiforge/rag-config-audit-report.md`
+- Action Plan: `CRITICAL-FIX-CHUNKING-SERVICE.md`
+- Full Plan: `.artiforge/plan-chunking-service-tenant-config.md`
+
+**Next Steps for User**:
+1. Restart web server (Apache/PHP-FPM)
+2. Verify Admin UI shows correct values for Tenant 5 (max_chars=3000)
+3. Upload new document for Tenant 5
+4. Verify chunks in DB are ~3000 chars (not 2200)
+5. Optionally: Re-ingest existing Tenant 5 documents to apply new chunking
+
+---
+
 ## 🎓 References
 
 - [Performance Analysis Report](.artiforge/performance-bottlenecks-report.md)
@@ -594,7 +672,16 @@ git revert <commit-hash>
 
 ---
 
-**Last Updated**: 14 Ottobre 2025  
+**Last Updated**: 16 Ottobre 2025  
 **Next Review**: Dopo Week 1 completata  
 **Owner**: Development Team
+
+---
+
+## 📝 Changelog
+
+- **2025-10-16**: Added ChunkingService Tenant-Aware Configuration fix (6 commits, 2h)
+- **2025-10-14**: Completed N+1 Elimination (1.5h)
+- **2025-10-14**: Created DB indexes migration (20min)
+- **2025-10-14**: Completed Embeddings Batch Size Optimization (implementation)
 
