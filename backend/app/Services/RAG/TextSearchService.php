@@ -16,9 +16,14 @@ class TextSearchService
             return [];
         }
 
+        // FIX: Use OR logic instead of AND logic for better synonym expansion support
+        // Convert query to OR-separated terms: "tel phone comando" -> "tel | phone | comando"
+        $terms = preg_split('/\s+/', trim($query), -1, PREG_SPLIT_NO_EMPTY);
+        $orQuery = implode(' | ', $terms);
+
         if ($knowledgeBaseId !== null) {
             $sql = <<<SQL
-                WITH q AS (SELECT plainto_tsquery('simple', :q) AS tsq)
+                WITH q AS (SELECT to_tsquery('simple', :q) AS tsq)
                 SELECT dc.document_id, dc.chunk_index,
                        ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
                 FROM document_chunks dc
@@ -33,14 +38,14 @@ class TextSearchService
             SQL;
 
             $rows = DB::select($sql, [
-                'q' => $query,
+                'q' => $orQuery,
                 'tenant' => $tenantId,
                 'k' => $k,
                 'kbId' => (int) $knowledgeBaseId,
             ]);
         } else {
             $sql = <<<SQL
-                WITH q AS (SELECT plainto_tsquery('simple', :q) AS tsq)
+                WITH q AS (SELECT to_tsquery('simple', :q) AS tsq)
                 SELECT dc.document_id, dc.chunk_index,
                        ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
                 FROM document_chunks dc
@@ -54,7 +59,7 @@ class TextSearchService
             SQL;
 
             $rows = DB::select($sql, [
-                'q' => $query,
+                'q' => $orQuery,
                 'tenant' => $tenantId,
                 'k' => $k,
             ]);
