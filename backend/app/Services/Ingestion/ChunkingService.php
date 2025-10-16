@@ -80,8 +80,17 @@ class ChunkingService implements ChunkingServiceInterface
             $contextualizedTable = $table['context_before'] . "\n\n" . $tableContent . "\n\n" . $table['context_after'];
             $contextualizedTable = trim($contextualizedTable);
             
-            // Try to explode markdown tables into row chunks
-            $rowChunks = $this->explodeMarkdownTableIntoRowChunks($tableContent);
+            // ✅ FIX: Do NOT explode small tables (<10 rows) to preserve context
+            // Small tables (contact info, schedules, etc.) should stay together
+            // to avoid mixing information from different services/offices
+            $rowCount = $table['rows'] ?? 0;
+            $shouldExplode = $rowCount >= 10;
+            
+            // Try to explode markdown tables into row chunks (ONLY for large tables)
+            $rowChunks = [];
+            if ($shouldExplode) {
+                $rowChunks = $this->explodeMarkdownTableIntoRowChunks($tableContent);
+            }
             
             if (!empty($rowChunks)) {
                 // Include minimal context before each row
@@ -98,8 +107,15 @@ class ChunkingService implements ChunkingServiceInterface
                         ]
                     ];
                 }
+                
+                Log::debug("table_chunking.exploded", [
+                    'table_index' => $tableIndex,
+                    'rows' => $rowCount,
+                    'chunks_created' => count($rowChunks)
+                ]);
             } else {
                 // Fallback: use entire contextualized table
+                // This preserves context for small tables (contacts, schedules, etc.)
                 $chunks[] = [
                     'text' => $contextualizedTable,
                     'type' => 'table',
@@ -111,6 +127,12 @@ class ChunkingService implements ChunkingServiceInterface
                         'chars' => strlen($contextualizedTable),
                     ]
                 ];
+                
+                Log::debug("table_chunking.preserved_whole", [
+                    'table_index' => $tableIndex,
+                    'rows' => $rowCount,
+                    'reason' => $shouldExplode ? 'explosion_failed' : 'small_table_preserve_context'
+                ]);
             }
             
             Log::debug("table_chunking.table_processed", [
