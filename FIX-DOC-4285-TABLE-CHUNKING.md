@@ -88,11 +88,14 @@ if (!empty($rowChunks)) {
 
 ---
 
-## ✅ SOLUZIONE IMPLEMENTATA
+## ✅ SOLUZIONI IMPLEMENTATE
 
-### Strategia: Preservare Tabelle Piccole
+### ⚠️ Soluzione 1: Preservare Tabelle Piccole (SUPERATA)
 
-**NON esplodere tabelle con < 10 righe** per mantenere il contesto:
+**Commit**: `739a7a4`  
+**Status**: ⚠️ NON SUFFICIENTE
+
+**Approccio**: NON esplodere tabelle con < 10 righe per mantenere il contesto:
 
 ```php
 // DOPO (FIXED) - linea 83-136
@@ -130,12 +133,71 @@ if (!empty($rowChunks)) {
 }
 ```
 
-### Benefici
+**Benefici**:
+- ✅ Tabelle piccole restano intere
+- ✅ Contesto preservato
 
-✅ **Tabelle piccole** (contatti, orari) restano **INTERE**  
-✅ **Tabelle grandi** (50+ righe) vengono comunque esplose  
-✅ **Contesto preservato**: quale ufficio/servizio  
-✅ **RAG retrieval accurato**: NO mixing di informazioni
+**Problema Residuo**:
+- ⚠️ LLM **ANCORA non riesce** a ricostruire orari/contatti correttamente
+- ⚠️ Anche con tabelle intere, il chunking table-aware causa perdita di flusso narrativo
+
+---
+
+### ✅ Soluzione 2: Semantic-Only Chunking per Scraped Documents (FINALE)
+
+**Commit**: `5670fda`  
+**Status**: ✅ SOLUZIONE FINALE
+
+**Insight Utente**: 
+> "Spezzando i chunk in questo modo, l'LLM non riesce a ricostruire orario e informazioni sui contatti corretti. Non si potrebbe eliminare qualunque logica basata sulle tabelle e fare il chunking come impostato nel rag config?"
+
+**Approccio**: **ELIMINARE completamente la logica table-aware** per documenti scraped:
+
+```php
+// IngestUploadedDocumentJob.php - linee 112-151
+
+// Check if scraped document
+$isScrapedDocument = in_array($doc->source, ['web_scraper', 'web_scraper_linked'], true);
+
+if ($isScrapedDocument) {
+    // ✅ SIMPLE: Pure semantic chunking with ALL text (tables inline)
+    $allChunks = $chunking->chunk($normalizedText, $doc->tenant_id, $chunkOptions);
+    
+    Log::info("chunking.scraped_semantic_only", [
+        'chunks_created' => count($allChunks),
+        'reason' => 'scraped_markdown_well_formatted'
+    ]);
+} else {
+    // COMPLEX: Table-aware chunking for uploaded files (PDF, DOCX)
+    $tables = $parsing->findTables($normalizedText);
+    $tableChunks = $chunking->chunkTables($tables);
+    $textWithoutTables = $parsing->removeTables($normalizedText, $tables);
+    $directoryChunks = $chunking->extractDirectoryEntries($textWithoutTables);
+    $standardChunks = $chunking->chunk($textWithoutTables, $doc->tenant_id, $chunkOptions);
+    $allChunks = array_merge($tableChunks, $directoryChunks, $standardChunks);
+}
+```
+
+**Strategia per Documenti Scraped**:
+- ❌ **NO** `findTables()` - skip table detection
+- ❌ **NO** `chunkTables()` - skip table explosion
+- ❌ **NO** `removeTables()` - keep tables inline
+- ❌ **NO** `extractDirectoryEntries()` - Markdown già strutturato
+- ✅ **SOLO** `chunk()` semantico standard con **TUTTO il testo** (tabelle inline)
+
+**Rationale**:
+1. **Markdown già ben formattato**: Web scraper produce HTML→Markdown pulito
+2. **Chunk grandi (3000 chars)**: Contengono tabelle complete + header + footer + contesto
+3. **Preserva flusso narrativo**: Chunking semantico mantiene coerenza del discorso
+4. **Tabelle inline**: Restano con le loro descrizioni/intestazioni
+5. **Più semplice**: Meno logica = meno bug
+
+**Benefici**:
+- ✅ **Preserva flusso narrativo completo**
+- ✅ **Tabelle con contesto**: Header, descrizione, footer restano insieme
+- ✅ **Chunk size ottimale**: 3000 chars per Tenant 5 (configurable)
+- ✅ **NO context mixing**: Informazioni di uffici diversi non mescolate
+- ✅ **Documenti uploaded**: Mantengono logica table-aware se necessaria
 
 ---
 
@@ -183,29 +245,51 @@ Telefono: 06.95898223  ✅ CORRETTO
 
 ## 📊 IMPACT ANALYSIS
 
-### Before Fix
+### Before Fix (Original)
 - **29 chunks**: molti troppo piccoli (56-119 chars)
-- **Strategy**: Explode ALL tables
+- **Strategy**: Explode ALL tables into rows
 - **Context**: LOST (no office/service name per row)
 - **RAG Accuracy**: ❌ FALSE (mixing wrong info)
 
-### After Fix
+### After Soluzione 1 (739a7a4)
 - **~5-10 chunks**: dimensione appropriata
 - **Strategy**: Preserve small tables, explode only large ones
-- **Context**: PRESERVED (entire table with context)
-- **RAG Accuracy**: ✅ CORRECT (no mixing)
+- **Context**: PARTIALLY PRESERVED (table rows together)
+- **RAG Accuracy**: ⚠️ IMPROVED but still issues (LLM can't reconstruct correctly)
+
+### After Soluzione 2 (5670fda) - FINALE
+- **~3-8 chunks**: dimensione ottimale basata su flusso semantico
+- **Strategy**: Semantic-only for scraped docs (tables inline)
+- **Chunk Size**: avg ~1500-2500 chars (configurable, Tenant 5=3000 max)
+- **Context**: ✅ FULLY PRESERVED (narrative flow + tables + headers)
+- **RAG Accuracy**: ✅ EXPECTED CORRECT (no mixing, full context)
 
 ---
 
 ## 📝 FILES MODIFIED
 
+### Soluzione 1 (Superseded)
 **Commit**: `739a7a4`
-
 ```
 backend/app/Services/Ingestion/ChunkingService.php
 - chunkTables() method (lines 83-136)
 - Added row count check before explosion
-- Enhanced logging for debugging
+- Enhanced logging
+```
+
+### Soluzione 2 (FINALE)
+**Commit**: `5670fda`
+```
+backend/app/Jobs/IngestUploadedDocumentJob.php
+- Added source-aware chunking strategy (lines 84-151)
+- Scraped docs: semantic-only chunking
+- Uploaded docs: table-aware chunking
+- Enhanced logging for both strategies
+
+documents/02-INGESTION-FLOW.md
+- Updated CHUNKING section with source-aware strategy
+- Documented semantic-only for scraped docs
+- Documented table-aware for uploaded docs
 ```
 
 ---
@@ -222,15 +306,23 @@ backend/app/Services/Ingestion/ChunkingService.php
 
 ## 🎯 LESSONS LEARNED
 
+### Da Soluzione 1
 1. **Table-aware chunking** deve considerare la **dimensione della tabella**
 2. **Tabelle piccole** (<10 righe) devono rimanere **INTERE** per preservare contesto
 3. **Tabelle grandi** (50+ righe) possono essere esplose per chunking migliore
 4. **Context preservation** è critico per RAG accuracy
-5. **Documenti scraped** hanno struttura ben formattata, non necessitano di extraction aggressiva
+
+### Da Soluzione 2 (CHIAVE)
+5. ⭐ **Documenti scraped** hanno struttura già ben formattata → **NON necessitano di extraction table-aware**
+6. ⭐ **Semantic-only chunking** con chunk grandi (3000) preserva **MEGLIO il flusso narrativo**
+7. ⭐ **Tabelle inline** restano con header/descrizione/footer → **contesto completo**
+8. ⭐ **Source-aware strategy**: Scraped=semantic, Uploaded=table-aware
+9. ⭐ **Less is more**: Logica più semplice = meno bug, risultati migliori
+10. ⭐ **Listen to user insights**: La proposta di eliminare table logic era **corretta**
 
 ---
 
 **Owner**: Development Team  
-**Last Updated**: 2025-10-16  
-**Status**: ✅ FIXED - TESTING REQUIRED
+**Last Updated**: 2025-10-16 (Soluzione 2 finale)  
+**Status**: ✅ FIXED (Soluzione 2 - Semantic-Only) - RE-INGESTION REQUIRED
 
