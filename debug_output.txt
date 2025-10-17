@@ -1,0 +1,95 @@
+=== FULL DEBUG TRACE ===
+
+📊 RESULT SUMMARY:
+  Citations: 3
+  Confidence: 0.2941
+
+📋 FINAL CITATIONS:
+====================================================================================================
+#1  | Doc 4315   | Chunk 28  | Score: 0.0096 | www.comune.sancesareo.rm.it (Scraped)
+     Snippet: Numeri ed indirizzi utili
+
+Nome: [Polizia di Stato](https://www.comune.sancesareo.rm.it/zf/index.php/numeri-indirizzi-utili/index/dettaglio/numero/26 ...
+#2  | Doc 4350   | Chunk 2   | Score: 0.0099 | www.comune.sancesareo.rm.it (Scraped)
+     Snippet: 06.95898223
+
+Orari apertura al pubblico Ats
+
+| Lunedì |   9:00 \-11:00 |
+| --- | --- |
+| Ultimo venerdì  del mese | 15:00 \-17:00 |
+
+Nel menu di d...
+#3  | Doc 4304   | Chunk 44  | Score: 0.0097 | www.comune.sancesareo.rm.it (Scraped)
+     Snippet: Numeri ed indirizzi utili
+
+Nome: [Vigili del Fuoco](https://www.comune.sancesareo.rm.it/c058119/zf/index.php/numeri-indirizzi-utili/index/dettaglio/nu...
+====================================================================================================
+
+✅ Document 4350 IS in final citations!
+
+🔍 DEBUG INFO:
+====================================================================================================
+FUSED TOP-10 (after RRF fusion):
+  #1  | Doc 4350   | Chunk 2   | Score: 0.009901
+  #2  | Doc 4304   | Chunk 28  | Score: 0.009804
+  #3  | Doc 4304   | Chunk 44  | Score: 0.009709
+  #4  | Doc 4315   | Chunk 28  | Score: 0.009615
+  #5  | Doc 4315   | Chunk 44  | Score: 0.009524
+  #6  | Doc 4350   | Chunk 1   | Score: 0.009434
+  #7  | Doc 4304   | Chunk 8   | Score: 0.009346
+  #8  | Doc 4315   | Chunk 25  | Score: 0.009259
+  #9  | Doc 4304   | Chunk 25  | Score: 0.009174
+  #10 | Doc 4304   | Chunk 13  | Score: 0.009091
+
+MMR SELECTED INDICES: 3, 0, 2, 7, 10, 13, 11, 6, 9, 5, 14, 1, 4, 12, 8
+MMR selected count: 15
+
+FULL DEBUG JSON (first 2000 chars):
+{
+    "queries": [
+        "telefono comando polizia locale municipale vigili urbani tel phone numero contatto"
+    ],
+    "milvus": {
+        "connected": true,
+        "ok": true,
+        "collections": [
+            "kb_chunks_v1"
+        ],
+        "collection_exists": true,
+        "collection_info": {
+            "num_entities": 1342,
+            "schema": "{'auto_id': False, 'description': 'KB chunks vectors with dynamic fields enabled', 'fields': [{'name': 'id', 'description': '', 'type': <DataType.INT64: 5>, 'is_primary': True, 'auto_id': False}, {'name': 'tenant_id', 'description': '', 'type': <DataType.INT64: 5>}, {'name': 'document_id', 'description': '', 'type': <DataType.INT64: 5>}, {'name': 'chunk_index', 'description': '', 'type': <DataType.INT64: 5>}, {'name': 'vector', 'description': '', 'type': <DataType.FLOAT_VECTOR: 101>, 'params': {'dim': 3072}}], 'enable_dynamic_field': True}"
+        }
+    },
+    "selected_kb": {
+        "knowledge_base_id": 2,
+        "kb_name": "Sito",
+        "reason": "bm25_aggregate_score_validated"
+    },
+    "multi_kb_enabled": false,
+    "per_query": [
+        {
+            "q": "telefono comando polizia locale municipale vigili urbani tel phone numero contatto",
+            "embedding_source": "standard",
+            "vector_hits": [
+                {
+                    "primary_id": 434800024,
+                    "document_id": 4348,
+                    "chunk_index": 24,
+                    "distance": 0.5612626075744629,
+                    "score": 0.4387373924255371
+                },
+                {
+                    "primary_id": 428500024,
+                    "document_id": 4285,
+                    "chunk_index": 24,
+                    "distance": 0.5609591603279114,
+                    "score": 0.4390408396720886
+                },
+                {
+                    "primary_id": 430400028,
+                    "document_id": 4304,
+                    "chunk_index": 28,
+                    "distance
+...
