@@ -498,8 +498,24 @@ class KbSearchService
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $trace];
         }
 
-        // Prepara candidati per reranker (top_n configurabile)
-        $topN = (int) ($this->tenantConfig->getRerankerConfig($tenantId)['top_n'] ?? 30);
+        // ✅ CHECK: Reranker enabled?
+        $rerankerConfig = $this->tenantConfig->getRerankerConfig($tenantId);
+        $rerankerEnabled = (bool) ($rerankerConfig['enabled'] ?? true);
+        
+        // Se reranker disabilitato, salta direttamente a MMR
+        if (!$rerankerEnabled) {
+            Log::info('⏭️ [RERANK] Reranker DISABLED - skipping to MMR', [
+                'tenant_id' => $tenantId,
+                'fused_count' => count($fused)
+            ]);
+            $ranked = $fused; // Use fusion results directly
+            if ($debug) {
+                $trace['reranking_skipped'] = true;
+                $trace['reason'] = 'reranker_disabled_in_config';
+            }
+        } else {
+            // Prepara candidati per reranker (top_n configurabile)
+            $topN = (int) ($rerankerConfig['top_n'] ?? 30);
         $candidates = [];
         foreach (array_slice($fused, 0, $topN) as $h) {
             $docId = (int) $h['document_id'];
@@ -578,6 +594,7 @@ class KbSearchService
             ];
             $trace['reranked_top'] = array_slice($ranked, 0, 20); 
         }
+        } // End of reranker enabled block
 
         // ⏱️ STEP 10: MMR (Maximal Marginal Relevance)
         $stepStart = microtime(true);
@@ -594,12 +611,29 @@ class KbSearchService
         $mmrMaxCandidates = min(15, count($ranked));
         $mmrRanked = array_slice($ranked, 0, $mmrMaxCandidates);
         
-        // 🚀 OPTIMIZATION: Try cache first
-        $selIdx = $this->cache->remember($mmrCacheKey, function () use ($mmrRanked, $qEmb, $mmrLambda, $mmrTake) {
-            $texts = array_map(fn($c) => (string)$c['text'], $mmrRanked);
+        // 🚀 OPTIMIZATION: Extract texts for MMR
+        // If reranker was disabled, $mmrRanked doesn't have 'text' field
+        if (!$rerankerEnabled) {
+            $texts = array_map(function($c) {
+                $docId = (int) ($c['document_id'] ?? 0);
+                $chunkIdx = (int) ($c['chunk_index'] ?? 0);
+                return $this->text->getChunkSnippet($docId, $chunkIdx, 300) ?? '';
+            }, $mmrRanked);
+        } else {
+            $texts = array_map(fn($c) => (string)($c['text'] ?? ''), $mmrRanked);
+        }
+        
+        // Cache embeddings + MMR calculation  
+        // Note: When reranker disabled, we skip cache to avoid serialization issues
+        if (!$rerankerEnabled) {
             $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
-            return $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
-        });
+            $selIdx = $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
+        } else {
+            $selIdx = $this->cache->remember($mmrCacheKey, function () use ($texts, $qEmb, $mmrLambda, $mmrTake) {
+                $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
+                return $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
+            });
+        }
         
         // 📊 Log optimization impact
         if ($debug) {
