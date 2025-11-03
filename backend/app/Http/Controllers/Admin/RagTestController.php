@@ -39,9 +39,27 @@ class RagTestController extends Controller
             'conversation_messages' => ['nullable', 'string'],
             'reranker_driver' => ['nullable', 'string', 'in:embedding,llm,cohere'],
             'max_output_tokens' => ['nullable', 'integer', 'min:32', 'max:8192'],
+            '_clear_cache_only' => ['nullable', 'boolean'], // ✅ NEW: Clear cache flag
         ]);
         $tenantId = (int) $data['tenant_id'];
         $tenant = Tenant::find($tenantId);
+
+        // ✅ NEW: Handle cache clear request
+        if ($request->input('_clear_cache_only') === true) {
+            $configService = app(\App\Services\RAG\TenantRagConfigService::class);
+            $configService->clearCache($tenantId);
+
+            \Log::info('RAG Cache manually cleared from RAG Tester', [
+                'tenant_id' => $tenantId,
+                'user_id' => auth()->id(),
+                'timestamp' => now()->toIso8601String(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cache cleared successfully for tenant '.$tenantId,
+            ]);
+        }
 
         // Controllo accesso per clienti
         $user = auth()->user();

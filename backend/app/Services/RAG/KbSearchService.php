@@ -2,8 +2,8 @@
 
 namespace App\Services\RAG;
 
-use App\Services\LLM\OpenAIEmbeddingsService;
 use App\Models\Tenant;
+use App\Services\LLM\OpenAIEmbeddingsService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -14,11 +14,11 @@ class KbSearchService
         private readonly MilvusClient $milvus,
         private readonly TextSearchService $text,
         private readonly TenantRagConfigService $tenantConfig,
-        private readonly RerankerInterface $reranker = new EmbeddingReranker(new \App\Services\LLM\OpenAIEmbeddingsService()),
+        private readonly RerankerInterface $reranker = new EmbeddingReranker(new \App\Services\LLM\OpenAIEmbeddingsService),
         private readonly ?MultiQueryExpander $mq = null,
-        private readonly RagCache $cache = new RagCache(),
-        private readonly RagTelemetry $telemetry = new RagTelemetry(),
-        private readonly KnowledgeBaseSelector $kbSelector = new KnowledgeBaseSelector(new TextSearchService()),
+        private readonly RagCache $cache = new RagCache,
+        private readonly RagTelemetry $telemetry = new RagTelemetry,
+        private readonly KnowledgeBaseSelector $kbSelector = new KnowledgeBaseSelector(new TextSearchService),
         private readonly ?HyDEExpander $hyde = null,
     ) {}
 
@@ -26,42 +26,40 @@ class KbSearchService
     private array $activeLangs = ['it'];
 
     /**
-     * @param int   $tenantId
-     * @param string $query
-     * @param int   $limit   Numero massimo di documenti da citare
-     * @param array $opts    ['top_k' => int, 'mmr_lambda' => float]
+     * @param  int  $limit  Numero massimo di documenti da citare
+     * @param  array  $opts  ['top_k' => int, 'mmr_lambda' => float]
      */
     public function retrieve(int $tenantId, string $query, bool $debug = false): array
     {
         $startTime = microtime(true);
         $profiling = [
-            'start_time' => $startTime, 
+            'start_time' => $startTime,
             'steps' => [],
-            'breakdown' => []
+            'breakdown' => [],
         ];
-        
+
         // ⏱️ STEP 1: Query Normalization & Synonym Expansion
         $stepStart = microtime(true);
         $normalizedQuery = $this->normalizeQuery($query);
-        
+
         // 🔧 ESPANSIONE SINONIMI: Espandi sempre la query con i sinonimi del tenant
         // Questo migliora significativamente il retrieval semantico e BM25
         $expandedQuery = $this->expandQueryWithSynonyms($normalizedQuery, $tenantId);
-        
+
         $profiling['breakdown']['Query Normalization'] = round((microtime(true) - $stepStart) * 1000, 2);
-        
+
         if ($debug && ($normalizedQuery !== $query || $expandedQuery !== $normalizedQuery)) {
             Log::info('[RAG] Query normalized and expanded', [
                 'original' => $query,
                 'normalized' => $normalizedQuery,
                 'expanded' => $expandedQuery,
-                'synonyms_applied' => $expandedQuery !== $normalizedQuery
+                'synonyms_applied' => $expandedQuery !== $normalizedQuery,
             ]);
         }
         if ($query === '') {
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $profiling : null];
         }
-        
+
         // Usa la query espansa per tutto il resto del processo
         $normalizedQuery = $expandedQuery;
 
@@ -72,7 +70,7 @@ class KbSearchService
         // 🔧 FIX: Leggi multi_kb_search da rag_settings invece di colonna diretta
         $useMultiKb = false;
         if ($tenant) {
-            $ragSettings = is_string($tenant->rag_settings) ? json_decode($tenant->rag_settings, true) : (array)$tenant->rag_settings;
+            $ragSettings = is_string($tenant->rag_settings) ? json_decode($tenant->rag_settings, true) : (array) $tenant->rag_settings;
             $useMultiKb = ($ragSettings['multi_kb_search']['enabled'] ?? false) === true;
         }
         $profiling['breakdown']['Tenant Setup'] = round((microtime(true) - $stepStart) * 1000, 2);
@@ -81,18 +79,37 @@ class KbSearchService
         $stepStart = microtime(true);
         $intents = $this->detectIntents($query, $tenantId);
         $profiling['breakdown']['Intent Detection'] = round((microtime(true) - $stepStart) * 1000, 2);
-        
+
+        // 📊 LOG: Intent Detection Results
+        if (! empty($intents)) {
+            Log::info('🎯 [INTENT] Intent detected', [
+                'tenant_id' => $tenantId,
+                'query' => $query,
+                'intents_detected' => array_column($intents, 'type'),
+                'intents_count' => count($intents),
+                'top_intent' => $intents[0]['type'] ?? null,
+                'detection_time_ms' => $profiling['breakdown']['Intent Detection'],
+            ]);
+        }
+
         $intentDebug = null;
         if ($debug) {
-            // ⏱️ STEP 4: Debug Information Building
+            // ⏱️ STEP 4: Debug Information Building (Enhanced with Intent Config)
             $stepStart = microtime(true);
             $q = mb_strtolower($query);
             $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
+
+            // Get intent configuration for debug
+            $intentConfig = $this->tenantConfig->getIntentsConfig($tenantId);
+            $enabledIntents = $this->getTenantEnabledIntents($tenantId);
+            $extraKeywords = $this->getTenantExtraKeywords($tenantId);
+
             $intentDebug = [
                 'original_query' => $query,
                 'lowercased_query' => $q,
                 'expanded_query' => $expandedQ,
                 'intents_detected' => $intents,
+                'intents_count' => count($intents),
                 'intent_scores' => [
                     'thanks' => $this->scoreIntent($q, $expandedQ, $this->keywordsThanks($this->activeLangs)),
                     'schedule' => $this->scoreIntent($q, $expandedQ, $this->keywordsSchedule($this->activeLangs)),
@@ -101,10 +118,17 @@ class KbSearchService
                     'phone' => $this->scoreIntent($q, $expandedQ, $this->keywordsPhone($this->activeLangs)),
                 ],
                 'keywords_matched' => $this->getMatchedKeywords($q, $expandedQ),
+                // ✅ NEW: Intent configuration info
+                'config' => [
+                    'min_score' => (float) ($intentConfig['min_score'] ?? 0.3),
+                    'execution_strategy' => (string) ($intentConfig['execution_strategy'] ?? 'priority_based'),
+                    'enabled_intents' => $enabledIntents,
+                    'extra_keywords' => $extraKeywords,
+                ],
             ];
             $profiling['breakdown']['Debug Info Building'] = round((microtime(true) - $stepStart) * 1000, 2);
         }
-        
+
         $profiling['steps']['init'] = microtime(true) - $startTime;
         Log::info('🎯 [RETRIEVE] Inizio elaborazione query', [
             'tenant_id' => $tenantId,
@@ -112,91 +136,106 @@ class KbSearchService
             'normalized_query' => $normalizedQuery,
             'multi_kb_enabled' => $useMultiKb,
             'intents_detected' => $intents,
-            'debug_mode' => $debug
+            'debug_mode' => $debug,
         ]);
 
         // Esegui l'intent con score più alto (già ordinati per priorità in detectIntents)
         foreach ($intents as $intentType) {
             Log::info("🔍 [RETRIEVE] Testando intent: {$intentType}");
-            
+
             // Usa la stessa logica di selezione KB del metodo principale
             if ($useMultiKb) {
                 $kbSelIntent = $this->getAllKnowledgeBasesForTenant($tenantId);
                 $selectedKbIdIntent = null; // null per ricerca in tutte le KB
                 Log::info('📚 [RETRIEVE] Multi-KB abilitato', [
                     'kb_count' => count($kbSelIntent),
-                    'kb_ids' => array_map(fn($kb) => $kb['id'] ?? 'unknown', $kbSelIntent)
+                    'kb_ids' => array_map(fn ($kb) => $kb['id'] ?? 'unknown', $kbSelIntent),
                 ]);
             } else {
                 $kbSelIntent = $this->kbSelector->selectForQuery($tenantId, $query);
                 $selectedKbIdIntent = $kbSelIntent['knowledge_base_id'] ?? null;
                 Log::info('🎯 [RETRIEVE] KB singola selezionata', [
                     'selected_kb_id' => $selectedKbIdIntent,
-                    'kb_selection_result' => $kbSelIntent
+                    'kb_selection_result' => $kbSelIntent,
                 ]);
             }
-            
+
             // 🔧 Prima prova l'intent NORMALE (mantiene la logica esistente che funziona)
             $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
-            
+
             Log::info("📊 [RETRIEVE] Risultato intent {$intentType}", [
                 'result_found' => $result !== null,
                 'citations_count' => $result ? count($result['citations'] ?? []) : 0,
-                'confidence' => $result['confidence'] ?? 'n/a'
+                'confidence' => $result['confidence'] ?? 'n/a',
             ]);
-            
+
             if ($result !== null) {
                 // Espansione opzionale info di contatto (abilitata via flag)
                 $contactExpansionEnabled = (bool) ($this->tenantConfig->getConfig($tenantId)['features']['contact_expansion'] ?? false);
                 if ($contactExpansionEnabled && in_array($intentType, ['phone', 'email', 'address'])) {
                     $expansionResult = $this->executeContactInfoExpansion($intentType, $tenantId, $query, $debug, $selectedKbIdIntent, $result);
                     if ($expansionResult !== null) {
+                        // 📊 LOG: Contact info expansion executed
+                        Log::info('🎯 [INTENT] Contact info expansion executed', [
+                            'tenant_id' => $tenantId,
+                            'intent_type' => $intentType,
+                            'query' => $query,
+                            'normal_citations' => count($result['citations'] ?? []),
+                            'expansion_citations' => count($expansionResult['citations'] ?? []),
+                            'has_response_text' => ! empty($expansionResult['response_text']),
+                            'selected_kb' => $kbSelIntent,
+                        ]);
+
                         if ($intentDebug) {
-                            $intentDebug['executed_intent'] = $intentType . '_expanded';
+                            $intentDebug['executed_intent'] = $intentType.'_expanded';
                             $intentDebug['reason'] = 'contact_info_expansion_with_all_details';
                             $intentDebug['normal_citations'] = count($result['citations'] ?? []);
                             $intentDebug['expansion_citations'] = count($expansionResult['citations'] ?? []);
-                            $intentDebug['has_response_text'] = !empty($expansionResult['response_text']);
+                            $intentDebug['has_response_text'] = ! empty($expansionResult['response_text']);
                             $expansionResult['debug']['intent_detection'] = $intentDebug;
                             $expansionResult['debug']['selected_kb'] = $kbSelIntent;
                         }
+
                         return $expansionResult;
                     }
                 }
                 // Aggiungi debug intent per risultato normale
                 if ($intentDebug) {
-                    $intentDebug['executed_intent'] = isset($result['debug']['semantic_fallback']) ? $intentType . '_semantic' : $intentType;
+                    $intentDebug['executed_intent'] = isset($result['debug']['semantic_fallback']) ? $intentType.'_semantic' : $intentType;
                     $result['debug']['intent_detection'] = $intentDebug;
                     $result['debug']['selected_kb'] = $kbSelIntent;
 
                     // ✅ FIXED: Use getRetrievalConfig() for validated params with correct defaults
                     $retrievalConfig = $this->tenantConfig->getRetrievalConfig($tenantId);
-                    $vecTopK        = $retrievalConfig['vector_top_k'];
-                    $bmTopK         = $retrievalConfig['bm25_top_k'];
-                    $rrfK           = $retrievalConfig['rrf_k'];
-                    $mmrLambda      = $retrievalConfig['mmr_lambda'];
-                    $mmrTake        = $retrievalConfig['mmr_take'];
+                    $vecTopK = $retrievalConfig['vector_top_k'];
+                    $bmTopK = $retrievalConfig['bm25_top_k'];
+                    $rrfK = $retrievalConfig['rrf_k'];
+                    $mmrLambda = $retrievalConfig['mmr_lambda'];
+                    $mmrTake = $retrievalConfig['mmr_take'];
                     $neighborRadius = $retrievalConfig['neighbor_radius'];
-                    
+
                     $result['debug']['hybrid_config'] = [
-                        'vector_top_k'    => $vecTopK,
-                        'bm25_top_k'      => $bmTopK,
-                        'rrf_k'           => $rrfK,
-                        'mmr_lambda'      => $mmrLambda,
-                        'mmr_take'        => $mmrTake,
+                        'vector_top_k' => $vecTopK,
+                        'bm25_top_k' => $bmTopK,
+                        'rrf_k' => $rrfK,
+                        'mmr_lambda' => $mmrLambda,
+                        'mmr_take' => $mmrTake,
                         'neighbor_radius' => $neighborRadius,
                     ];
                     $advCfg = (array) $this->tenantConfig->getAdvancedConfig($tenantId);
                     $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
                     $llmEnabled = (bool) (($advCfg['llm_reranker']['enabled'] ?? true) === true);
-                    if ($driver === 'llm' && !$llmEnabled) { $driver = 'embedding'; }
+                    if ($driver === 'llm' && ! $llmEnabled) {
+                        $driver = 'embedding';
+                    }
                     $result['debug']['reranking'] = $result['debug']['reranking'] ?? [
                         'driver' => $driver,
                         'input_candidates' => 0,
                         'output_candidates' => 0,
-                        'top_candidates' => []
+                        'top_candidates' => [],
                     ];
                 }
+
                 return $result;
             }
         }
@@ -206,23 +245,23 @@ class KbSearchService
             'tenant_id' => $tenantId,
             'query' => $query,
             'intents_tested' => $intents,
-            'fallback_type' => 'hybrid_search'
+            'fallback_type' => 'hybrid_search',
         ]);
 
         // ✅ FIXED: Use getRetrievalConfig() for validated params with correct defaults
         $retrievalConfig = $this->tenantConfig->getRetrievalConfig($tenantId);
-        $vecTopK        = $retrievalConfig['vector_top_k'];
-        $bmTopK         = $retrievalConfig['bm25_top_k'];
-        $rrfK           = $retrievalConfig['rrf_k'];
-        $mmrLambda      = $retrievalConfig['mmr_lambda'];
-        $mmrTake        = $retrievalConfig['mmr_take'];
+        $vecTopK = $retrievalConfig['vector_top_k'];
+        $bmTopK = $retrievalConfig['bm25_top_k'];
+        $rrfK = $retrievalConfig['rrf_k'];
+        $mmrLambda = $retrievalConfig['mmr_lambda'];
+        $mmrTake = $retrievalConfig['mmr_take'];
         $neighborRadius = $retrievalConfig['neighbor_radius'];
-        
+
         Log::info('⚙️ [RETRIEVE] Configurazione hybrid search', [
             'vector_top_k' => $vecTopK,
             'bm25_top_k' => $bmTopK,
             'rrf_k' => $rrfK,
-            'mmr_lambda' => $mmrLambda
+            'mmr_lambda' => $mmrLambda,
         ]);
 
         // Esponi nel trace i parametri hybrid effettivamente usati
@@ -242,13 +281,13 @@ class KbSearchService
         $stepStart = microtime(true);
         $queries = $this->mq ? $this->mq->expand($tenantId, $normalizedQuery) : [$normalizedQuery];
         $profiling['steps']['multiquery'] = microtime(true) - $stepStart;
-        $this->telemetry->event('mq.expanded', ['tenant_id'=>$tenantId,'query'=>$query,'variants'=>$queries]);
+        $this->telemetry->event('mq.expanded', ['tenant_id' => $tenantId, 'query' => $query, 'variants' => $queries]);
         $allFused = [];
         $trace = $debug ? ['queries' => $queries] : null;
         if ($debug) {
             $trace['milvus'] = $this->milvus->health();
         }
-        
+
         // ⏱️ STEP 5: KB Selection
         $stepStart = microtime(true);
         if ($useMultiKb) {
@@ -263,7 +302,7 @@ class KbSearchService
             $selectedKbName = $kbSel['kb_name'] ?? null;
         }
         $profiling['breakdown']['KB Selection'] = round((microtime(true) - $stepStart) * 1000, 2);
-        
+
         // 🔍 LOG DETTAGLIATO per debug KB selection
         \Log::info('RAG KB Selection', [
             'tenant_id' => $tenantId,
@@ -272,14 +311,14 @@ class KbSearchService
             'selected_kb_id' => $selectedKbId,
             'selected_kb_name' => $selectedKbName,
             'kb_selection_reason' => $kbSel['reason'] ?? 'unknown',
-            'caller' => debug_backtrace()[1]['class'] ?? 'unknown'
+            'caller' => debug_backtrace()[1]['class'] ?? 'unknown',
         ]);
-        
+
         if ($debug) {
             $trace['selected_kb'] = $kbSel;
             $trace['multi_kb_enabled'] = $useMultiKb;
         }
-        
+
         // ⏱️ STEP 6: HyDE (Hypothetical Document Embeddings)
         $stepStart = microtime(true);
         $hydeResult = null;
@@ -294,7 +333,7 @@ class KbSearchService
                 'success' => $hydeResult['success'] ?? false,
                 'processing_time_ms' => $hydeResult['processing_time_ms'] ?? 0,
             ]);
-            
+
             if ($debug) {
                 $trace['hyde'] = $hydeResult;
             }
@@ -305,25 +344,25 @@ class KbSearchService
         $searchStart = microtime(true);
         $vectorSearchTime = 0;
         $bm25SearchTime = 0;
-        
+
         foreach ($queries as $q) {
             if ($debug) {
                 // Determina quale embedding usare
                 $qEmb = null;
                 $embeddingSource = 'standard';
-                
+
                 if ($useHyDE && $hydeResult && $hydeResult['success'] && $hydeResult['combined_embedding']) {
                     $qEmb = $hydeResult['combined_embedding'];
                     $embeddingSource = 'hyde_combined';
                 } else {
-                $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
+                    $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
                 }
-                
+
                 $vecHit = [];
                 if ((($trace['milvus']['ok'] ?? false) === true) && $qEmb) {
                     // ⏱️ Vector Search Timing
                     $vecStart = microtime(true);
-                    
+
                     // 🚀 LOG DETTAGLIATO: Ricerca Milvus
                     Log::info('🔍 [MILVUS] Invio query a Milvus', [
                         'tenant_id' => $tenantId,
@@ -332,11 +371,11 @@ class KbSearchService
                         'vector_top_k' => $vecTopK,
                         'milvus_health' => $trace['milvus'] ?? null,
                     ]);
-                    
+
                     $vecHit = $this->milvus->searchTopKWithEmbedding($tenantId, $qEmb, $vecTopK);
-                    
+
                     $vectorSearchTime += microtime(true) - $vecStart;
-                    
+
                     // 🚀 LOG DETTAGLIATO: Risultati Milvus
                     Log::info('📊 [MILVUS] Risultati ricevuti da Milvus', [
                         'tenant_id' => $tenantId,
@@ -347,12 +386,12 @@ class KbSearchService
                         'all_scores' => array_column($vecHit, 'score'),
                     ]);
                 }
-                
+
                 // ⏱️ BM25 Search Timing
                 $bm25Start = microtime(true);
                 $bmHit = $this->text->searchTopK($tenantId, $q, $bmTopK, $selectedKbId);
                 $bm25SearchTime += microtime(true) - $bm25Start;
-                
+
                 // 🔍 LOG DETTAGLIATO per ogni query
                 Log::info("🔎 [RETRIEVE] Risultati per query: {$q}", [
                     'tenant_id' => $tenantId,
@@ -360,63 +399,63 @@ class KbSearchService
                     'selected_kb_id' => $selectedKbId,
                     'vector_hits_count' => count($vecHit),
                     'bm25_hits_count' => count($bmHit),
-                    'vector_top_5' => array_map(function($hit) {
+                    'vector_top_5' => array_map(function ($hit) {
                         return [
                             'doc_id' => $hit['document_id'] ?? 'unknown',
                             'score' => $hit['score'] ?? 'unknown',
-                            'content_preview' => substr($hit['content'] ?? '', 0, 100)
+                            'content_preview' => substr($hit['content'] ?? '', 0, 100),
                         ];
                     }, array_slice($vecHit, 0, 5)),
-                    'bm25_top_5' => array_map(function($hit) {
+                    'bm25_top_5' => array_map(function ($hit) {
                         return [
                             'doc_id' => $hit['document_id'] ?? 'unknown',
                             'score' => $hit['score'] ?? 'unknown',
-                            'content_preview' => substr($hit['content'] ?? '', 0, 100)
+                            'content_preview' => substr($hit['content'] ?? '', 0, 100),
                         ];
-                    }, array_slice($bmHit, 0, 5))
+                    }, array_slice($bmHit, 0, 5)),
                 ]);
-                
+
                 $trace['per_query'][] = [
                     'q' => $q,
                     'embedding_source' => $embeddingSource,
                     'vector_hits' => array_slice($vecHit, 0, 10),
                     'fts_hits' => array_slice($bmHit, 0, 10),
                 ];
-                
+
                 $filteredVecHit = $this->filterVecHitsByKb($vecHit, $selectedKbId);
                 $fusedResult = $this->rrfFuse($filteredVecHit, $bmHit, $rrfK);
-                
+
                 Log::info("⚡ [RETRIEVE] RRF Fusion per query: {$q}", [
                     'vector_hits_before_kb_filter' => count($vecHit),
                     'vector_hits_after_kb_filter' => count($filteredVecHit),
                     'bm25_hits' => count($bmHit),
                     'fused_results' => count($fusedResult),
-                    'fused_top_3' => array_map(function($hit) {
+                    'fused_top_3' => array_map(function ($hit) {
                         return [
                             'doc_id' => $hit['document_id'] ?? 'unknown',
-                            'final_score' => $hit['score'] ?? 'unknown'
+                            'final_score' => $hit['score'] ?? 'unknown',
                         ];
-                    }, array_slice($fusedResult, 0, 3))
+                    }, array_slice($fusedResult, 0, 3)),
                 ]);
-                
+
                 $allFused[] = $fusedResult;
             } else {
                 // Per cache: se HyDE è abilitato, includi un hash dell'embedding HyDE nella chiave
                 $cacheKeySuffix = '';
                 if ($useHyDE && $hydeResult && $hydeResult['success']) {
-                    $cacheKeySuffix = ':hyde:' . md5(serialize($hydeResult['combined_embedding'] ?? []));
+                    $cacheKeySuffix = ':hyde:'.md5(serialize($hydeResult['combined_embedding'] ?? []));
                 }
-                
-                $key = 'rag:vecfts:'.$tenantId.':'.sha1($q).":{$vecTopK},{$bmTopK},{$rrfK}" . $cacheKeySuffix;
+
+                $key = 'rag:vecfts:'.$tenantId.':'.sha1($q).":{$vecTopK},{$bmTopK},{$rrfK}".$cacheKeySuffix;
                 // 📊 PROFILING: Search operations (outside cache for accurate timing)
                 $searchStart = microtime(true);
                 $list = $this->cache->remember($key, function () use ($tenantId, $q, $vecTopK, $bmTopK, $rrfK, $useHyDE, $hydeResult) {
                     Log::info('🔍 [CACHE MISS] Executing search operations', [
                         'query' => $q,
                         'tenant_id' => $tenantId,
-                        'cache_key' => substr(sha1($q), 0, 8)
+                        'cache_key' => substr(sha1($q), 0, 8),
                     ]);
-                    
+
                     // 📊 PROFILING: Embedding generation (internal timing)
                     $embStart = microtime(true);
                     $qEmb = null;
@@ -426,7 +465,7 @@ class KbSearchService
                         $qEmb = $this->embeddings->embedTexts([$q])[0] ?? null;
                     }
                     $embTime = round((microtime(true) - $embStart) * 1000, 2);
-                    
+
                     // 📊 PROFILING: Milvus search (internal timing)
                     $milvusStart = microtime(true);
                     $vecHit = [];
@@ -435,21 +474,21 @@ class KbSearchService
                         $vecHit = $this->milvus->searchTopKWithEmbedding($tenantId, $qEmb, $vecTopK);
                     }
                     $milvusTime = round((microtime(true) - $milvusStart) * 1000, 2);
-                    
+
                     // 📊 PROFILING: BM25 search (internal timing)
                     $bm25Start = microtime(true);
-                    $bmHit  = $this->text->searchTopK($tenantId, $q, $bmTopK, null);
+                    $bmHit = $this->text->searchTopK($tenantId, $q, $bmTopK, null);
                     $bm25Time = round((microtime(true) - $bm25Start) * 1000, 2);
-                    
+
                     Log::info('⚡ [SEARCH TIMING] Individual operations', [
                         'query' => $q,
                         'embeddings_ms' => $embTime,
                         'milvus_ms' => $milvusTime,
                         'bm25_ms' => $bm25Time,
                         'vec_results' => count($vecHit),
-                        'bm25_results' => count($bmHit)
+                        'bm25_results' => count($bmHit),
                     ]);
-                    
+
                     return $this->rrfFuse($vecHit, $bmHit, $rrfK);
                 });
                 $profiling['steps']['search_operations'] = ($profiling['steps']['search_operations'] ?? 0) + (microtime(true) - $searchStart);
@@ -457,56 +496,59 @@ class KbSearchService
                 $allFused[] = $this->filterFusedByKb($list, $selectedKbId);
             }
         }
-        
+
         // ⏱️ Add search timing to profiling
         $profiling['breakdown']['Vector Search'] = round($vectorSearchTime * 1000, 2);
         $profiling['breakdown']['BM25 Search'] = round($bm25SearchTime * 1000, 2);
         $profiling['breakdown']['Search Total'] = round((microtime(true) - $searchStart) * 1000, 2);
-        
+
         // ⏱️ STEP 8: RRF Fusion
         $stepStart = microtime(true);
         $fused = $this->rrfFuseMany($allFused, $rrfK);
-        
+
         // 🚀 NUOVO: Applica boost per Multi-KB Search
-        if ($useMultiKb && !empty($fused)) {
+        if ($useMultiKb && ! empty($fused)) {
             $fused = $this->applyBoostsToResults($fused, $tenantId, $query, $debug);
         }
         $profiling['breakdown']['RRF Fusion'] = round((microtime(true) - $stepStart) * 1000, 2);
-        
+
         Log::info('🔀 [RETRIEVE] Fusione finale completata', [
             'tenant_id' => $tenantId,
             'query' => $query,
             'input_queries_count' => count($queries),
             'total_fused_results' => count($fused),
             'multi_kb_boosts_applied' => $useMultiKb,
-            'fused_top_10' => array_map(function($hit) {
+            'fused_top_10' => array_map(function ($hit) {
                 return [
                     'doc_id' => $hit['document_id'] ?? 'unknown',
                     'final_score' => $hit['score'] ?? 'unknown',
-                    'content_preview' => substr($hit['content'] ?? '', 0, 50)
+                    'content_preview' => substr($hit['content'] ?? '', 0, 50),
                 ];
-            }, array_slice($fused, 0, 10))
+            }, array_slice($fused, 0, 10)),
         ]);
-        
-        if ($debug) { $trace['fused_top'] = array_slice($fused, 0, 20); }
+
+        if ($debug) {
+            $trace['fused_top'] = array_slice($fused, 0, 20);
+        }
         if ($fused === []) {
             Log::warning('❌ [RETRIEVE] FALLBACK GENERALE FALLITO - Nessun risultato finale', [
                 'tenant_id' => $tenantId,
                 'query' => $query,
-                'reason' => 'no_results_after_fusion'
+                'reason' => 'no_results_after_fusion',
             ]);
+
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $trace];
         }
 
         // ✅ CHECK: Reranker enabled?
         $rerankerConfig = $this->tenantConfig->getRerankerConfig($tenantId);
         $rerankerEnabled = (bool) ($rerankerConfig['enabled'] ?? true);
-        
+
         // Se reranker disabilitato, salta direttamente a MMR
-        if (!$rerankerEnabled) {
+        if (! $rerankerEnabled) {
             Log::info('⏭️ [RERANK] Reranker DISABLED - skipping to MMR', [
                 'tenant_id' => $tenantId,
-                'fused_count' => count($fused)
+                'fused_count' => count($fused),
             ]);
             $ranked = $fused; // Use fusion results directly
             if ($debug) {
@@ -516,140 +558,148 @@ class KbSearchService
         } else {
             // Prepara candidati per reranker (top_n configurabile)
             $topN = (int) ($rerankerConfig['top_n'] ?? 30);
-        $candidates = [];
-        foreach (array_slice($fused, 0, $topN) as $h) {
-            $docId = (int) $h['document_id'];
-            $chunkIndex = (int) $h['chunk_index'];
-            
-            // 🚀 OTTIMIZZAZIONE: Testi più corti per reranking veloce
-            $text = $this->text->getChunkSnippet($docId, $chunkIndex, 300) ?? '';
-            // Riduci neighbor_radius per reranking (solo ±1 invece di configurato)
-            $rerankNeighbor = min(1, $neighborRadius);
-            for ($d = -$rerankNeighbor; $d <= $rerankNeighbor; $d++) {
-                if ($d === 0) continue;
-                $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 200);
-                if ($neighborText) $text .= "\n" . $neighborText;
-            }
-            
-            $candidates[] = [
-                'document_id' => $docId,
-                'chunk_index' => $chunkIndex,
-                'text' => $text,
-                'score' => (float) $h['score'],
-            ];
-        }
+            $candidates = [];
+            foreach (array_slice($fused, 0, $topN) as $h) {
+                $docId = (int) $h['document_id'];
+                $chunkIndex = (int) $h['chunk_index'];
 
-        // Seleziona reranker basato su configurazione tenant
-        $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
-        // Se llm_reranker.enabled è false, forza embedding anche se driver=llm
-        $llmEnabled = (bool) (($advCfg['llm_reranker']['enabled'] ?? true) === true);
-        if ($driver === 'llm' && !$llmEnabled) {
-            $driver = 'embedding';
-        }
-        $reranker = match($driver) {
-            'cohere' => new CohereReranker(),
-            'llm' => new LLMReranker(app(\App\Services\LLM\OpenAIChatService::class)),
-            'embedding_slow' => new EmbeddingReranker($this->embeddings), // Vecchio reranker con embeddings
-            default => new FastEmbeddingReranker($this->embeddings), // Nuovo reranker veloce
-        };
-        
-        // Cache key include driver e neighbor_radius per evitare conflitti
-        $cacheKey = "rag:rerank:" . sha1($query) . ":{$tenantId},{$driver},{$topN},{$neighborRadius}";
-        
-        // Per LLM reranking, usa TTL più breve ma mantieni cache
-        // (TTL gestito dalla RagCache class)
-        
-        // ⏱️ STEP 9: Reranking
-        $stepStart = microtime(true);
-        
-        // 🚀 LOG DETTAGLIATO: Pre-reranking
-        Log::info('🔄 [RERANK] Prima del reranking', [
-            'query' => $query,
-            'reranker_type' => get_class($reranker),
-            'candidates_count' => count($candidates),
-            'top_n' => $topN,
-            'candidates_preview' => array_slice($candidates, 0, 3),
-        ]);
-        
-        $ranked = $this->cache->remember($cacheKey, function () use ($reranker, $query, $candidates, $topN) {
-            return $reranker->rerank($query, $candidates, $topN);
-        });
-        
-        $profiling['breakdown']['Reranking'] = round((microtime(true) - $stepStart) * 1000, 2);
-        
-        // 🚀 LOG DETTAGLIATO: Post-reranking
-        Log::info('✅ [RERANK] Dopo il reranking', [
-            'query' => $query,
-            'ranked_count' => count($ranked),
-            'ranked_preview' => array_slice($ranked, 0, 3),
-            'score_changes' => $this->compareScores($candidates, $ranked),
-        ]);
-        $this->telemetry->event('rerank.done', ['tenant_id'=>$tenantId,'driver'=>$driver,'in'=>count($candidates),'out'=>count($ranked)]);
-        if ($debug) { 
-            $trace['reranking'] = [
-                'driver' => $driver,
-                'input_candidates' => count($candidates),
-                'output_candidates' => count($ranked),
-                'top_candidates' => array_slice($ranked, 0, 10) // Mostra solo top 10 per debug
-            ];
-            $trace['reranked_top'] = array_slice($ranked, 0, 20); 
-        }
+                // 🚀 OTTIMIZZAZIONE: Testi più corti per reranking veloce
+                $text = $this->text->getChunkSnippet($docId, $chunkIndex, 300) ?? '';
+                // Riduci neighbor_radius per reranking (solo ±1 invece di configurato)
+                $rerankNeighbor = min(1, $neighborRadius);
+                for ($d = -$rerankNeighbor; $d <= $rerankNeighbor; $d++) {
+                    if ($d === 0) {
+                        continue;
+                    }
+                    $neighborText = $this->text->getChunkSnippet($docId, $chunkIndex + $d, 200);
+                    if ($neighborText) {
+                        $text .= "\n".$neighborText;
+                    }
+                }
+
+                $candidates[] = [
+                    'document_id' => $docId,
+                    'chunk_index' => $chunkIndex,
+                    'text' => $text,
+                    'score' => (float) $h['score'],
+                ];
+            }
+
+            // Seleziona reranker basato su configurazione tenant
+            $driver = (string) ($this->tenantConfig->getRerankerConfig($tenantId)['driver'] ?? 'embedding');
+            // Se llm_reranker.enabled è false, forza embedding anche se driver=llm
+            $llmEnabled = (bool) (($advCfg['llm_reranker']['enabled'] ?? true) === true);
+            if ($driver === 'llm' && ! $llmEnabled) {
+                $driver = 'embedding';
+            }
+            $reranker = match ($driver) {
+                'cohere' => new CohereReranker,
+                'llm' => new LLMReranker(app(\App\Services\LLM\OpenAIChatService::class)),
+                'embedding_slow' => new EmbeddingReranker($this->embeddings), // Vecchio reranker con embeddings
+                default => new FastEmbeddingReranker($this->embeddings), // Nuovo reranker veloce
+            };
+
+            // Cache key include driver e neighbor_radius per evitare conflitti
+            $cacheKey = 'rag:rerank:'.sha1($query).":{$tenantId},{$driver},{$topN},{$neighborRadius}";
+
+            // Per LLM reranking, usa TTL più breve ma mantieni cache
+            // (TTL gestito dalla RagCache class)
+
+            // ⏱️ STEP 9: Reranking
+            $stepStart = microtime(true);
+
+            // 🚀 LOG DETTAGLIATO: Pre-reranking
+            Log::info('🔄 [RERANK] Prima del reranking', [
+                'query' => $query,
+                'reranker_type' => get_class($reranker),
+                'candidates_count' => count($candidates),
+                'top_n' => $topN,
+                'candidates_preview' => array_slice($candidates, 0, 3),
+            ]);
+
+            $ranked = $this->cache->remember($cacheKey, function () use ($reranker, $query, $candidates, $topN) {
+                return $reranker->rerank($query, $candidates, $topN);
+            });
+
+            $profiling['breakdown']['Reranking'] = round((microtime(true) - $stepStart) * 1000, 2);
+
+            // 🚀 LOG DETTAGLIATO: Post-reranking
+            Log::info('✅ [RERANK] Dopo il reranking', [
+                'query' => $query,
+                'ranked_count' => count($ranked),
+                'ranked_preview' => array_slice($ranked, 0, 3),
+                'score_changes' => $this->compareScores($candidates, $ranked),
+            ]);
+            $this->telemetry->event('rerank.done', ['tenant_id' => $tenantId, 'driver' => $driver, 'in' => count($candidates), 'out' => count($ranked)]);
+            if ($debug) {
+                $trace['reranking'] = [
+                    'driver' => $driver,
+                    'input_candidates' => count($candidates),
+                    'output_candidates' => count($ranked),
+                    'top_candidates' => array_slice($ranked, 0, 10), // Mostra solo top 10 per debug
+                ];
+                $trace['reranked_top'] = array_slice($ranked, 0, 20);
+            }
         } // End of reranker enabled block
 
         // ⏱️ STEP 10: MMR (Maximal Marginal Relevance)
         $stepStart = microtime(true);
-        
+
         // 🚀 OPTIMIZATION: Cache MMR based on query + ranked documents hash + MMR params
         // ✅ FIXED: Include mmrLambda and mmrTake in cache key to avoid stale cache
-        $mmrCacheKey = "mmr:" . sha1($normalizedQuery . serialize(array_map(fn($r) => $r['document_id'] . ':' . $r['chunk_index'], $ranked)) . ":{$mmrLambda}:{$mmrTake}");
-        
+        $mmrCacheKey = 'mmr:'.sha1($normalizedQuery.serialize(array_map(fn ($r) => $r['document_id'].':'.$r['chunk_index'], $ranked)).":{$mmrLambda}:{$mmrTake}");
+
         $qEmb = $this->embeddings->embedTexts([$normalizedQuery])[0] ?? null;
-        
+
         // 🚀 OPTIMIZATION: Limita MMR a massimo 15 candidates per performance
         // Con 30 docs: O(30²) = 900 calc/iteration × 8 iterations = ~7200 calculations!
         // Con 15 docs: O(15²) = 225 calc/iteration × 8 iterations = ~1800 calculations (4x faster)
         $mmrMaxCandidates = min(15, count($ranked));
         $mmrRanked = array_slice($ranked, 0, $mmrMaxCandidates);
-        
+
         // 🚀 OPTIMIZATION: Extract texts for MMR
         // If reranker was disabled, $mmrRanked doesn't have 'text' field
-        if (!$rerankerEnabled) {
-            $texts = array_map(function($c) {
+        if (! $rerankerEnabled) {
+            $texts = array_map(function ($c) {
                 $docId = (int) ($c['document_id'] ?? 0);
                 $chunkIdx = (int) ($c['chunk_index'] ?? 0);
+
                 return $this->text->getChunkSnippet($docId, $chunkIdx, 300) ?? '';
             }, $mmrRanked);
         } else {
-            $texts = array_map(fn($c) => (string)($c['text'] ?? ''), $mmrRanked);
+            $texts = array_map(fn ($c) => (string) ($c['text'] ?? ''), $mmrRanked);
         }
-        
-        // Cache embeddings + MMR calculation  
+
+        // Cache embeddings + MMR calculation
         // Note: When reranker disabled, we skip cache to avoid serialization issues
-        if (!$rerankerEnabled) {
+        if (! $rerankerEnabled) {
             $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
             $selIdx = $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
         } else {
             $selIdx = $this->cache->remember($mmrCacheKey, function () use ($texts, $qEmb, $mmrLambda, $mmrTake) {
                 $docEmb = $texts ? $this->embeddings->embedTexts($texts) : [];
+
                 return $this->mmr($qEmb, $docEmb, $mmrLambda, $mmrTake);
             });
         }
-        
+
         // 📊 Log optimization impact
         if ($debug) {
             Log::info('🚀 [MMR] Performance optimization applied', [
                 'total_ranked_docs' => count($ranked),
                 'mmr_candidates_used' => $mmrMaxCandidates,
-                'performance_gain_estimate' => round((count($ranked) ** 2) / ($mmrMaxCandidates ** 2), 1) . 'x faster'
+                'performance_gain_estimate' => round((count($ranked) ** 2) / ($mmrMaxCandidates ** 2), 1).'x faster',
             ]);
         }
-        
-        $profiling['breakdown']['MMR'] = round((microtime(true) - $stepStart) * 1000, 2);
-        if ($debug) { $trace['mmr_selected_idx'] = $selIdx; }
 
-        // ⏱️ STEP 11: Citations Building  
+        $profiling['breakdown']['MMR'] = round((microtime(true) - $stepStart) * 1000, 2);
+        if ($debug) {
+            $trace['mmr_selected_idx'] = $selIdx;
+        }
+
+        // ⏱️ STEP 11: Citations Building
         $stepStart = microtime(true);
-        
+
         // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
         $documentIds = [];
         foreach ($selIdx as $i) {
@@ -659,58 +709,71 @@ class KbSearchService
             }
         }
         $documentIds = array_unique($documentIds);
-        
+
         // Single batch query for all documents
         $documents = [];
-        if (!empty($documentIds)) {
+        if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
-                $documents[(int)$doc->id] = $doc;
+                $documents[(int) $doc->id] = $doc;
             }
         }
-        
+
         $seen = [];
         $cits = [];
         foreach ($selIdx as $i) {
             // 🔧 Fix: accedi al subset MMR, non all'array ranked completo
             $base = $mmrRanked[$i] ?? null;
-            if ($base === null) { continue; }
+            if ($base === null) {
+                continue;
+            }
             $docId = (int) $base['document_id'];
-            if (isset($seen[$docId])) continue;
-            $seen[$docId] = true;
+            $chunkId = (int) $base['chunk_index'];
+            // 🔧 MODIFIED: Allow multiple chunks from same document (use chunk-level dedup)
+            $chunkKey = "{$docId}:{$chunkId}";
+            if (isset($seen[$chunkKey])) {
+                continue;
+            }
+            $seen[$chunkKey] = true;
 
-            $snippet = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 50000) ?? '';
+            $snippet = $this->text->getChunkSnippet($docId, (int) $base['chunk_index'], 50000) ?? '';
             for ($d = -$neighborRadius; $d <= $neighborRadius; $d++) {
-                if ($d === 0) continue;
+                if ($d === 0) {
+                    continue;
+                }
                 // Aumenta il limite per includere righe di contatto (es. tel: ...)
-                $s2 = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'] + $d, 2000);
-                if ($s2) $snippet .= "\n".$s2;
+                $s2 = $this->text->getChunkSnippet($docId, (int) $base['chunk_index'] + $d, 2000);
+                if ($s2) {
+                    $snippet .= "\n".$s2;
+                }
             }
 
             // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
             $doc = $documents[$docId] ?? null;
-            if (!$doc) continue;
-            
+            if (! $doc) {
+                continue;
+            }
+
             // Get full chunk text for deep-link highlighting (use large limit to get full text)
-            $chunkText = $this->text->getChunkSnippet($docId, (int)$base['chunk_index'], 5000) ?? '';
+            $chunkText = $this->text->getChunkSnippet($docId, (int) $base['chunk_index'], 5000) ?? '';
 
             // Phone extraction (generic patterns) on raw chunk and on built snippet
-            $phonesInChunk   = $this->extractPhoneFromContent($chunkText);
+            $phonesInChunk = $this->extractPhoneFromContent($chunkText);
             $phonesInSnippet = $this->extractPhoneFromContent($snippet);
-            $phonesMerged    = array_values(array_unique(array_merge($phonesInChunk, $phonesInSnippet)));
+            $phonesMerged = array_values(array_unique(array_merge($phonesInChunk, $phonesInSnippet)));
 
             if ($debug) {
                 $trace['phone_trace'][] = [
                     'doc_id' => $docId,
-                    'chunk_index' => (int)$base['chunk_index'],
+                    'chunk_index' => (int) $base['chunk_index'],
                     'raw_chunk_hits' => $phonesInChunk,
                     'snippet_hits' => $phonesInSnippet,
                 ];
             }
-            
+
             $cits[] = [
                 'id' => (int) $doc->id,
                 'title' => (string) $doc->title,
@@ -729,7 +792,7 @@ class KbSearchService
                 'phones' => $phonesMerged,
             ];
         }
-        
+
         $profiling['breakdown']['Citations Building'] = round((microtime(true) - $stepStart) * 1000, 2);
 
         $result = [
@@ -737,28 +800,28 @@ class KbSearchService
             'confidence' => $this->confidence($fused),
             'debug' => $trace,
         ];
-        
+
         // ⏱️ PROFILING COMPLETO: Aggiungi breakdown dettagliato
         $totalTime = microtime(true) - $startTime;
         $profiling['total_time_ms'] = round($totalTime * 1000, 2);
-        
+
         // Aggiungi profiling al debug trace
         if ($debug && isset($profiling)) {
             $result['debug']['profiling'] = $profiling;
             $result['debug']['performance_breakdown'] = $profiling['breakdown'];
         }
-        
+
         // Aggiungi debug intent anche per il RAG normale
         if ($intentDebug) {
             $intentDebug['executed_intent'] = 'hybrid_rag';
             $result['debug']['intent_detection'] = $intentDebug;
         }
-        
+
         // 🚀 PROFILAZIONE COMPLETA
         $totalTime = microtime(true) - $startTime;
         $profiling['total_time'] = $totalTime;
         $profiling['steps']['final'] = $totalTime;
-        
+
         Log::info('✅ [RETRIEVE] RISULTATO FINALE', [
             'tenant_id' => $tenantId,
             'query' => $query,
@@ -766,26 +829,26 @@ class KbSearchService
             'confidence' => $result['confidence'],
             'execution_path' => $intentDebug['executed_intent'] ?? 'hybrid_rag',
             'selected_kb' => $selectedKbName,
-            'citations_preview' => array_map(function($c) {
+            'citations_preview' => array_map(function ($c) {
                 return [
                     'doc_id' => $c['id'] ?? 'unknown',
                     'title' => substr($c['title'] ?? '', 0, 50),
-                    'score' => $c['score'] ?? 'unknown'
+                    'score' => $c['score'] ?? 'unknown',
                 ];
-            }, array_slice($cits, 0, 3))
+            }, array_slice($cits, 0, 3)),
         ]);
-        
+
         // 📊 LOG PROFILAZIONE DETTAGLIATA
         Log::info('📊 [PROFILING] RAG Performance Breakdown', [
             'tenant_id' => $tenantId,
             'query' => $query,
             'total_time_ms' => $profiling['total_time_ms'],
             'breakdown' => $profiling['breakdown'],
-            'performance_status' => $profiling['total_time_ms'] < 1000 ? '🚀 Excellent' : 
+            'performance_status' => $profiling['total_time_ms'] < 1000 ? '🚀 Excellent' :
                                    ($profiling['total_time_ms'] < 2500 ? '✅ Good' : '⚠️ Slow'),
-            'bottlenecks' => $this->identifyBottlenecks($profiling['breakdown'])
+            'bottlenecks' => $this->identifyBottlenecks($profiling['breakdown']),
         ]);
-        
+
         return $result;
     }
 
@@ -800,120 +863,142 @@ class KbSearchService
                 $bottlenecks[] = "{$step}: {$timeMs}ms";
             }
         }
+
         return $bottlenecks;
     }
 
     private function filterVecHitsByKb(array $vecHits, ?int $kbId): array
     {
-        if ($vecHits === []) return $vecHits;
-        
-        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $vecHits)));
-        $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
+        if ($vecHits === []) {
+            return $vecHits;
+        }
+
+        $docIds = array_values(array_unique(array_map(fn ($h) => (int) $h['document_id'], $vecHits)));
+        $rows = DB::table('documents')->select(['id', 'knowledge_base_id'])->whereIn('id', $docIds)->get();
         $docToKb = [];
-        foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
-        
+        foreach ($rows as $r) {
+            $docToKb[(int) $r->id] = (int) ($r->knowledge_base_id ?? 0);
+        }
+
         // 🔧 FILTRO ORFANI: Rimuovi documenti che non esistono più in PostgreSQL
-        $validHits = array_values(array_filter($vecHits, function($h) use ($docToKb) {
+        $validHits = array_values(array_filter($vecHits, function ($h) use ($docToKb) {
             $docId = (int) $h['document_id'];
             $exists = isset($docToKb[$docId]);
-            if (!$exists) {
-                Log::debug("🗑️ [RETRIEVE] Documento orfano filtrato", [
+            if (! $exists) {
+                Log::debug('🗑️ [RETRIEVE] Documento orfano filtrato', [
                     'doc_id' => $docId,
-                    'reason' => 'not_found_in_postgresql'
+                    'reason' => 'not_found_in_postgresql',
                 ]);
             }
+
             return $exists;
         }));
-        
+
         // Se kbId è null, restituisci tutti i documenti validi (multi-KB mode)
-        if ($kbId === null) return $validHits;
-        
+        if ($kbId === null) {
+            return $validHits;
+        }
+
         // Filtra per KB specifica
-        return array_values(array_filter($validHits, fn($h) => ($docToKb[(int)$h['document_id']] ?? 0) === $kbId));
+        return array_values(array_filter($validHits, fn ($h) => ($docToKb[(int) $h['document_id']] ?? 0) === $kbId));
     }
 
     private function filterFusedByKb(array $fused, ?int $kbId): array
     {
-        if ($kbId === null) return $fused;
-        if ($fused === []) return $fused;
-        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $fused)));
-        $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
+        if ($kbId === null) {
+            return $fused;
+        }
+        if ($fused === []) {
+            return $fused;
+        }
+        $docIds = array_values(array_unique(array_map(fn ($h) => (int) $h['document_id'], $fused)));
+        $rows = DB::table('documents')->select(['id', 'knowledge_base_id'])->whereIn('id', $docIds)->get();
         $docToKb = [];
-        foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
-        return array_values(array_filter($fused, fn($h) => ($docToKb[(int)$h['document_id']] ?? 0) === $kbId));
-    }
+        foreach ($rows as $r) {
+            $docToKb[(int) $r->id] = (int) ($r->knowledge_base_id ?? 0);
+        }
 
-    
+        return array_values(array_filter($fused, fn ($h) => ($docToKb[(int) $h['document_id']] ?? 0) === $kbId));
+    }
 
     /**
      * Semplice MMR greedy su embeddings (cosine similarity)
-     * @param array $queryEmbedding float[]
-     * @param array $docEmbeddings array<float[]>
+     *
+     * @param  array  $queryEmbedding  float[]
+     * @param  array  $docEmbeddings  array<float[]>
      * @return array indici selezionati
      */
     private function mmr(?array $queryEmbedding, array $docEmbeddings, float $lambda, int $k): array
     {
-        if (!$queryEmbedding || $docEmbeddings === []) return array_slice(range(0, count($docEmbeddings)-1), 0, $k);
-        
+        if (! $queryEmbedding || $docEmbeddings === []) {
+            return array_slice(range(0, count($docEmbeddings) - 1), 0, $k);
+        }
+
         $selected = [];
         $candidates = range(0, count($docEmbeddings) - 1);
         $queryNorm = $this->l2norm($queryEmbedding);
         $docNorms = array_map(fn ($v) => $this->l2norm($v), $docEmbeddings);
-        
+
         // 🚀 OPTIMIZATION: Pre-calculate all query similarities (only once!)
         $querySimCache = [];
         foreach ($candidates as $i) {
             $querySimCache[$i] = $this->cosine($queryEmbedding, $docEmbeddings[$i], $queryNorm, $docNorms[$i]);
         }
-        
+
         // 🚀 OPTIMIZATION: Early exit if lambda = 1 (no diversity needed)
         if ($lambda >= 0.99) {
             arsort($querySimCache);
+
             return array_slice(array_keys($querySimCache), 0, $k);
         }
-        
+
         // 🚀 OPTIMIZATION: Cache similarities between documents
         $docSimCache = [];
-        $getCachedSim = function($i, $j) use (&$docSimCache, $docEmbeddings, $docNorms) {
+        $getCachedSim = function ($i, $j) use (&$docSimCache, $docEmbeddings, $docNorms) {
             $key = $i < $j ? "{$i}:{$j}" : "{$j}:{$i}";
-            if (!isset($docSimCache[$key])) {
+            if (! isset($docSimCache[$key])) {
                 $docSimCache[$key] = $this->cosine($docEmbeddings[$i], $docEmbeddings[$j], $docNorms[$i], $docNorms[$j]);
             }
+
             return $docSimCache[$key];
         };
 
         while (count($selected) < $k && $candidates !== []) {
             $bestIdx = null;
             $bestScore = -INF;
-            
+
             foreach ($candidates as $i) {
                 $simToQuery = $querySimCache[$i]; // Use cached value
                 $maxSimToSelected = 0.0;
-                
+
                 // Only check similarity with selected docs
                 foreach ($selected as $j) {
                     $sim = $getCachedSim($i, $j);
-                    if ($sim > $maxSimToSelected) { 
-                        $maxSimToSelected = $sim; 
+                    if ($sim > $maxSimToSelected) {
+                        $maxSimToSelected = $sim;
                         // 🚀 OPTIMIZATION: Early exit if similarity is very high
-                        if ($maxSimToSelected > 0.95) break;
+                        if ($maxSimToSelected > 0.95) {
+                            break;
+                        }
                     }
                 }
-                
+
                 $score = $lambda * $simToQuery - (1.0 - $lambda) * $maxSimToSelected;
-                if ($score > $bestScore) { 
-                    $bestScore = $score; 
-                    $bestIdx = $i; 
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $bestIdx = $i;
                 }
             }
-            
-            if ($bestIdx === null) break;
+
+            if ($bestIdx === null) {
+                break;
+            }
             $selected[] = $bestIdx;
-            
+
             // 🚀 OPTIMIZATION: Remove from candidates more efficiently
-            $candidates = array_values(array_filter($candidates, fn($x) => $x !== $bestIdx));
+            $candidates = array_values(array_filter($candidates, fn ($x) => $x !== $bestIdx));
         }
-        
+
         return $selected;
     }
 
@@ -923,21 +1008,44 @@ class KbSearchService
         foreach ($v as $x) {
             $s += $x * $x;
         }
+
         return (float) sqrt(max($s, 1e-12));
     }
 
     private function cosine(array $a, array $b, ?float $nA = null, ?float $nB = null): float
-    { $nA = $nA ?? $this->l2norm($a); $nB = $nB ?? $this->l2norm($b); $dot=0.0; $n=min(count($a),count($b)); for($i=0;$i<$n;$i++){ $dot += ((float)$a[$i])*((float)$b[$i]); } return $dot / max($nA*$nB,1e-12); }
+    {
+        $nA = $nA ?? $this->l2norm($a);
+        $nB = $nB ?? $this->l2norm($b);
+        $dot = 0.0;
+        $n = min(count($a), count($b));
+        for ($i = 0; $i < $n; $i++) {
+            $dot += ((float) $a[$i]) * ((float) $b[$i]);
+        }
+
+        return $dot / max($nA * $nB, 1e-12);
+    }
 
     private function rrfFuse(array $vecHits, array $bmHits, int $k): array
     {
-        $key = fn($h) => $h['document_id'].':'.$h['chunk_index'];
+        $key = fn ($h) => $h['document_id'].':'.$h['chunk_index'];
         $score = [];
-        $r=0; foreach($vecHits as $h){ $r++; $score[$key($h)] = ($score[$key($h)] ?? 0) + 1.0/($k+$r); }
-        $r=0; foreach($bmHits as $h){  $r++; $score[$key($h)] = ($score[$key($h)] ?? 0) + 1.0/($k+$r); }
+        $r = 0;
+        foreach ($vecHits as $h) {
+            $r++;
+            $score[$key($h)] = ($score[$key($h)] ?? 0) + 1.0 / ($k + $r);
+        }
+        $r = 0;
+        foreach ($bmHits as $h) {
+            $r++;
+            $score[$key($h)] = ($score[$key($h)] ?? 0) + 1.0 / ($k + $r);
+        }
         $out = [];
-        foreach ($score as $kk=>$s){ [$d,$i] = array_map('intval', explode(':',$kk,2)); $out[] = ['document_id'=>$d,'chunk_index'=>$i,'score'=>$s]; }
-        usort($out, fn($a,$b) => $b['score'] <=> $a['score']);
+        foreach ($score as $kk => $s) {
+            [$d,$i] = array_map('intval', explode(':', $kk, 2));
+            $out[] = ['document_id' => $d, 'chunk_index' => $i, 'score' => $s];
+        }
+        usort($out, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return $out;
     }
 
@@ -949,26 +1057,33 @@ class KbSearchService
             foreach ($list as $h) {
                 $rank++;
                 $key = $h['document_id'].':'.$h['chunk_index'];
-                $score[$key] = ($score[$key] ?? 0) + 1.0/($k+$rank);
+                $score[$key] = ($score[$key] ?? 0) + 1.0 / ($k + $rank);
             }
         }
         $out = [];
         foreach ($score as $kk => $s) {
             [$d,$i] = array_map('intval', explode(':', $kk, 2));
-            $out[] = ['document_id'=>$d,'chunk_index'=>$i,'score'=>$s];
+            $out[] = ['document_id' => $d, 'chunk_index' => $i, 'score' => $s];
         }
-        usort($out, fn($a,$b) => $b['score'] <=> $a['score']);
+        usort($out, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return $out;
     }
 
     private function confidence(array $fused): float
-    { $top = array_slice($fused,0,3); $sum = array_sum(array_map(fn($h)=>(float)$h['score'],$top)); return max(0.0,min(1.0,$sum*10)); }
+    {
+        $top = array_slice($fused, 0, 3);
+        $sum = array_sum(array_map(fn ($h) => (float) $h['score'], $top));
+
+        return max(0.0, min(1.0, $sum * 10));
+    }
 
     // Lingue configurate a livello di tenant; default ['it'] se assenti
     private function getTenantLanguages(int $tenantId): array
     {
-        $t = Tenant::query()->select(['id','languages','default_language'])->find($tenantId);
+        $t = Tenant::query()->select(['id', 'languages', 'default_language'])->find($tenantId);
         $langs = array_values(array_filter(array_map('strtolower', (array) ($t->languages ?? []))));
+
         return $langs === [] ? ['it'] : $langs;
     }
 
@@ -976,163 +1091,188 @@ class KbSearchService
     {
         $it = [
             // Ringraziamenti diretti (alta priorità)
-            'grazie','grazie mille','ti ringrazio','la ringrazio','vi ringrazio','molte grazie',
-            'tante grazie','grazie tante','grazie di tutto','grazie per tutto','grazie dell\'aiuto',
-            'grazie per l\'aiuto','grazie per la risposta','perfetto grazie','ok grazie',
+            'grazie', 'grazie mille', 'ti ringrazio', 'la ringrazio', 'vi ringrazio', 'molte grazie',
+            'tante grazie', 'grazie tante', 'grazie di tutto', 'grazie per tutto', 'grazie dell\'aiuto',
+            'grazie per l\'aiuto', 'grazie per la risposta', 'perfetto grazie', 'ok grazie',
             // Apprezzamenti
-            'ottimo','perfetto','bene','molto bene','eccellente','fantastico',
-            'sei stato di aiuto','sei stata utile','molto utile','molto gentile',
+            'ottimo', 'perfetto', 'bene', 'molto bene', 'eccellente', 'fantastico',
+            'sei stato di aiuto', 'sei stata utile', 'molto utile', 'molto gentile',
             // Formule di cortesia
-            'la ringrazio sentitamente','cordiali ringraziamenti','distinti saluti',
-            'cordiali saluti','buona giornata','buon lavoro','arrivederci'
+            'la ringrazio sentitamente', 'cordiali ringraziamenti', 'distinti saluti',
+            'cordiali saluti', 'buona giornata', 'buon lavoro', 'arrivederci',
         ];
         $en = [
-            'thanks','thank you','thank you very much','thanks a lot','many thanks',
-            'thanks so much','appreciate it','much appreciated','perfect thanks',
-            'great thanks','excellent','perfect','awesome','wonderful',
-            'you\'ve been helpful','very helpful','very kind','good job',
-            'have a nice day','goodbye','bye','see you'
+            'thanks', 'thank you', 'thank you very much', 'thanks a lot', 'many thanks',
+            'thanks so much', 'appreciate it', 'much appreciated', 'perfect thanks',
+            'great thanks', 'excellent', 'perfect', 'awesome', 'wonderful',
+            'you\'ve been helpful', 'very helpful', 'very kind', 'good job',
+            'have a nice day', 'goodbye', 'bye', 'see you',
         ];
         $es = [
-            'gracias','muchas gracias','mil gracias','te agradezco','perfecto gracias',
-            'excelente','fantástico','muy bien','muy útil','muy amable',
-            'que tengas buen día','adiós','hasta luego'
+            'gracias', 'muchas gracias', 'mil gracias', 'te agradezco', 'perfecto gracias',
+            'excelente', 'fantástico', 'muy bien', 'muy útil', 'muy amable',
+            'que tengas buen día', 'adiós', 'hasta luego',
         ];
         $fr = [
-            'merci','merci beaucoup','mille mercis','je vous remercie','parfait merci',
-            'excellent','fantastique','très bien','très utile','très gentil',
-            'bonne journée','au revoir','à bientôt'
+            'merci', 'merci beaucoup', 'mille mercis', 'je vous remercie', 'parfait merci',
+            'excellent', 'fantastique', 'très bien', 'très utile', 'très gentil',
+            'bonne journée', 'au revoir', 'à bientôt',
         ];
-        return $this->mergeLangKeywords($langs, compact('it','en','es','fr'));
+
+        return $this->mergeLangKeywords($langs, compact('it', 'en', 'es', 'fr'));
     }
 
     private function keywordsSchedule(array $langs): array
     {
         $it = [
             // Termini specifici orari (alta priorità)
-            'orario','orari','orario di apertura','orari di apertura','quando è aperto','quando apre',
-            'quando chiude','a che ora','apertura','chiusura','aperto','chiuso','ore',
+            'orario', 'orari', 'orario di apertura', 'orari di apertura', 'quando è aperto', 'quando apre',
+            'quando chiude', 'a che ora', 'apertura', 'chiusura', 'aperto', 'chiuso', 'ore',
             // Giorni e periodi
-            'lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica',
-            'festivi','feriali','weekend','mattina','pomeriggio','sera',
+            'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica',
+            'festivi', 'feriali', 'weekend', 'mattina', 'pomeriggio', 'sera',
             // Termini di servizio
-            'ricevimento','sportello','ufficio orari','servizio clienti'
+            'ricevimento', 'sportello', 'ufficio orari', 'servizio clienti',
         ];
-        $en = ['schedule','hours','opening hours','opening times','when open','when does it open','what time','open','closed','business hours'];
-        $es = ['horario','horarios','horas de apertura','cuándo abre','cuándo cierra','abierto','cerrado'];
-        $fr = ['horaires','heures d\'ouverture','quand ouvert','quand ouvre','ouvert','fermé'];
-        return $this->mergeLangKeywords($langs, compact('it','en','es','fr'));
+        $en = ['schedule', 'hours', 'opening hours', 'opening times', 'when open', 'when does it open', 'what time', 'open', 'closed', 'business hours'];
+        $es = ['horario', 'horarios', 'horas de apertura', 'cuándo abre', 'cuándo cierra', 'abierto', 'cerrado'];
+        $fr = ['horaires', 'heures d\'ouverture', 'quand ouvert', 'quand ouvre', 'ouvert', 'fermé'];
+
+        return $this->mergeLangKeywords($langs, compact('it', 'en', 'es', 'fr'));
     }
 
     private function keywordsPhone(array $langs): array
     {
         $it = [
             // Termini specifici telefono (alta priorità)
-            'telefono','numero di telefono','numero','tel','cellulare','cell','recapito telefonico',
-            'contatto telefonico','mobile','fisso','centralino','chiamare','telefonare',
+            'telefono', 'numero di telefono', 'numero', 'tel', 'cellulare', 'cell', 'recapito telefonico',
+            'contatto telefonico', 'mobile', 'fisso', 'centralino', 'chiamare', 'telefonare',
             // Termini di emergenza
-            'emergenza','pronto soccorso','118','112','113','115','117','protezione civile',
+            'emergenza', 'pronto soccorso', '118', '112', '113', '115', '117', 'protezione civile',
             // Termini generici (bassa priorità)
-            'contatto','contatti','recapito'
+            'contatto', 'contatti', 'recapito',
         ];
-        $en = ['phone','telephone','phone number','number','tel','cell','cellphone','mobile','contact','contacts','landline'];
-        $es = ['telefono','teléfono','numero','número de teléfono','movil','móvil','celular','contacto'];
-        $fr = ['téléphone','numéro','numéro de téléphone','portable','mobile','contact'];
-        return $this->mergeLangKeywords($langs, compact('it','en','es','fr'));
+        $en = ['phone', 'telephone', 'phone number', 'number', 'tel', 'cell', 'cellphone', 'mobile', 'contact', 'contacts', 'landline'];
+        $es = ['telefono', 'teléfono', 'numero', 'número de teléfono', 'movil', 'móvil', 'celular', 'contacto'];
+        $fr = ['téléphone', 'numéro', 'numéro de téléphone', 'portable', 'mobile', 'contact'];
+
+        return $this->mergeLangKeywords($langs, compact('it', 'en', 'es', 'fr'));
     }
 
     private function keywordsEmail(array $langs): array
     {
-        $it = ['email','e-mail','mail','posta','posta elettronica','indirizzo email','indirizzo e-mail','pec'];
-        $en = ['email','e-mail','mail','email address'];
-        $es = ['correo','correo electrónico','email','e-mail','mail'];
-        $fr = ['email','e-mail','courriel','adresse mail'];
-        return $this->mergeLangKeywords($langs, compact('it','en','es','fr'));
+        $it = ['email', 'e-mail', 'mail', 'posta', 'posta elettronica', 'indirizzo email', 'indirizzo e-mail', 'pec'];
+        $en = ['email', 'e-mail', 'mail', 'email address'];
+        $es = ['correo', 'correo electrónico', 'email', 'e-mail', 'mail'];
+        $fr = ['email', 'e-mail', 'courriel', 'adresse mail'];
+
+        return $this->mergeLangKeywords($langs, compact('it', 'en', 'es', 'fr'));
     }
 
     private function keywordsAddress(array $langs): array
     {
         $it = [
             // Termini specifici indirizzo (alta priorità)
-            'indirizzo','residenza','domicilio','sede','ubicazione','dove si trova','dove è',
-            'via','viale','piazza','corso','largo','vicolo','strada','p.zza',
+            'indirizzo', 'residenza', 'domicilio', 'sede', 'ubicazione', 'dove si trova', 'dove è',
+            'via', 'viale', 'piazza', 'corso', 'largo', 'vicolo', 'strada', 'p.zza',
             // Termini di localizzazione
-            'posizione','località','zona','quartiere','dove','ufficio'
+            'posizione', 'località', 'zona', 'quartiere', 'dove', 'ufficio',
         ];
-        $en = ['address','residence','headquarters','office','location','street','st.','avenue','ave','road','rd','square','lane','boulevard','blvd'];
-        $es = ['direccion','dirección','domicilio','sede','ubicación','calle','avenida','av.','plaza','carretera'];
-        $fr = ['adresse','résidence','domicile','siège','emplacement','rue','avenue','boulevard','place'];
-        return $this->mergeLangKeywords($langs, compact('it','en','es','fr'));
+        $en = ['address', 'residence', 'headquarters', 'office', 'location', 'street', 'st.', 'avenue', 'ave', 'road', 'rd', 'square', 'lane', 'boulevard', 'blvd'];
+        $es = ['direccion', 'dirección', 'domicilio', 'sede', 'ubicación', 'calle', 'avenida', 'av.', 'plaza', 'carretera'];
+        $fr = ['adresse', 'résidence', 'domicile', 'siège', 'emplacement', 'rue', 'avenue', 'boulevard', 'place'];
+
+        return $this->mergeLangKeywords($langs, compact('it', 'en', 'es', 'fr'));
     }
 
     private function removalPhrases(array $langs): array
     {
-        $common = ['di','del','della','dello','dei','degli','delle','il','lo','la','i','gli','le','per favore','perfavore','per cortesia','grazie'];
-        $it = ['mi puoi dire','mi sai dire','puoi dirmi','potresti dirmi','sapresti','mi trovi','mostrami','dimmi','indicami','fornisci','dammi','trova','cerca','qual è','numero di telefono','telefono','tel','cellulare','recapito','contatto','contatti','email','e-mail','mail','posta','pec','indirizzo','residenza','sede','via','viale','piazza','corso','largo','vicolo','mobile','fisso'];
-        $en = ['can you tell me','could you tell me','would you tell me','please tell me','tell me','show me','find','search','what is','what\'s','phone number','phone','telephone','tel','cell','mobile','contact','email','email address','address','residence','headquarters','office','street','avenue','road'];
-        $es = ['me puedes decir','podrías decirme','dime','muéstrame','encuentra','busca','cuál es','número de teléfono','teléfono','móvil','celular','contacto','correo','correo electrónico','dirección','calle','avenida','plaza'];
-        $fr = ['peux-tu me dire','pourrais-tu me dire','dis-moi','montre-moi','trouve','recherche','quel est','numéro de téléphone','téléphone','portable','mobile','contact','courriel','adresse','rue','avenue','boulevard'];
-        $map = compact('it','en','es','fr');
+        $common = ['di', 'del', 'della', 'dello', 'dei', 'degli', 'delle', 'il', 'lo', 'la', 'i', 'gli', 'le', 'per favore', 'perfavore', 'per cortesia', 'grazie'];
+        $it = ['mi puoi dire', 'mi sai dire', 'puoi dirmi', 'potresti dirmi', 'sapresti', 'mi trovi', 'mostrami', 'dimmi', 'indicami', 'fornisci', 'dammi', 'trova', 'cerca', 'qual è', 'numero di telefono', 'telefono', 'tel', 'cellulare', 'recapito', 'contatto', 'contatti', 'email', 'e-mail', 'mail', 'posta', 'pec', 'indirizzo', 'residenza', 'sede', 'via', 'viale', 'piazza', 'corso', 'largo', 'vicolo', 'mobile', 'fisso'];
+        $en = ['can you tell me', 'could you tell me', 'would you tell me', 'please tell me', 'tell me', 'show me', 'find', 'search', 'what is', 'what\'s', 'phone number', 'phone', 'telephone', 'tel', 'cell', 'mobile', 'contact', 'email', 'email address', 'address', 'residence', 'headquarters', 'office', 'street', 'avenue', 'road'];
+        $es = ['me puedes decir', 'podrías decirme', 'dime', 'muéstrame', 'encuentra', 'busca', 'cuál es', 'número de teléfono', 'teléfono', 'móvil', 'celular', 'contacto', 'correo', 'correo electrónico', 'dirección', 'calle', 'avenida', 'plaza'];
+        $fr = ['peux-tu me dire', 'pourrais-tu me dire', 'dis-moi', 'montre-moi', 'trouve', 'recherche', 'quel est', 'numéro de téléphone', 'téléphone', 'portable', 'mobile', 'contact', 'courriel', 'adresse', 'rue', 'avenue', 'boulevard'];
+        $map = compact('it', 'en', 'es', 'fr');
         $phr = $common;
-        foreach ($langs as $l) { $phr = array_merge($phr, $map[$l] ?? []); }
+        foreach ($langs as $l) {
+            $phr = array_merge($phr, $map[$l] ?? []);
+        }
         $phr = array_values(array_unique($phr));
-        usort($phr, fn($a,$b)=>mb_strlen($b)<=>mb_strlen($a));
+        usort($phr, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+
         return $phr;
     }
 
     private function mergeLangKeywords(array $langs, array $dict): array
     {
         $out = [];
-        foreach ($langs as $l) { $out = array_merge($out, $dict[$l] ?? []); }
-        if ($out === []) { $out = $dict['it'] ?? []; }
+        foreach ($langs as $l) {
+            $out = array_merge($out, $dict[$l] ?? []);
+        }
+        if ($out === []) {
+            $out = $dict['it'] ?? [];
+        }
         $out = array_values(array_unique($out));
-        usort($out, fn($a,$b)=>mb_strlen($b)<=>mb_strlen($a));
+        usort($out, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+
         return $out;
     }
 
     /**
      * Rileva tutti gli intent possibili in una query, ordinati per priorità
      */
-    private function detectIntents(string $query, int $tenantId = null): array
+    private function detectIntents(string $query, ?int $tenantId = null): array
     {
         $q = mb_strtolower($query);
         $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
         $intents = [];
-        
+
         // Ottieni configurazione intent del tenant
         $enabledIntents = $this->getTenantEnabledIntents($tenantId);
         $extraKeywords = $this->getTenantExtraKeywords($tenantId);
-        
+        $intentConfig = $this->tenantConfig->getIntentsConfig($tenantId);
+
+        // ✅ FIX BUG 1: Leggi min_score dalla configurazione tenant
+        $minScore = (float) ($intentConfig['min_score'] ?? 0.3);
+        $executionStrategy = (string) ($intentConfig['execution_strategy'] ?? 'priority_based');
+
         // Score per ogni intent basato su specificitá keywords
         $scores = [];
         $allIntentTypes = ['thanks', 'schedule', 'address', 'email', 'phone'];
-        
+
         foreach ($allIntentTypes as $intentType) {
-            if (!($enabledIntents[$intentType] ?? true)) {
+            if (! ($enabledIntents[$intentType] ?? true)) {
                 continue; // Skip intent disabilitati
             }
-            
+
             $keywords = $this->getIntentKeywords($intentType, $this->activeLangs);
-            
+
             // Aggiungi keyword extra se configurate
-            if (!empty($extraKeywords[$intentType])) {
+            if (! empty($extraKeywords[$intentType])) {
                 $keywords = array_merge($keywords, (array) $extraKeywords[$intentType]);
             }
-            
+
             $scores[$intentType] = $this->scoreIntent($q, $expandedQ, $keywords);
         }
-        
+
         // Filtra e ordina per score (più alto = più specifico)
         arsort($scores);
         foreach ($scores as $intent => $score) {
-            if ($score > 0) {
+            // ✅ FIX BUG 1: Rispetta il threshold min_score
+            if ($score >= $minScore) {
                 $intents[] = $intent;
             }
         }
-        
+
+        // ✅ FIX BUG 2: Implementa execution_strategy
+        if ($executionStrategy === 'first_match' && ! empty($intents)) {
+            // Ritorna solo il primo intent (con score più alto)
+            return [array_shift($intents)];
+        }
+
         return $intents;
     }
-    
+
     /**
      * Calcola score di specificitá per un intent
      */
@@ -1140,7 +1280,7 @@ class KbSearchService
     {
         $score = 0.0;
         $queryLen = mb_strlen($query);
-        
+
         foreach ($keywords as $kw) {
             if (str_contains($query, $kw)) {
                 // Score più alto per keyword più lunghe e specifiche
@@ -1152,20 +1292,20 @@ class KbSearchService
                 $score += $keywordScore;
             }
         }
-        
+
         return $score;
     }
-    
+
     /**
      * Esegue un intent specifico
      */
     private function executeIntent(string $intentType, int $tenantId, string $query, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
         $name = $this->extractNameFromQuery($query, $intentType);
-        
+
         // Espandi il nome con sinonimi per migliorare la ricerca
         $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
-        
+
         switch ($intentType) {
             case 'thanks':
                 // Intent speciale: restituisce direttamente una risposta cortese senza cercare documenti
@@ -1189,40 +1329,43 @@ class KbSearchService
             default:
                 return null;
         }
-        
+
         // Se la ricerca specifica non trova nulla, prova ricerca semantica con sinonimi
         if ($results === []) {
             $semanticResults = $this->executeSemanticFallback($intentType, $tenantId, $name, $query, $debug, $knowledgeBaseId);
             if ($semanticResults !== null) {
                 return $semanticResults;
             }
+
             return null;
         }
-        
+
         // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
-        $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $results));
+        $documentIds = array_unique(array_map(fn ($r) => (int) $r['document_id'], $results));
         $documents = [];
-        if (!empty($documentIds)) {
+        if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
-                $documents[(int)$doc->id] = $doc;
+                $documents[(int) $doc->id] = $doc;
             }
         }
-        
+
         $cits = [];
         foreach ($results as $r) {
-            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 1200) ?? '');
-            
+            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int) $r['document_id'], (int) $r['chunk_index'], 1200) ?? '');
+
             // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
-            $doc = $documents[(int)$r['document_id']] ?? null;
-            if (!$doc) { continue; }
-            
+            $doc = $documents[(int) $r['document_id']] ?? null;
+            if (! $doc) {
+                continue;
+            }
+
             // Get full chunk text for deep-link highlighting
-            $chunkText = $this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 5000) ?? '';
-            
+            $chunkText = $this->text->getChunkSnippet((int) $r['document_id'], (int) $r['chunk_index'], 5000) ?? '';
+
             $citation = [
                 'id' => (int) $doc->id,
                 'title' => (string) $doc->title,
@@ -1236,19 +1379,19 @@ class KbSearchService
                 'view_url' => null, // Will be populated by frontend with secure token
                 'document_source_url' => $doc->source_url ?? null, // 🆕 URL originale del documento
             ];
-            
+
             // Aggiungi il campo specifico dell'intent
             $citation[$field] = (string) $r[$field];
             $cits[] = $citation;
         }
-        
+
         return [
             'citations' => $cits,
             'confidence' => 1.0,
             'debug' => $debug ? ["{$intentType}_lookup" => $results] : null,
         ];
     }
-    
+
     /**
      * Estrae il nome dalla query con rimozione keywords specifiche per intent
      */
@@ -1257,7 +1400,7 @@ class KbSearchService
         $s = mb_strtolower(trim($query));
         // Rimuove punteggiatura comune
         $s = preg_replace('/[\?\.!,:;\-"""\'\'`]/u', ' ', $s);
-        
+
         // Rimuove keywords specifiche dell'intent oltre alle generali
         $intentKeywords = [];
         switch ($intentType) {
@@ -1274,19 +1417,20 @@ class KbSearchService
                 $intentKeywords = ['indirizzo', 'residenza', 'domicilio', 'sede', 'ubicazione'];
                 break;
         }
-        
+
         $phrases = array_merge($this->removalPhrases($this->activeLangs), $intentKeywords);
         if ($phrases !== []) {
-            $escaped = array_map(fn($p) => preg_quote($p, '/'), $phrases);
-            $pattern = '/\b(' . implode('|', $escaped) . ')\b/u';
+            $escaped = array_map(fn ($p) => preg_quote($p, '/'), $phrases);
+            $pattern = '/\b('.implode('|', $escaped).')\b/u';
             $s = preg_replace($pattern, ' ', $s);
         }
-        
+
         // Collassa spazi
         $s = preg_replace('/\s+/', ' ', $s);
+
         return trim((string) $s);
     }
-    
+
     /**
      * Trova le keywords che hanno fatto match per ogni intent
      */
@@ -1299,7 +1443,7 @@ class KbSearchService
             'email' => [],
             'phone' => [],
         ];
-        
+
         $allKeywords = [
             'thanks' => $this->keywordsThanks($this->activeLangs),
             'schedule' => $this->keywordsSchedule($this->activeLangs),
@@ -1307,41 +1451,41 @@ class KbSearchService
             'email' => $this->keywordsEmail($this->activeLangs),
             'phone' => $this->keywordsPhone($this->activeLangs),
         ];
-        
+
         foreach ($allKeywords as $intent => $keywords) {
             foreach ($keywords as $kw) {
                 if (str_contains($query, $kw)) {
-                    $matched[$intent][] = $kw . ' (direct)';
+                    $matched[$intent][] = $kw.' (direct)';
                 } elseif (str_contains($expandedQuery, $kw)) {
-                    $matched[$intent][] = $kw . ' (expanded)';
+                    $matched[$intent][] = $kw.' (expanded)';
                 }
             }
         }
-        
+
         return $matched;
     }
-    
+
     /**
      * Espande il nome estratto con sinonimi per migliorare la ricerca nei documenti
      */
     private function expandNameWithSynonyms(string $name, ?int $tenantId = null): string
     {
         $synonyms = $this->getTenantSynonyms($tenantId);
-        
+
         // Colleziona tutti i termini senza duplicazioni
         $allTerms = [$name];
-        
+
         // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
         $sortedSynonyms = $synonyms;
-        uksort($sortedSynonyms, fn($a, $b) => strlen($b) - strlen($a));
-        
+        uksort($sortedSynonyms, fn ($a, $b) => strlen($b) - strlen($a));
+
         foreach ($sortedSynonyms as $term => $synonymList) {
             if (str_contains(strtolower($name), strtolower($term))) {
                 // Aggiungi i sinonimi alla collezione
                 $synonymWords = explode(' ', $synonymList);
                 foreach ($synonymWords as $word) {
                     $word = trim($word);
-                    if ($word !== '' && !in_array(strtolower($word), array_map('strtolower', $allTerms))) {
+                    if ($word !== '' && ! in_array(strtolower($word), array_map('strtolower', $allTerms))) {
                         $allTerms[] = $word;
                     }
                 }
@@ -1349,21 +1493,21 @@ class KbSearchService
                 break;
             }
         }
-        
+
         return implode(' ', $allTerms);
     }
-    
+
     /**
      * Espande la query con sinonimi comuni per migliorare il retrieval semantico e BM25
-     * 
-     * @param string $query Query originale
-     * @param int|null $tenantId ID del tenant per sinonimi personalizzati
+     *
+     * @param  string  $query  Query originale
+     * @param  int|null  $tenantId  ID del tenant per sinonimi personalizzati
      * @return string Query espansa con sinonimi
      */
     private function expandQueryWithSynonyms(string $query, ?int $tenantId = null): string
     {
         $synonyms = $this->getTenantSynonyms($tenantId);
-        
+
         if (empty($synonyms)) {
             return $query; // Nessun sinonimo configurato
         }
@@ -1372,45 +1516,45 @@ class KbSearchService
         $queryLower = mb_strtolower($query);
         $expanded = $query;
         $addedSynonyms = [];
-        
+
         // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
         $sortedSynonyms = $synonyms;
-        uksort($sortedSynonyms, fn($a, $b) => strlen($b) - strlen($a));
-        
+        uksort($sortedSynonyms, fn ($a, $b) => strlen($b) - strlen($a));
+
         foreach ($sortedSynonyms as $term => $synonymList) {
             $termLower = mb_strtolower($term);
-            
+
             // Match case-insensitive con word boundary per evitare match parziali
             // Es: "comune" non deve matchare in "comunemente"
-            if (preg_match('/\b' . preg_quote($termLower, '/') . '\b/u', $queryLower)) {
+            if (preg_match('/\b'.preg_quote($termLower, '/').'\b/u', $queryLower)) {
                 // Aggiungi i sinonimi evitando duplicati
                 $synonymWords = preg_split('/[\s,]+/', $synonymList, -1, PREG_SPLIT_NO_EMPTY);
                 foreach ($synonymWords as $synonym) {
                     $synonym = trim($synonym);
                     $synonymLower = mb_strtolower($synonym);
-                    
+
                     // Evita duplicati: non aggiungere se già presente nella query o nei sinonimi aggiunti
                     // FIX: Use word boundary regex instead of str_contains to avoid false positives
                     // (e.g., "tel" should not match inside "telefono")
-                    $alreadyInQuery = preg_match('/\b' . preg_quote($synonymLower, '/') . '\b/u', $queryLower);
-                    
-                    if ($synonym !== '' && 
-                        !$alreadyInQuery && 
-                        !in_array($synonymLower, $addedSynonyms, true)) {
+                    $alreadyInQuery = preg_match('/\b'.preg_quote($synonymLower, '/').'\b/u', $queryLower);
+
+                    if ($synonym !== '' &&
+                        ! $alreadyInQuery &&
+                        ! in_array($synonymLower, $addedSynonyms, true)) {
                         $addedSynonyms[] = $synonymLower;
                     }
                 }
             }
         }
-        
+
         // Aggiungi i sinonimi alla query
-        if (!empty($addedSynonyms)) {
-            $expanded .= ' ' . implode(' ', $addedSynonyms);
+        if (! empty($addedSynonyms)) {
+            $expanded .= ' '.implode(' ', $addedSynonyms);
         }
 
         return $expanded;
     }
-    
+
     /**
      * Fallback semantico: cerca con embedding usando query espansa e lascia che LLM disambigui
      */
@@ -1419,38 +1563,38 @@ class KbSearchService
         // ✅ FIXED: Get tenant-aware retrieval config
         $retrievalConfig = $this->tenantConfig->getRetrievalConfig($tenantId);
         $vecTopK = $retrievalConfig['vector_top_k'];
-        
+
         // Costruisci query semantica combinando termine originale + sinonimi
         $semanticQuery = $this->buildSemanticQuery($name, $intentType, $tenantId);
-        
+
         $debugInfo = [
             'semantic_fallback' => [
                 'original_name' => $name,
                 'semantic_query' => $semanticQuery,
                 'intent_type' => $intentType,
-            ]
+            ],
         ];
-        
+
         // Ricerca semantica con Milvus usando query espansa
         $embedding = $this->embeddings->embedTexts([$semanticQuery])[0] ?? null;
-        if (!$embedding) {
+        if (! $embedding) {
             return null;
         }
-        
+
         $milvusHealth = $this->milvus->health();
-        if (!($milvusHealth['ok'] ?? false)) {
+        if (! ($milvusHealth['ok'] ?? false)) {
             return null;
         }
-        
+
         // Prendi più risultati per compensare la ricerca più ampia
         $semanticHits = $this->milvus->searchTopK($tenantId, $embedding, $vecTopK);
-        
+
         $debugInfo['semantic_fallback']['semantic_results_found'] = count($semanticHits);
         $debugInfo['semantic_fallback']['top_semantic_hits'] = array_slice($semanticHits, 0, 5);
-        
+
         if (empty($semanticHits)) {
             // Retry con query minimale e k ridotto (allineato al comportamento che sai funzionare)
-            $minimalQuery = trim($name . ' ' . match ($intentType) {
+            $minimalQuery = trim($name.' '.match ($intentType) {
                 'schedule' => 'orario',
                 'phone' => 'telefono',
                 'email' => 'email',
@@ -1460,74 +1604,77 @@ class KbSearchService
             $minimalEmb = $this->embeddings->embedTexts([$minimalQuery])[0] ?? null;
             if ($minimalEmb) {
                 // Use reduced top_k for retry (20% of configured value, min 10, max 50)
-                $retryTopK = max(10, min(50, (int)($vecTopK * 0.2)));
+                $retryTopK = max(10, min(50, (int) ($vecTopK * 0.2)));
                 $retryHits = $this->milvus->searchTopK($tenantId, $minimalEmb, $retryTopK);
                 $debugInfo['semantic_fallback']['retry_query'] = $minimalQuery;
                 $debugInfo['semantic_fallback']['retry_results_found'] = count($retryHits);
-                if (!empty($retryHits)) {
+                if (! empty($retryHits)) {
                     // Ricicla il percorso di estrazione
                     $data = $this->extractIntentDataFromSemanticResults($retryHits, $intentType, $tenantId);
-                    if (!empty($data)) {
+                    if (! empty($data)) {
                         return [
                             'citations' => $data,
                             'confidence' => min(0.6, array_sum(array_column($retryHits, 'score')) / max(1, count($retryHits))),
-                            'debug' => $debug ? $debugInfo : null
+                            'debug' => $debug ? $debugInfo : null,
                         ];
                     }
                 }
             }
             $debugInfo['semantic_fallback']['failure_reason'] = 'No semantic hits from Milvus';
+
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $debugInfo : null];
         }
-        
+
         // Filtra i risultati per estrarre solo quelli che contengono informazioni del tipo richiesto
         $filteredResults = $this->extractIntentDataFromSemanticResults($semanticHits, $intentType, $tenantId);
         if ($knowledgeBaseId !== null) {
             // filtra risultati per KB
             $docIds = array_values(array_unique(array_column($filteredResults, 'document_id')));
-            $rows = DB::table('documents')->select(['id','knowledge_base_id'])->whereIn('id', $docIds)->get();
+            $rows = DB::table('documents')->select(['id', 'knowledge_base_id'])->whereIn('id', $docIds)->get();
             $docToKb = [];
-            foreach ($rows as $r) { $docToKb[(int)$r->id] = (int) ($r->knowledge_base_id ?? 0); }
-            $filteredResults = array_values(array_filter($filteredResults, fn($r) => ($docToKb[(int)$r['document_id']] ?? 0) === $knowledgeBaseId));
+            foreach ($rows as $r) {
+                $docToKb[(int) $r->id] = (int) ($r->knowledge_base_id ?? 0);
+            }
+            $filteredResults = array_values(array_filter($filteredResults, fn ($r) => ($docToKb[(int) $r['document_id']] ?? 0) === $knowledgeBaseId));
         }
-        
+
         $debugInfo['semantic_fallback']['filtered_results_count'] = count($filteredResults);
         $debugInfo['semantic_fallback']['sample_filtered_results'] = array_slice($filteredResults, 0, 3);
-        
+
         if (empty($filteredResults)) {
             $debugInfo['semantic_fallback']['failure_reason'] = 'No valid data extracted from semantic results';
-            
+
             // 🚀 TECNICA EVOLUTA 6: DIRECT DATABASE SEARCH come ultimo fallback
-            Log::info("🔧 [SEMANTIC-FALLBACK] Attivando ricerca diretta database", [
+            Log::info('🔧 [SEMANTIC-FALLBACK] Attivando ricerca diretta database', [
                 'intent_type' => $intentType,
                 'tenant_id' => $tenantId,
-                'reason' => 'no_valid_milvus_results'
+                'reason' => 'no_valid_milvus_results',
             ]);
-            
+
             $directResults = $this->directDatabaseSearch($tenantId, $originalQuery);
-            
-            if (!empty($directResults)) {
-                Log::info("🎯 [SEMANTIC-FALLBACK] Ricerca diretta riuscita!", [
+
+            if (! empty($directResults)) {
+                Log::info('🎯 [SEMANTIC-FALLBACK] Ricerca diretta riuscita!', [
                     'results_count' => count($directResults),
-                    'method' => 'direct_database_search'
+                    'method' => 'direct_database_search',
                 ]);
-                
+
                 // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
-                $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $directResults));
+                $documentIds = array_unique(array_map(fn ($r) => (int) $r['document_id'], $directResults));
                 $documents = [];
-                if (!empty($documentIds)) {
+                if (! empty($documentIds)) {
                     $docs = DB::select(
-                        'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                        'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                         array_merge($documentIds, [$tenantId])
                     );
                     foreach ($docs as $doc) {
-                        $documents[(int)$doc->id] = $doc;
+                        $documents[(int) $doc->id] = $doc;
                     }
                 }
-                
+
                 $cits = [];
                 foreach ($directResults as $result) {
-                    $doc = $documents[(int)$result['document_id']] ?? null;
+                    $doc = $documents[(int) $result['document_id']] ?? null;
                     if ($doc) {
                         $citation = [
                             'id' => (int) $doc->id,
@@ -1541,58 +1688,59 @@ class KbSearchService
                         $cits[] = $citation;
                     }
                 }
-                
-                if (!empty($cits)) {
+
+                if (! empty($cits)) {
                     $debugInfo['semantic_fallback']['direct_db_success'] = true;
                     $debugInfo['semantic_fallback']['direct_db_results'] = count($cits);
-                    
+
                     return [
                         'citations' => $cits,
                         'confidence' => 0.75, // Confidence alta per ricerca diretta
-                        'debug' => $debug ? $debugInfo : null
+                        'debug' => $debug ? $debugInfo : null,
                     ];
                 }
             }
-            
+
             return ['citations' => [], 'confidence' => 0.0, 'debug' => $debug ? $debugInfo : null];
         }
-        
+
         // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
         $limitedResults = array_slice($filteredResults, 0, 5);
-        $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $limitedResults));
+        $documentIds = array_unique(array_map(fn ($r) => (int) $r['document_id'], $limitedResults));
         $documents = [];
-        if (!empty($documentIds)) {
+        if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
-                $documents[(int)$doc->id] = $doc;
+                $documents[(int) $doc->id] = $doc;
             }
         }
-        
+
         $cits = [];
         $debugInfo['semantic_fallback']['citation_debug'] = [];
-        
+
         foreach ($limitedResults as $i => $result) {
             $debugInfo['semantic_fallback']['citation_debug'][$i] = [
                 'result_structure' => array_keys($result),
                 'document_id' => $result['document_id'] ?? 'missing',
                 'intent_field' => $result[$intentType] ?? 'missing',
             ];
-            
+
             // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
-            $doc = $documents[(int)$result['document_id']] ?? null;
-            
+            $doc = $documents[(int) $result['document_id']] ?? null;
+
             // Se non trovato, è perché il documento è stato cancellato o appartiene ad altro tenant
-            if (!$doc) {
+            if (! $doc) {
                 $debugInfo['semantic_fallback']['citation_debug'][$i]['db_query_result'] = 'not_found_for_tenant';
                 $debugInfo['semantic_fallback']['citation_debug'][$i]['skip_reason'] = 'document_deleted_or_wrong_tenant';
+
                 continue;
             }
-            
+
             $debugInfo['semantic_fallback']['citation_debug'][$i]['db_query_result'] = 'found_correct_tenant';
-            
+
             $citation = [
                 'id' => (int) $doc->id,
                 'title' => (string) $doc->title,
@@ -1601,37 +1749,37 @@ class KbSearchService
                 'score' => (float) $result['score'],
                 'document_source_url' => $doc->source_url ?? null, // 🆕 URL originale del documento
             ];
-            
+
             // Aggiungi il campo specifico dell'intent
             $citation[$intentType] = $result[$intentType];
             $cits[] = $citation;
-            
+
             $debugInfo['semantic_fallback']['citation_debug'][$i]['citation_created'] = true;
         }
-        
+
         $debugInfo['semantic_fallback']['success'] = true;
         $debugInfo['semantic_fallback']['final_citations_count'] = count($cits);
-        
+
         // Se non abbiamo citazioni, prova fallback con ricerca testuale sui documenti esistenti
         if (empty($cits)) {
             $debugInfo['semantic_fallback']['attempting_text_fallback'] = true;
             $textFallbackResults = $this->attemptTextFallback($intentType, $tenantId, $name, $originalQuery, $knowledgeBaseId);
-            if (!empty($textFallbackResults)) {
+            if (! empty($textFallbackResults)) {
                 $debugInfo['semantic_fallback']['text_fallback_success'] = true;
                 $debugInfo['semantic_fallback']['text_fallback_count'] = count($textFallbackResults);
                 $cits = $textFallbackResults;
             }
         }
-        
+
         $result = [
             'citations' => $cits,
             'confidence' => 0.8, // Leggermente più bassa per fallback semantico
             'debug' => $debug ? ($debugInfo ?? []) : null,
         ];
-        
+
         return $result;
     }
-    
+
     /**
      * Costruisce query semantica combinando termine originale + sinonimi + contesto intent
      */
@@ -1656,10 +1804,11 @@ class KbSearchService
             default => ''
         };
 
-        $query = trim(implode(' ', array_unique(array_filter($parts))) . ' ' . $intentContext);
+        $query = trim(implode(' ', array_unique(array_filter($parts))).' '.$intentContext);
+
         return $query;
     }
-    
+
     /**
      * Estrae dati specifici dell'intent dai risultati semantici
      */
@@ -1668,57 +1817,59 @@ class KbSearchService
         $results = [];
         $processedCount = 0;
         $extractedCount = 0;
-        
-        Log::info("🔍 [EXTRACT] Inizio estrazione dati intent", [
+
+        Log::info('🔍 [EXTRACT] Inizio estrazione dati intent', [
             'intent_type' => $intentType,
             'tenant_id' => $tenantId,
-            'total_hits' => count($semanticHits)
+            'total_hits' => count($semanticHits),
         ]);
-        
+
         foreach ($semanticHits as $hit) {
             $processedCount++;
             $docId = (int) $hit['document_id'];
-            
+
             // 🔧 FILTRO: Verifica che il documento esista ancora in PostgreSQL
             $docExists = DB::selectOne('SELECT id FROM documents WHERE id = ? AND tenant_id = ?', [$docId, $tenantId]);
-            if (!$docExists) {
-                Log::debug("🗑️ [EXTRACT] Documento orfano in Milvus", [
+            if (! $docExists) {
+                Log::debug('🗑️ [EXTRACT] Documento orfano in Milvus', [
                     'doc_id' => $docId,
                     'tenant_id' => $tenantId,
-                    'reason' => 'document_not_found_in_postgresql'
+                    'reason' => 'document_not_found_in_postgresql',
                 ]);
+
                 continue;
             }
-            
-            $content = $this->text->getChunkSnippet($docId, (int)$hit['chunk_index'], 800);
-            if (!$content) {
-                Log::debug("⚠️ [EXTRACT] Chunk vuoto", [
+
+            $content = $this->text->getChunkSnippet($docId, (int) $hit['chunk_index'], 800);
+            if (! $content) {
+                Log::debug('⚠️ [EXTRACT] Chunk vuoto', [
                     'doc_id' => $docId,
-                    'chunk_index' => $hit['chunk_index'] ?? 'unknown'
+                    'chunk_index' => $hit['chunk_index'] ?? 'unknown',
                 ]);
+
                 continue;
             }
-            
+
             // Usa TextSearchService per estrarre dati specifici dal contenuto
-            $extracted = match($intentType) {
+            $extracted = match ($intentType) {
                 'schedule' => $this->extractScheduleFromContent($content),
                 'phone' => $this->extractPhoneFromContent($content),
                 'email' => $this->extractEmailFromContent($content),
                 'address' => $this->extractAddressFromContent($content),
                 default => []
             };
-            
-            Log::debug("🔎 [EXTRACT] Analisi chunk", [
+
+            Log::debug('🔎 [EXTRACT] Analisi chunk', [
                 'doc_id' => $hit['document_id'] ?? 'unknown',
                 'chunk_index' => $hit['chunk_index'] ?? 'unknown',
                 'content_length' => strlen($content),
                 'content_preview' => substr($content, 0, 150),
                 'extracted_count' => count($extracted),
-                'extracted_data' => array_slice($extracted, 0, 2) // Prime 2 per debug
+                'extracted_data' => array_slice($extracted, 0, 2), // Prime 2 per debug
             ]);
-            
+
             // Solo se trovati dati del tipo richiesto
-            if (!empty($extracted)) {
+            if (! empty($extracted)) {
                 $extractedCount++;
                 foreach ($extracted as $item) {
                     $results[] = [
@@ -1726,46 +1877,48 @@ class KbSearchService
                         'chunk_index' => (int) $hit['chunk_index'],
                         $intentType => $item,
                         'score' => (float) $hit['score'],
-                        'excerpt' => mb_substr($content, 0, 300) . (mb_strlen($content) > 300 ? '...' : ''),
+                        'excerpt' => mb_substr($content, 0, 300).(mb_strlen($content) > 300 ? '...' : ''),
                     ];
                 }
             }
         }
-        
-        Log::info("📊 [EXTRACT] Estrazione completata", [
+
+        Log::info('📊 [EXTRACT] Estrazione completata', [
             'intent_type' => $intentType,
             'tenant_id' => $tenantId,
             'processed_chunks' => $processedCount,
             'chunks_with_data' => $extractedCount,
             'total_results' => count($results),
-            'success_rate' => $processedCount > 0 ? round($extractedCount / $processedCount * 100, 1) . '%' : '0%'
+            'success_rate' => $processedCount > 0 ? round($extractedCount / $processedCount * 100, 1).'%' : '0%',
         ]);
-        
+
         // Ordina per score e deduplica
-        usort($results, fn($a, $b) => $b['score'] <=> $a['score']);
+        usort($results, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return array_unique($results, SORT_REGULAR);
     }
-    
+
     /**
      * Estrae orari da un contenuto usando i pattern migliorati
      */
     private function extractScheduleFromContent(string $content): array
     {
-        Log::debug("⏰ [SCHEDULE] Estrazione orari da contenuto", [
+        Log::debug('⏰ [SCHEDULE] Estrazione orari da contenuto', [
             'content_length' => strlen($content),
-            'content_preview' => substr($content, 0, 200)
+            'content_preview' => substr($content, 0, 200),
         ]);
-        
+
         // 🚀 TECNICA EVOLUTA 1: MULTI-STEP CONTEXT-AWARE EXTRACTION
         $advancedResult = $this->advancedScheduleExtraction($content);
-        if (!empty($advancedResult)) {
-            Log::info("🎯 [SCHEDULE] Estrazione avanzata riuscita", [
+        if (! empty($advancedResult)) {
+            Log::info('🎯 [SCHEDULE] Estrazione avanzata riuscita', [
                 'method' => 'context_aware_extraction',
-                'results_found' => count($advancedResult)
+                'results_found' => count($advancedResult),
             ]);
+
             return $advancedResult;
         }
-        
+
         // 🔧 FALLBACK: Pattern tradizionali (ALLINEATI al TextSearchService)
         $patterns = [
             // Orario standard con trattino (es: "9:00-17:00", "dalle ore 8:30-12:30")
@@ -1783,41 +1936,41 @@ class KbSearchService
             // Pattern per mattina/pomeriggio (es: "9:00-12:00 e 15:00-18:00")
             '/\b(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\s*(?:e|,)\s*(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})\b/iu',
         ];
-        
+
         $schedules = [];
         foreach ($patterns as $pattern) {
             preg_match_all($pattern, $content, $matches, PREG_OFFSET_CAPTURE);
-            if (!empty($matches[0])) {
+            if (! empty($matches[0])) {
                 foreach ($matches[0] as $match) {
                     $schedule = $match[0];
                     $offset = $match[1];
-                    
+
                     // Usa la stessa validazione del TextSearchService
                     $reflection = new \ReflectionClass($this->text);
                     $isValidMethod = $reflection->getMethod('isValidSchedule');
                     $isValidMethod->setAccessible(true);
-                    
+
                     if ($isValidMethod->invoke($this->text, $schedule, $content, $offset)) {
                         $schedules[] = trim($schedule);
                     }
                 }
             }
         }
-        
+
         $uniqueSchedules = array_unique($schedules);
-        Log::debug("⏰ [SCHEDULE] Estrazione orari completata", [
+        Log::debug('⏰ [SCHEDULE] Estrazione orari completata', [
             'patterns_tested' => count($patterns),
             'total_matches' => count($schedules),
             'unique_schedules' => count($uniqueSchedules),
-            'found_schedules' => $uniqueSchedules
+            'found_schedules' => $uniqueSchedules,
         ]);
-        
+
         return $uniqueSchedules;
     }
-    
+
     /**
      * 🚀 TECNICA RAG EVOLUTA: CONTEXT-AWARE SCHEDULE EXTRACTION
-     * 
+     *
      * Implementa multiple tecniche evolute:
      * 1. Context Detection - Trova sezioni specifiche (es: "COMANDO POLIZIA LOCALE")
      * 2. Proximity-Based Extraction - Estrae dati vicini al contesto
@@ -1827,55 +1980,56 @@ class KbSearchService
      */
     private function advancedScheduleExtraction(string $content): array
     {
-        Log::debug("🚀 [ADVANCED] Inizio estrazione avanzata orari");
-        
+        Log::debug('🚀 [ADVANCED] Inizio estrazione avanzata orari');
+
         // STEP 1: CONTEXT DETECTION - Trova entità specifiche nel contenuto
         $contexts = $this->detectScheduleContexts($content);
-        
+
         if (empty($contexts)) {
-            Log::debug("🔍 [ADVANCED] Nessun contesto specifico trovato");
+            Log::debug('🔍 [ADVANCED] Nessun contesto specifico trovato');
+
             return [];
         }
-        
+
         $results = [];
-        
+
         foreach ($contexts as $context) {
             Log::debug("🎯 [ADVANCED] Processando contesto: {$context['entity']}", [
                 'context_start' => $context['start'],
-                'context_length' => $context['length']
+                'context_length' => $context['length'],
             ]);
-            
+
             // STEP 2: PROXIMITY-BASED EXTRACTION - Estrae dati vicini al contesto
             $extracted = $this->extractFromContext($content, $context);
-            
-            if (!empty($extracted['schedules'])) {
+
+            if (! empty($extracted['schedules'])) {
                 $results = array_merge($results, $extracted['schedules']);
             }
-            
+
             // STEP 3: INFERENCE-BASED COMPLETION - Se ha giorni ma non orari, inferisce
-            if (empty($extracted['schedules']) && !empty($extracted['days'])) {
+            if (empty($extracted['schedules']) && ! empty($extracted['days'])) {
                 $inferred = $this->inferScheduleFromDays($extracted['days'], $context['entity']);
-                if (!empty($inferred)) {
-                    Log::info("🧠 [ADVANCED] Orari inferiti da giorni di apertura", [
+                if (! empty($inferred)) {
+                    Log::info('🧠 [ADVANCED] Orari inferiti da giorni di apertura', [
                         'entity' => $context['entity'],
                         'days' => $extracted['days'],
-                        'inferred' => $inferred
+                        'inferred' => $inferred,
                     ]);
                     $results = array_merge($results, $inferred);
                 }
             }
         }
-        
+
         return array_unique($results);
     }
-    
+
     /**
      * STEP 1: Rileva contesti specifici nel documento
      */
     private function detectScheduleContexts(string $content): array
     {
         $contexts = [];
-        
+
         // Pattern per rilevare entità specifiche
         $entityPatterns = [
             'comando_polizia' => '/\b(?:COMANDO\s+)?POLIZIA\s+LOCALE\b/iu',
@@ -1884,48 +2038,48 @@ class KbSearchService
             'ufficio_tecnico' => '/\bUFFICIO\s+TECNICO\b/iu',
             'anagrafe' => '/\bUFFICIO\s+(?:SERVIZI\s+)?(?:DEMOGRAFICI|ANAGRAFE)\b/iu',
         ];
-        
+
         foreach ($entityPatterns as $type => $pattern) {
             if (preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
                 $start = $matches[0][1];
                 $entity = $matches[0][0];
-                
+
                 // Determina la lunghezza del contesto da analizzare (500 caratteri dopo l'entità)
                 $contextLength = min(800, strlen($content) - $start);
-                
+
                 $contexts[] = [
                     'type' => $type,
                     'entity' => $entity,
                     'start' => $start,
                     'length' => $contextLength,
                 ];
-                
+
                 Log::debug("🎯 [CONTEXT] Trovato: {$entity}", [
                     'type' => $type,
-                    'position' => $start
+                    'position' => $start,
                 ]);
             }
         }
-        
+
         return $contexts;
     }
-    
+
     /**
      * 🚀 TECNICA RAG EVOLUTA 6: DIRECT DATABASE SEARCH
-     * 
+     *
      * Quando Milvus non ha i documenti, cerca direttamente nel database PostgreSQL
      * usando pattern semantici avanzati
      */
     private function directDatabaseSearch(int $tenantId, string $query): array
     {
-        Log::info("🔍 [DIRECT-DB] Ricerca diretta nel database", [
+        Log::info('🔍 [DIRECT-DB] Ricerca diretta nel database', [
             'tenant_id' => $tenantId,
-            'query' => $query
+            'query' => $query,
         ]);
-        
+
         // Espandi la query con sinonimi per ricerca diretta
         $expandedTerms = $this->expandQueryWithSynonyms($query, $tenantId);
-        
+
         // Cerca documenti che contengono i termini target
         $searchTerms = [
             'comando polizia locale',
@@ -1935,13 +2089,13 @@ class KbSearchService
             'orari apertura.*polizia',
             'orario.*comando',
         ];
-        
+
         $sqlConditions = [];
         foreach ($searchTerms as $term) {
-            $sqlConditions[] = "LOWER(dc.content) LIKE '%" . strtolower($term) . "%'";
+            $sqlConditions[] = "LOWER(dc.content) LIKE '%".strtolower($term)."%'";
         }
-        
-        $sql = "
+
+        $sql = '
             SELECT 
                 d.id as document_id,
                 d.title,
@@ -1952,7 +2106,7 @@ class KbSearchService
             FROM documents d 
             JOIN document_chunks dc ON d.id = dc.document_id 
             WHERE d.tenant_id = ? 
-            AND (" . implode(' OR ', $sqlConditions) . ")
+            AND ('.implode(' OR ', $sqlConditions).")
             ORDER BY 
                 CASE 
                     WHEN LOWER(dc.content) LIKE '%comando polizia locale%' THEN 1
@@ -1962,36 +2116,36 @@ class KbSearchService
                 d.id DESC
             LIMIT 10
         ";
-        
+
         $results = DB::select($sql, [$tenantId]);
-        
-        Log::info("📊 [DIRECT-DB] Risultati trovati", [
+
+        Log::info('📊 [DIRECT-DB] Risultati trovati', [
             'count' => count($results),
-            'doc_ids' => array_map(fn($r) => $r->document_id, $results)
+            'doc_ids' => array_map(fn ($r) => $r->document_id, $results),
         ]);
-        
+
         $extractedSchedules = [];
-        
+
         foreach ($results as $result) {
             // Applica l'estrazione avanzata al contenuto trovato
             $advanced = $this->advancedScheduleExtraction($result->content);
-            
-            if (!empty($advanced)) {
+
+            if (! empty($advanced)) {
                 foreach ($advanced as $schedule) {
                     $extractedSchedules[] = [
                         'document_id' => (int) $result->document_id,
                         'chunk_index' => (int) $result->chunk_index,
                         'schedule' => $schedule,
                         'score' => (float) $result->score,
-                        'excerpt' => mb_substr($result->content, 0, 300) . '...',
+                        'excerpt' => mb_substr($result->content, 0, 300).'...',
                     ];
                 }
             }
         }
-        
+
         return $extractedSchedules;
     }
-    
+
     /**
      * STEP 2: Estrae dati da un contesto specifico
      */
@@ -2000,30 +2154,30 @@ class KbSearchService
         $start = $context['start'];
         $length = $context['length'];
         $contextText = substr($content, $start, $length);
-        
+
         $extracted = [
             'schedules' => [],
             'days' => [],
             'email' => null,
             'phone' => null,
         ];
-        
+
         // Estrae email
         if (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/u', $contextText, $emailMatch)) {
             $extracted['email'] = $emailMatch[1];
         }
-        
+
         // Estrae telefono
         if (preg_match('/\b(?:tel[:.]?\s*)?(?:\+39\s*)?(?:0\d{1,3}[.\s]?\d{6,8}|3\d{2}[.\s]?\d{3}[.\s]?\d{3,4})\b/u', $contextText, $phoneMatch)) {
             $extracted['phone'] = trim($phoneMatch[0]);
         }
-        
+
         // Estrae giorni della settimana
         $dayPattern = '/\b(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica)\b/iu';
         if (preg_match_all($dayPattern, $contextText, $dayMatches)) {
             $extracted['days'] = array_unique(array_map('strtolower', $dayMatches[1]));
         }
-        
+
         // Estrae orari con pattern evoluti per tabelle malformate
         $schedulePatterns = [
             // Pattern standard
@@ -2033,12 +2187,12 @@ class KbSearchService
             // Pattern per giorni seguiti da orari: "Martedì 9:00-12:00"
             '/(?:martedì|giovedì|venerdì)\s+(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})/iu',
         ];
-        
+
         foreach ($schedulePatterns as $pattern) {
             if (preg_match_all($pattern, $contextText, $scheduleMatches, PREG_SET_ORDER)) {
                 foreach ($scheduleMatches as $match) {
                     if (isset($match[1]) && isset($match[2])) {
-                        $schedule = $match[1] . '-' . $match[2];
+                        $schedule = $match[1].'-'.$match[2];
                         // Valida che sia un orario sensato
                         if ($this->isValidTimeRange($match[1], $match[2])) {
                             $extracted['schedules'][] = $schedule;
@@ -2047,18 +2201,18 @@ class KbSearchService
                 }
             }
         }
-        
-        Log::debug("📊 [EXTRACT] Dati estratti dal contesto", [
+
+        Log::debug('📊 [EXTRACT] Dati estratti dal contesto', [
             'entity' => $context['entity'],
             'schedules' => $extracted['schedules'],
             'days' => $extracted['days'],
-            'has_email' => !empty($extracted['email']),
-            'has_phone' => !empty($extracted['phone'])
+            'has_email' => ! empty($extracted['email']),
+            'has_phone' => ! empty($extracted['phone']),
         ]);
-        
+
         return $extracted;
     }
-    
+
     /**
      * STEP 3: Inferisce orari da giorni di apertura usando euristiche
      */
@@ -2066,7 +2220,7 @@ class KbSearchService
     {
         // Euristiche per uffici pubblici italiani
         $inferred = [];
-        
+
         // Se ci sono solo alcuni giorni, probabilmente è un ufficio con orari limitati
         if (count($days) <= 3) {
             foreach ($days as $day) {
@@ -2074,24 +2228,24 @@ class KbSearchService
                     case 'martedì':
                     case 'venerdì':
                         // Mattina: tipico per uffici pubblici
-                        $inferred[] = "Martedì e Venerdì: 9:00-12:00 (orario inferito)";
+                        $inferred[] = 'Martedì e Venerdì: 9:00-12:00 (orario inferito)';
                         break;
                     case 'giovedì':
                         // Pomeriggio: tipico per alcuni uffici
-                        $inferred[] = "Giovedì: 15:00-17:00 (orario inferito)";
+                        $inferred[] = 'Giovedì: 15:00-17:00 (orario inferito)';
                         break;
                 }
             }
         }
-        
+
         // Combina giorni comuni in un unico orario
         if (in_array('martedì', $days) && in_array('venerdì', $days)) {
-            $inferred[] = "Apertura: Martedì e Venerdì mattina, Giovedì pomeriggio";
+            $inferred[] = 'Apertura: Martedì e Venerdì mattina, Giovedì pomeriggio';
         }
-        
+
         return array_unique($inferred);
     }
-    
+
     /**
      * Valida che due orari formino un range sensato
      */
@@ -2099,13 +2253,13 @@ class KbSearchService
     {
         $startHour = (int) explode(':', str_replace('.', ':', $start))[0];
         $endHour = (int) explode(':', str_replace('.', ':', $end))[0];
-        
+
         // Range validi per uffici pubblici: 7:00-20:00
-        return $startHour >= 7 && $startHour <= 20 && 
-               $endHour >= 7 && $endHour <= 20 && 
+        return $startHour >= 7 && $startHour <= 20 &&
+               $endHour >= 7 && $endHour <= 20 &&
                $startHour < $endHour;
     }
-    
+
     /**
      * Estrae telefoni da un contenuto
      */
@@ -2121,30 +2275,30 @@ class KbSearchService
             // Emergenze
             '/(?<!\d)(?:112|113|115|117|118|1515|1530|1533|114)(?!\d)/u',
         ];
-        
+
         $phones = [];
         foreach ($patterns as $pattern) {
             preg_match_all($pattern, $content, $matches);
-            if (!empty($matches[0])) {
+            if (! empty($matches[0])) {
                 foreach ($matches[0] as $phone) {
                     // Normalizza rimuovendo eventuale prefisso tel: e caratteri finali di escape/punteggiatura
                     $phone = preg_replace('/^\s*tel[:\.]?\s*/i', '', $phone);
-                    $phone = rtrim($phone, " \\).,;:");
+                    $phone = rtrim($phone, ' \\).,;:');
                     // Usa la validazione del TextSearchService
                     $reflection = new \ReflectionClass($this->text);
                     $isValidMethod = $reflection->getMethod('isLikelyNotPhone');
                     $isValidMethod->setAccessible(true);
-                    
-                    if (!$isValidMethod->invoke($this->text, $phone, $content, $phone)) {
+
+                    if (! $isValidMethod->invoke($this->text, $phone, $content, $phone)) {
                         $phones[] = trim($phone);
                     }
                 }
             }
         }
-        
+
         return array_unique($phones);
     }
-    
+
     /**
      * Estrae email da un contenuto
      */
@@ -2152,16 +2306,17 @@ class KbSearchService
     {
         $pattern = '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu';
         preg_match_all($pattern, $content, $matches);
+
         return array_unique($matches[0] ?? []);
     }
-    
+
     /**
      * Estrae indirizzi da un contenuto
      */
     private function extractAddressFromContent(string $content): array
     {
         $addresses = [];
-        
+
         // Pattern 1: Indirizzo completo con tipo di via + nome + numero civico
         $types = '(?:via|viale|piazza|p\.?zza|corso|largo|vicolo|piazzale|strada|str\.)';
         $civic = '(?:\d{1,4}[A-Za-z]?)';
@@ -2169,21 +2324,21 @@ class KbSearchService
         $pattern1 = '/\b'.$types.'\s+[A-Za-zÀ-ÖØ-öø-ÿ\'\-\s]{2,60}(?:,?\s+'.$civic.')?(?:.*?'.$cap.')?/iu';
         preg_match_all($pattern1, $content, $matches1);
         $addresses = array_merge($addresses, $matches1[0] ?? []);
-        
-        // Pattern 2: Pattern più generale per "Indirizzo: ..." 
+
+        // Pattern 2: Pattern più generale per "Indirizzo: ..."
         $pattern2 = '/(?:indirizzo|sede|ubicato)[:\s]+([A-Za-zÀ-ÖØ-öø-ÿ\d\s\-\,\.]{5,100})/iu';
         preg_match_all($pattern2, $content, $matches2);
         $addresses = array_merge($addresses, array_map('trim', $matches2[1] ?? []));
-        
+
         // Pattern 3: Via/Piazza seguita da nome (senza essere necessariamente all'inizio)
         $pattern3 = '/(?:via|viale|piazza|corso|largo)\s+[A-Za-zÀ-ÖØ-öø-ÿ\'\-\s]{3,40}(?:,?\s*\d{1,4}[A-Za-z]?)?/iu';
         preg_match_all($pattern3, $content, $matches3);
         $addresses = array_merge($addresses, $matches3[0] ?? []);
-        
+
         // Pulisci e rimuovi duplicati
         $addresses = array_map('trim', $addresses);
-        $addresses = array_filter($addresses, fn($addr) => mb_strlen($addr) >= 5); // Min 5 caratteri
-        
+        $addresses = array_filter($addresses, fn ($addr) => mb_strlen($addr) >= 5); // Min 5 caratteri
+
         return array_unique($addresses);
     }
 
@@ -2194,43 +2349,45 @@ class KbSearchService
     {
         // Usa la ricerca testuale diretta come ultima risorsa
         $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
-        
-        $results = match($intentType) {
+
+        $results = match ($intentType) {
             'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
             'phone' => $this->text->findPhonesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
             'email' => $this->text->findEmailsNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
             'address' => $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
             default => []
         };
-        
+
         if (empty($results)) {
             return [];
         }
-        
+
         // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
-        $documentIds = array_unique(array_map(fn($r) => (int)$r['document_id'], $results));
+        $documentIds = array_unique(array_map(fn ($r) => (int) $r['document_id'], $results));
         $documents = [];
-        if (!empty($documentIds)) {
+        if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN (' . implode(',', array_fill(0, count($documentIds), '?')) . ') AND tenant_id = ?',
+                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
-                $documents[(int)$doc->id] = $doc;
+                $documents[(int) $doc->id] = $doc;
             }
         }
-        
+
         $cits = [];
         foreach ($results as $r) {
-            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 1200) ?? '');
-            
+            $snippet = (string) ($r['excerpt'] ?? '') ?: ($this->text->getChunkSnippet((int) $r['document_id'], (int) $r['chunk_index'], 1200) ?? '');
+
             // ⚡ OPTIMIZATION: Use pre-loaded document from batch query
-            $doc = $documents[(int)$r['document_id']] ?? null;
-            if (!$doc) { continue; }
-            
+            $doc = $documents[(int) $r['document_id']] ?? null;
+            if (! $doc) {
+                continue;
+            }
+
             // Get full chunk text for deep-link highlighting
-            $chunkText = $this->text->getChunkSnippet((int)$r['document_id'], (int)$r['chunk_index'], 5000) ?? '';
-            
+            $chunkText = $this->text->getChunkSnippet((int) $r['document_id'], (int) $r['chunk_index'], 5000) ?? '';
+
             $citation = [
                 'id' => (int) $doc->id,
                 'title' => (string) $doc->title,
@@ -2244,12 +2401,12 @@ class KbSearchService
                 'view_url' => null, // Will be populated by frontend with secure token
                 'document_source_url' => $doc->source_url ?? null, // 🆕 URL originale del documento
             ];
-            
+
             // Aggiungi il campo specifico dell'intent
             $citation[$intentType] = (string) $r[$intentType];
             $cits[] = $citation;
         }
-        
+
         return $cits;
     }
 
@@ -2261,14 +2418,14 @@ class KbSearchService
         // Ottieni informazioni del tenant per personalizzare la risposta
         $tenant = Tenant::find($tenantId);
         $tenantName = $tenant ? $tenant->name : '';
-        
+
         // Array di risposte cortesi in base alla lingua del tenant
         $languages = $this->getTenantLanguages($tenantId);
         $responses = $this->getThanksResponses($languages, $tenantName);
-        
+
         // Seleziona una risposta casuale per varietà
         $response = $responses[array_rand($responses)];
-        
+
         // Crea una citazione fittizia per mantenere la struttura standard
         $citation = [
             'id' => 0,
@@ -2278,30 +2435,30 @@ class KbSearchService
             'score' => 1.0,
             'knowledge_base' => null,
         ];
-        
+
         $debugInfo = $debug ? [
             'thanks_intent' => [
                 'detected_languages' => $languages,
                 'tenant_name' => $tenantName,
                 'available_responses' => count($responses),
                 'selected_response' => $response,
-            ]
+            ],
         ] : null;
-        
+
         return [
             'citations' => [$citation],
             'confidence' => 1.0,
             'debug' => $debugInfo,
         ];
     }
-    
+
     /**
      * Restituisce risposte di cortesia appropriate in base alla lingua
      */
     private function getThanksResponses(array $languages, string $tenantName = ''): array
     {
         $responses = [];
-        
+
         // Risposte in italiano (sempre incluse come fallback)
         $responses = array_merge($responses, [
             'Prego, sono felice di averti aiutato!',
@@ -2312,13 +2469,13 @@ class KbSearchService
             'Di niente! Non esitare a contattarmi se hai altre domande.',
             'Sono contento di essere stato utile!',
         ]);
-        
+
         // Personalizza con nome tenant se disponibile
         if ($tenantName !== '') {
             $responses[] = "Prego! Sono qui per aiutarti con i servizi di {$tenantName}.";
             $responses[] = "Di niente! Per altre informazioni su {$tenantName}, sono sempre disponibile.";
         }
-        
+
         // Aggiungi risposte in altre lingue se supportate
         if (in_array('en', $languages)) {
             $responses = array_merge($responses, [
@@ -2328,7 +2485,7 @@ class KbSearchService
                 'You\'re welcome! Have a great day!',
             ]);
         }
-        
+
         if (in_array('es', $languages)) {
             $responses = array_merge($responses, [
                 '¡De nada! Me alegra haber podido ayudarte.',
@@ -2336,7 +2493,7 @@ class KbSearchService
                 '¡Un placer! Espero que la información haya sido útil.',
             ]);
         }
-        
+
         if (in_array('fr', $languages)) {
             $responses = array_merge($responses, [
                 'De rien! Je suis content d\'avoir pu vous aider.',
@@ -2344,10 +2501,10 @@ class KbSearchService
                 'Je vous en prie! J\'espère que les informations ont été utiles.',
             ]);
         }
-        
+
         return $responses;
     }
-    
+
     /**
      * Ottieni intent abilitati per il tenant (ora dalla configurazione RAG)
      */
@@ -2356,19 +2513,19 @@ class KbSearchService
         if ($tenantId === null) {
             return []; // Tutti abilitati di default se nessun tenant
         }
-        
+
         // Usa la nuova configurazione RAG invece del campo tenant deprecated
         $intentsConfig = $this->tenantConfig->getIntentsConfig($tenantId);
         $enabled = $intentsConfig['enabled'] ?? [];
-        
+
         if (empty($enabled)) {
             // Default: tutti abilitati
             return ['thanks' => true, 'phone' => true, 'email' => true, 'address' => true, 'schedule' => true];
         }
-        
+
         return $enabled;
     }
-    
+
     /**
      * Ottieni keyword extra per il tenant
      */
@@ -2377,21 +2534,21 @@ class KbSearchService
         if ($tenantId === null) {
             return [];
         }
-        
+
         $tenant = Tenant::find($tenantId);
-        if (!$tenant || empty($tenant->extra_intent_keywords)) {
+        if (! $tenant || empty($tenant->extra_intent_keywords)) {
             return [];
         }
-        
+
         return (array) $tenant->extra_intent_keywords;
     }
-    
+
     /**
      * Ottieni keywords per un intent specifico
      */
     private function getIntentKeywords(string $intentType, array $languages): array
     {
-        return match($intentType) {
+        return match ($intentType) {
             'thanks' => $this->keywordsThanks($languages),
             'schedule' => $this->keywordsSchedule($languages),
             'address' => $this->keywordsAddress($languages),
@@ -2400,7 +2557,7 @@ class KbSearchService
             default => []
         };
     }
-    
+
     /**
      * Ottieni sinonimi personalizzati del tenant con fallback ai sinonimi globali
      */
@@ -2409,17 +2566,17 @@ class KbSearchService
         if ($tenantId === null) {
             return $this->getSynonymsMap(); // Fallback a sinonimi globali
         }
-        
+
         $tenant = Tenant::find($tenantId);
-        if (!$tenant) {
+        if (! $tenant) {
             return $this->getSynonymsMap(); // Fallback se tenant non trovato
         }
-        
+
         // Se il tenant ha sinonimi personalizzati, usali; altrimenti fallback
-        if (!empty($tenant->custom_synonyms)) {
+        if (! empty($tenant->custom_synonyms)) {
             return (array) $tenant->custom_synonyms;
         }
-        
+
         return $this->getSynonymsMap(); // Fallback a sinonimi globali
     }
 
@@ -2460,7 +2617,7 @@ class KbSearchService
             'documenti sow' => 'documenti statement of work',
         ];
     }
-    
+
     /**
      * 🔧 Normalizza query formali per miglior matching semantico
      * Converte domande formali in forme più semplici che matchano meglio con il contenuto
@@ -2468,54 +2625,54 @@ class KbSearchService
     private function normalizeQuery(string $query): string
     {
         $normalized = trim($query);
-        
+
         // Rimuovi punteggiatura finale
         $normalized = rtrim($normalized, '?!.');
-        
+
         // Pattern di normalizzazione per query formali comuni
         $patterns = [
             // "chi sono i/le X?" -> "i/le X" (mantiene articolo per migliore matching)
             '/^chi\s+sono\s+(.+)$/i' => '$1',
-            
+
             // "quali sono i/le X?" -> "i/le X" (mantiene articolo per migliore matching)
             '/^quali\s+sono\s+(.+)$/i' => '$1',
-            
+
             // ❌ RIMOSSO: rimozione specificazioni geografiche - causava perdita di contesto
             // '/^(.+?)\s+(di\s+san\s+cesareo|a\s+san\s+cesareo)$/i' => '$1',
-            
+
             // "potresti dirmi X?" -> "X"
             '/^potresti\s+dirmi\s+(.+)$/i' => '$1',
-            
+
             // "vorrei conoscere X" -> "X"
             '/^vorrei\s+conoscere\s+(.+)$/i' => '$1',
-            
+
             // "mi serve sapere X" -> "X"
             '/^.*mi\s+serve\s+sapere\s+(.+)$/i' => '$1',
-            
+
             // "ho bisogno di X" -> "X"
             '/^ho\s+bisogno\s+di\s+(.+)$/i' => '$1',
-            
-            // "la composizione di X" -> "X" 
+
+            // "la composizione di X" -> "X"
             '/^.*composizione\s+(di\s+|del\s+|della\s+)?(.+)$/i' => '$2',
-            
+
             // "l'elenco di X" -> "elenco di X" (mantiene preposizione)
             '/^l\'elenco\s+(.+)$/i' => 'elenco $1',
-            
+
             // ❌ RIMOSSO: rimozione articoli iniziali - causava perdita di contesto
             // '/^(il\s+|la\s+|i\s+|le\s+|del\s+|della\s+|degli\s+|delle\s+)+(.+)$/i' => '$2',
-            
+
             // Espansione SOW
             '/\bsow\b/i' => 'statement of work sow',
         ];
-        
+
         foreach ($patterns as $pattern => $replacement) {
             $normalized = preg_replace($pattern, $replacement, $normalized);
         }
-        
+
         // Pulisci spazi multipli
         $normalized = preg_replace('/\s+/', ' ', $normalized);
         $normalized = trim($normalized);
-        
+
         return $normalized ?: $query; // Fallback alla query originale se normalizzazione fallisce
     }
 
@@ -2531,42 +2688,38 @@ class KbSearchService
         }
 
         $debugInfo = $debug ? ['expansion_type' => 'contact_info', 'primary_intent' => $primaryIntent, 'entity_name' => $entityName] : null;
-        
+
         // Array per raccogliere TUTTE le informazioni di contatto
         $allContactInfo = [
             'phones' => [],
             'emails' => [],
             'addresses' => [],
             'schedules' => [],
-            'sources' => []
+            'sources' => [],
         ];
-        
+
         // Cerca ogni tipo di informazione di contatto per questa entità
         $contactIntents = ['phone', 'email', 'address', 'schedule'];
         $citations = [];
         $confidenceSum = 0;
         $totalResults = 0;
-        
 
-        
         foreach ($contactIntents as $intentType) {
             // 🔧 Per l'intent primario, usa i risultati già ottenuti (evita ricorsione)
             if ($intentType === $primaryIntent && $primaryResult !== null) {
                 $result = $primaryResult;
-            } else if ($intentType === $primaryIntent) {
+            } elseif ($intentType === $primaryIntent) {
                 // Se non abbiamo il risultato primario, saltalo per evitare ricorsione
                 continue;
             } else {
                 $result = $this->executeIntent($intentType, $tenantId, $query, false, $knowledgeBaseId);
             }
-            
 
-            
-            if ($result && !empty($result['citations'])) {
+            if ($result && ! empty($result['citations'])) {
                 // Estrai le informazioni specifiche dal contenuto delle citazioni
                 foreach ($result['citations'] as $citation) {
                     $content = $citation['chunk_text'] ?? $citation['snippet'] ?? '';
-                    
+
                     // Estrai informazioni dal contenuto
                     switch ($intentType) {
                         case 'phone':
@@ -2588,49 +2741,45 @@ class KbSearchService
                             }
                             break;
                     }
-                    
+
                     // Raccogli URL fonte se disponibile
-                    if (!empty($citation['document_source_url'])) {
+                    if (! empty($citation['document_source_url'])) {
                         $allContactInfo['sources'][] = $citation['document_source_url'];
                     }
-                    
 
-                    
                     // Aggiungi citazioni (evita duplicati) - con controlli di sicurezza
                     $citationId = $citation['id'] ?? 'unknown';
                     $chunkIndex = $citation['chunk_index'] ?? 0;
-                    $citationKey = $citationId . '_' . $chunkIndex;
-                    if (!isset($citations[$citationKey])) {
+                    $citationKey = $citationId.'_'.$chunkIndex;
+                    if (! isset($citations[$citationKey])) {
                         $citations[$citationKey] = $citation;
                     }
                 }
-                
+
                 $confidenceSum += $result['confidence'];
                 $totalResults++;
             }
         }
-        
+
         // Rimuovi duplicati
         $allContactInfo['phones'] = array_unique($allContactInfo['phones']);
         $allContactInfo['emails'] = array_unique($allContactInfo['emails']);
         $allContactInfo['addresses'] = array_unique($allContactInfo['addresses']);
         $allContactInfo['schedules'] = array_unique($allContactInfo['schedules']);
         $allContactInfo['sources'] = array_unique($allContactInfo['sources']);
-        
 
-        
         // Se non abbiamo trovato nessuna informazione, fallback
-        if (empty($allContactInfo['phones']) && empty($allContactInfo['emails']) && 
+        if (empty($allContactInfo['phones']) && empty($allContactInfo['emails']) &&
             empty($allContactInfo['addresses']) && empty($allContactInfo['schedules'])) {
             return null;
         }
-        
+
         // Costruisci risposta aggregata
         $responseText = $this->buildContactInfoResponse($entityName, $allContactInfo);
-        
+
         // Calcola confidenza media
         $averageConfidence = $totalResults > 0 ? $confidenceSum / $totalResults : 0.7;
-        
+
         if ($debug) {
             $debugInfo['contact_info_found'] = [
                 'phones_count' => count($allContactInfo['phones']),
@@ -2640,81 +2789,79 @@ class KbSearchService
                 'sources_count' => count($allContactInfo['sources']),
             ];
         }
-        
+
         $result = [
             'citations' => array_values($citations),
             'confidence' => $averageConfidence,
             'response_text' => $responseText,
-            'debug' => $debugInfo
+            'debug' => $debugInfo,
         ];
-        
 
-        
         return $result;
     }
-    
+
     /**
      * Costruisce una risposta formattata con tutte le informazioni di contatto
      */
     private function buildContactInfoResponse(string $entityName, array $contactInfo): string
     {
         $response = "Ecco tutte le informazioni di contatto per **{$entityName}**:\n\n";
-        
+
         // Indirizzi (ripulisci trailing parti spurie come "Telefono ... Email ...")
-        if (!empty($contactInfo['addresses'])) {
+        if (! empty($contactInfo['addresses'])) {
             $response .= "📍 **Indirizzo:**\n";
             foreach ($contactInfo['addresses'] as $address) {
                 $addr = preg_replace('/\s+Telefono.*$/iu', '', $address);
                 $addr = preg_replace('/\s+Email.*$/iu', '', $addr);
                 $addr = preg_replace('/\s+Pec.*$/iu', '', $addr);
-                $response .= "• " . trim($addr) . "\n";
+                $response .= '• '.trim($addr)."\n";
             }
             $response .= "\n";
         }
-        
+
         // Telefoni (formato semplice per LLM)
-        if (!empty($contactInfo['phones'])) {
+        if (! empty($contactInfo['phones'])) {
             $response .= "📞 **Telefono:**\n";
             foreach ($contactInfo['phones'] as $phone) {
-                $response .= "• " . trim($phone) . "\n";
+                $response .= '• '.trim($phone)."\n";
             }
             $response .= "\n";
         }
-        
-        // Email (formato semplice per LLM) 
-        if (!empty($contactInfo['emails'])) {
+
+        // Email (formato semplice per LLM)
+        if (! empty($contactInfo['emails'])) {
             $response .= "📧 **Email:**\n";
             foreach ($contactInfo['emails'] as $email) {
-                $response .= "• " . trim($email) . "\n";
+                $response .= '• '.trim($email)."\n";
             }
             $response .= "\n";
         }
-        
+
         // Orari (normalizzati e deduplicati)
-        if (!empty($contactInfo['schedules'])) {
+        if (! empty($contactInfo['schedules'])) {
             $normalized = $this->normalizeSchedules($contactInfo['schedules']);
-            if (!empty($normalized)) {
+            if (! empty($normalized)) {
                 $response .= "🕒 **Orari:**\n";
                 foreach ($normalized as $line) {
-                    $response .= "• " . $line . "\n";
+                    $response .= '• '.$line."\n";
                 }
                 $response .= "\n";
             }
         }
-        
+
         // Fonti con URL (formato semplice per LLM)
-        if (!empty($contactInfo['sources'])) {
+        if (! empty($contactInfo['sources'])) {
             $response .= "🔗 **Sito web di riferimento:**\n";
             foreach (array_slice($contactInfo['sources'], 0, 3) as $source) { // Max 3 link
                 $cleanUrl = trim($source);
-                $response .= "• " . $cleanUrl . "\n";
+                $response .= '• '.$cleanUrl."\n";
             }
             $response .= "\n";
         }
-        
+
         return trim($response);
     }
-    
+
     /**
      * Estrae le informazioni sugli orari da un testo
      */
@@ -2725,9 +2872,9 @@ class KbSearchService
             '/(?:lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica).*?(?:\d{1,2}[:\.]?\d{0,2}.*?\d{1,2}[:\.]?\d{0,2})/iu',
             '/(?:dalle?\s+)?(?:ore\s+)?(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})/iu',
             '/(?:aperto|chiuso).*?(?:\d{1,2}[:\.]?\d{0,2})/iu',
-            '/(?:orario|orari).*?(?:\d{1,2}[:\.]?\d{0,2}.*?\d{1,2}[:\.]?\d{0,2})/iu'
+            '/(?:orario|orari).*?(?:\d{1,2}[:\.]?\d{0,2}.*?\d{1,2}[:\.]?\d{0,2})/iu',
         ];
-        
+
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $matches)) {
                 $val = trim($matches[0]);
@@ -2735,10 +2882,11 @@ class KbSearchService
                 $val = preg_replace('/\s{2,}/', ' ', $val);
                 $val = preg_replace('/\s*:\s*/', ': ', $val);
                 $val = preg_replace('/\s*-\s*/', ' - ', $val);
+
                 return $val;
             }
         }
-        
+
         return null;
     }
 
@@ -2751,7 +2899,9 @@ class KbSearchService
         $clean = [];
         foreach ($rawSchedules as $schedule) {
             $line = $this->extractScheduleFromText($schedule);
-            if (!$line) { continue; }
+            if (! $line) {
+                continue;
+            }
             // Canonicalizza giorni e spazi
             $line = preg_replace('/\bmartedì\b/iu', 'martedì', $line);
             $line = preg_replace('/\s{2,}/', ' ', $line);
@@ -2763,11 +2913,12 @@ class KbSearchService
         $result = [];
         foreach ($clean as $line) {
             $key = mb_strtolower($line);
-            if (!isset($seen[$key])) {
+            if (! isset($seen[$key])) {
                 $seen[$key] = true;
                 $result[] = $line;
             }
         }
+
         return $result;
     }
 
@@ -2777,39 +2928,68 @@ class KbSearchService
     private function getContactTypesFromResult(array $result): array
     {
         $types = [];
-        
+
         // Se c'è response_text (dall'expansion), analizzalo
-        if (!empty($result['response_text'])) {
+        if (! empty($result['response_text'])) {
             $text = $result['response_text'];
-            if (strpos($text, '📞 **Telefono:**') !== false) $types[] = 'phone';
-            if (strpos($text, '📧 **Email:**') !== false) $types[] = 'email';
-            if (strpos($text, '📍 **Indirizzo:**') !== false) $types[] = 'address';
-            if (strpos($text, '🕒 **Orari:**') !== false) $types[] = 'schedule';
-            if (strpos($text, '🔗 **Maggiori informazioni:**') !== false) $types[] = 'sources';
+            if (strpos($text, '📞 **Telefono:**') !== false) {
+                $types[] = 'phone';
+            }
+            if (strpos($text, '📧 **Email:**') !== false) {
+                $types[] = 'email';
+            }
+            if (strpos($text, '📍 **Indirizzo:**') !== false) {
+                $types[] = 'address';
+            }
+            if (strpos($text, '🕒 **Orari:**') !== false) {
+                $types[] = 'schedule';
+            }
+            if (strpos($text, '🔗 **Maggiori informazioni:**') !== false) {
+                $types[] = 'sources';
+            }
+
             return array_unique($types);
         }
-        
+
         // Altrimenti analizza le citazioni
         foreach ($result['citations'] ?? [] as $citation) {
             // Controlla campi specifici intent
-            if (!empty($citation['phone'])) $types[] = 'phone';
-            if (!empty($citation['email'])) $types[] = 'email';
-            if (!empty($citation['address'])) $types[] = 'address';
-            if (!empty($citation['schedule'])) $types[] = 'schedule';
-            
+            if (! empty($citation['phone'])) {
+                $types[] = 'phone';
+            }
+            if (! empty($citation['email'])) {
+                $types[] = 'email';
+            }
+            if (! empty($citation['address'])) {
+                $types[] = 'address';
+            }
+            if (! empty($citation['schedule'])) {
+                $types[] = 'schedule';
+            }
+
             // Analizza contenuto per pattern
             $content = $citation['chunk_text'] ?? $citation['snippet'] ?? '';
             if ($content) {
-                if (preg_match('/\b\d{10,}\b|telefono|tel\.|phone/i', $content)) $types[] = 'phone';
-                if (preg_match('/@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i', $content)) $types[] = 'email';
-                if (preg_match('/\b(?:via|viale|piazza|corso|largo)\s+/i', $content)) $types[] = 'address';
-                if (preg_match('/\b(?:orario|orari|dalle?\s+\d|\d+[:\.]?\d*\s*[-–—]\s*\d)/i', $content)) $types[] = 'schedule';
+                if (preg_match('/\b\d{10,}\b|telefono|tel\.|phone/i', $content)) {
+                    $types[] = 'phone';
+                }
+                if (preg_match('/@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i', $content)) {
+                    $types[] = 'email';
+                }
+                if (preg_match('/\b(?:via|viale|piazza|corso|largo)\s+/i', $content)) {
+                    $types[] = 'address';
+                }
+                if (preg_match('/\b(?:orario|orari|dalle?\s+\d|\d+[:\.]?\d*\s*[-–—]\s*\d)/i', $content)) {
+                    $types[] = 'schedule';
+                }
             }
-            
+
             // URL sorgente
-            if (!empty($citation['document_source_url'])) $types[] = 'sources';
+            if (! empty($citation['document_source_url'])) {
+                $types[] = 'sources';
+            }
         }
-        
+
         return array_unique($types);
     }
 
@@ -2821,15 +3001,15 @@ class KbSearchService
         $kbs = \App\Models\KnowledgeBase::where('tenant_id', $tenantId)
             ->select('id', 'name')
             ->get();
-        
+
         return [
             'knowledge_base_id' => null, // null per indicare tutte le KB
-            'kb_name' => 'Tutte le Knowledge Base (' . $kbs->count() . ')',
+            'kb_name' => 'Tutte le Knowledge Base ('.$kbs->count().')',
             'reason' => 'multi_kb_search_enabled',
-            'available_kbs' => $kbs->map(fn($kb) => [
+            'available_kbs' => $kbs->map(fn ($kb) => [
                 'id' => $kb->id,
-                'name' => $kb->name
-            ])->toArray()
+                'name' => $kb->name,
+            ])->toArray(),
         ];
     }
 
@@ -2840,19 +3020,19 @@ class KbSearchService
     {
         $comparison = [];
         $beforeById = [];
-        
+
         // Indicizza i risultati before per ID
         foreach ($before as $item) {
             $id = $item['id'] ?? $item['document_id'] ?? 'unknown';
             $beforeById[$id] = $item['score'] ?? 0;
         }
-        
+
         // Confronta con i risultati after
         foreach (array_slice($after, 0, 5) as $i => $item) {
             $id = $item['id'] ?? $item['document_id'] ?? 'unknown';
             $beforeScore = $beforeById[$id] ?? 0;
             $afterScore = $item['score'] ?? 0;
-            
+
             $comparison[] = [
                 'position' => $i + 1,
                 'id' => $id,
@@ -2861,19 +3041,19 @@ class KbSearchService
                 'score_change' => $afterScore - $beforeScore,
             ];
         }
-        
+
         return $comparison;
     }
 
     /**
      * 🚀 NUOVO: Applica boost configurabili ai risultati in modalità Multi-KB
-     * 
+     *
      * Usa le stesse configurazioni dell'interfaccia RAG per mantenere coerenza
-     * 
-     * @param array $fused Risultati fusi da vector + BM25
-     * @param int $tenantId ID tenant
-     * @param string $query Query originale per location boost
-     * @param bool $debug Flag di debug
+     *
+     * @param  array  $fused  Risultati fusi da vector + BM25
+     * @param  int  $tenantId  ID tenant
+     * @param  string  $query  Query originale per location boost
+     * @param  bool  $debug  Flag di debug
      * @return array Risultati con boost applicati e riordinati
      */
     private function applyBoostsToResults(array $fused, int $tenantId, string $query, bool $debug = false): array
@@ -2894,7 +3074,7 @@ class KbSearchService
         $queryLower = mb_strtolower($query);
 
         // Recupera metadati dei documenti per applicare boost
-        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $fused)));
+        $docIds = array_values(array_unique(array_map(fn ($h) => (int) $h['document_id'], $fused)));
         $docs = DB::table('documents')
             ->select(['id', 'title', 'source', 'knowledge_base_id'])
             ->whereIn('id', $docIds)
@@ -2913,17 +3093,18 @@ class KbSearchService
                 'vector_boost_factor' => $vectorBoostFactor,
                 'upload_boost' => $uploadBoost,
                 'title_keyword_boosts' => $titleKeywordBoosts,
-                'location_boosts' => $locationBoosts
-            ]
+                'location_boosts' => $locationBoosts,
+            ],
         ];
 
         foreach ($fused as $hit) {
             $docId = (int) $hit['document_id'];
             $doc = $docs->get($docId);
-            
-            if (!$doc) {
+
+            if (! $doc) {
                 // Documento non trovato, mantieni score originale
                 $boostedResults[] = $hit;
+
                 continue;
             }
 
@@ -2937,7 +3118,7 @@ class KbSearchService
             }
 
             // 2. Boost documenti caricati manualmente
-            if (!empty($doc->source) && $doc->source === 'upload' && $uploadBoost > 0) {
+            if (! empty($doc->source) && $doc->source === 'upload' && $uploadBoost > 0) {
                 $boostMultiplier *= $uploadBoost;
                 $boostStats['upload_boosts_applied']++;
             }
@@ -2965,11 +3146,11 @@ class KbSearchService
 
             // Applica boost al score
             $boostedScore = $originalScore * $boostMultiplier;
-            
+
             // Crea risultato con boost applicato
             $boostedHit = $hit;
             $boostedHit['score'] = $boostedScore;
-            
+
             // Aggiungi metadati di debug se richiesto
             if ($debug) {
                 $boostedHit['boost_debug'] = [
@@ -2977,28 +3158,28 @@ class KbSearchService
                     'boost_multiplier' => $boostMultiplier,
                     'final_score' => $boostedScore,
                     'document_source' => $doc->source,
-                    'document_title' => $doc->title
+                    'document_title' => $doc->title,
                 ];
             }
-            
+
             $boostedResults[] = $boostedHit;
         }
 
         // Riordina per score boost applicato (decrescente)
-        usort($boostedResults, fn($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+        usort($boostedResults, fn ($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
 
         // Log dettagliato per monitoraggio
         Log::info('🚀 [MULTI-KB-BOOST] Boost applicati ai risultati', [
             'tenant_id' => $tenantId,
             'query' => $query,
             'stats' => $boostStats,
-            'top_3_after_boost' => array_map(function($hit) {
+            'top_3_after_boost' => array_map(function ($hit) {
                 return [
                     'doc_id' => $hit['document_id'] ?? 'unknown',
                     'score' => $hit['score'] ?? 'unknown',
-                    'content_preview' => substr($hit['content'] ?? '', 0, 50)
+                    'content_preview' => substr($hit['content'] ?? '', 0, 50),
                 ];
-            }, array_slice($boostedResults, 0, 3))
+            }, array_slice($boostedResults, 0, 3)),
         ]);
 
         return $boostedResults;
@@ -3011,44 +3192,44 @@ class KbSearchService
     public function retrieveComplete(int $tenantId, string $query, array $intentData, bool $debug = false): array
     {
         $startTime = microtime(true);
-        
+
         Log::info('🎯 [COMPLETE-RETRIEVAL] Starting complete retrieval', [
             'tenant_id' => $tenantId,
             'query' => $query,
-            'intent_data' => $intentData
+            'intent_data' => $intentData,
         ]);
 
         // STEP 1: Identifica documenti target basati su pattern
         $targetDocuments = $this->findTargetDocuments($tenantId, $intentData);
-        
+
         if (empty($targetDocuments)) {
             Log::warning('⚠️ [COMPLETE-RETRIEVAL] No target documents found', [
                 'tenant_id' => $tenantId,
-                'intent_data' => $intentData
+                'intent_data' => $intentData,
             ]);
-            
+
             // Fallback al retrieval normale se non trova documenti specifici
             return $this->retrieve($tenantId, $query, $debug);
         }
 
         // STEP 2: Recupera TUTTI i chunk dai documenti target
         $allChunks = $this->getAllChunksFromDocuments($tenantId, $targetDocuments);
-        
+
         // STEP 3: Filtro minimale basato sulla query (solo per escludere chunk completamente irrilevanti)
         $relevantChunks = $this->filterRelevantChunks($allChunks, $query);
-        
+
         // STEP 4: Costruisci risposta nel formato standard
         $citations = $this->buildCitationsFromChunks($relevantChunks);
-        
+
         $elapsed = microtime(true) - $startTime;
-        
+
         Log::info('✅ [COMPLETE-RETRIEVAL] Complete retrieval finished', [
             'tenant_id' => $tenantId,
             'total_documents' => count($targetDocuments),
             'total_chunks' => count($allChunks),
             'relevant_chunks' => count($relevantChunks),
             'final_citations' => count($citations),
-            'elapsed_time' => round($elapsed * 1000, 2) . 'ms'
+            'elapsed_time' => round($elapsed * 1000, 2).'ms',
         ]);
 
         return [
@@ -3059,8 +3240,8 @@ class KbSearchService
                 'total_documents' => count($targetDocuments),
                 'total_chunks' => count($allChunks),
                 'relevant_chunks' => count($relevantChunks),
-                'elapsed_ms' => round($elapsed * 1000, 2)
-            ]
+                'elapsed_ms' => round($elapsed * 1000, 2),
+            ],
         ];
     }
 
@@ -3070,19 +3251,20 @@ class KbSearchService
     private function findTargetDocuments(int $tenantId, array $intentData): array
     {
         $patterns = $intentData['document_patterns'] ?? ['organi-politico-amministrativo'];
-        
+
         $documents = DB::table('documents')
             ->where('tenant_id', $tenantId)
             ->where('ingestion_status', 'completed')
             ->get(['id', 'title', 'path', 'source_url'])
             ->filter(function ($doc) use ($patterns) {
                 foreach ($patterns as $pattern) {
-                    if (stripos($doc->title, $pattern) !== false || 
+                    if (stripos($doc->title, $pattern) !== false ||
                         stripos($doc->path, $pattern) !== false ||
                         stripos($doc->source_url, $pattern) !== false) {
                         return true;
                     }
                 }
+
                 return false;
             })
             ->values()
@@ -3092,7 +3274,7 @@ class KbSearchService
             'tenant_id' => $tenantId,
             'patterns' => $patterns,
             'documents_found' => count($documents),
-            'document_titles' => array_map(fn($d) => $d->title, $documents)
+            'document_titles' => array_map(fn ($d) => $d->title, $documents),
         ]);
 
         return $documents;
@@ -3103,8 +3285,8 @@ class KbSearchService
      */
     private function getAllChunksFromDocuments(int $tenantId, array $documents): array
     {
-        $documentIds = array_map(fn($d) => $d->id, $documents);
-        
+        $documentIds = array_map(fn ($d) => $d->id, $documents);
+
         if (empty($documentIds)) {
             return [];
         }
@@ -3115,11 +3297,11 @@ class KbSearchService
             ->where('d.tenant_id', $tenantId)
             ->select([
                 'dc.id',
-                'dc.document_id', 
+                'dc.document_id',
                 'dc.chunk_index',
                 'dc.content',
                 'd.title',
-                'd.source_url'
+                'd.source_url',
             ])
             ->orderBy('dc.document_id')
             ->orderBy('dc.chunk_index')
@@ -3137,19 +3319,19 @@ class KbSearchService
         // Keywords che indicano contenuto amministrativo/politico rilevante
         $relevantKeywords = [
             'nominativo', 'sindaco', 'assessore', 'consigliere', 'presidente',
-            'ruolo', 'organo', 'giunta', 'consiglio', 'gruppo politico'
+            'ruolo', 'organo', 'giunta', 'consiglio', 'gruppo politico',
         ];
-        
+
         return array_filter($chunks, function ($chunk) use ($relevantKeywords) {
             $content = strtolower($chunk->content);
-            
+
             // Mantieni chunk che contengono almeno una keyword rilevante
             foreach ($relevantKeywords as $keyword) {
                 if (stripos($content, $keyword) !== false) {
                     return true;
                 }
             }
-            
+
             return false;
         });
     }
@@ -3160,7 +3342,7 @@ class KbSearchService
     private function buildCitationsFromChunks(array $chunks): array
     {
         $citations = [];
-        
+
         foreach ($chunks as $chunk) {
             $citations[] = [
                 'id' => $chunk->id,
@@ -3175,12 +3357,10 @@ class KbSearchService
                 'view_url' => null,
                 'document_source_url' => $chunk->source_url,
                 'phone' => null,
-                'phones' => []
+                'phones' => [],
             ];
         }
-        
+
         return $citations;
     }
 }
-
-

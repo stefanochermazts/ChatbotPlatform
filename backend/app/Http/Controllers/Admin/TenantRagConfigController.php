@@ -10,9 +10,7 @@ use Illuminate\Support\Facades\Validator;
 
 class TenantRagConfigController extends Controller
 {
-    public function __construct(private readonly TenantRagConfigService $configService)
-    {
-    }
+    public function __construct(private readonly TenantRagConfigService $configService) {}
 
     /**
      * Show RAG configuration for a tenant
@@ -25,7 +23,7 @@ class TenantRagConfigController extends Controller
 
         return view('admin.tenants.rag-config', compact(
             'tenant',
-            'currentConfig', 
+            'currentConfig',
             'availableProfiles',
             'configTemplate'
         ));
@@ -37,7 +35,7 @@ class TenantRagConfigController extends Controller
     public function update(Request $request, Tenant $tenant)
     {
         $validator = $this->validateConfig($request);
-        
+
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
@@ -141,8 +139,11 @@ class TenantRagConfigController extends Controller
         $tenant->rag_profile = (string) $request->input('rag_profile');
         $tenant->save();
 
+        // ✅ FIX BUG 3: Invalida cache dopo save del profilo
+        $this->configService->clearCache($tenant->id);
+
         $this->configService->updateTenantConfig($tenant->id, $settings);
-        
+
         return back()->with('success', 'Configurazione RAG aggiornata con successo!');
     }
 
@@ -152,10 +153,13 @@ class TenantRagConfigController extends Controller
     public function reset(Tenant $tenant)
     {
         $this->configService->resetTenantConfig($tenant->id);
-        
+
         $tenant->rag_profile = null;
         $tenant->rag_settings = null;
         $tenant->save();
+
+        // ✅ FIX BUG 3: Invalida cache dopo reset
+        $this->configService->clearCache($tenant->id);
 
         return back()->with('success', 'Configurazione RAG ripristinata ai valori di default!');
     }
@@ -167,10 +171,10 @@ class TenantRagConfigController extends Controller
     {
         $profile = $request->get('profile');
         $template = $this->configService->getConfigTemplate($profile !== 'custom' ? $profile : null);
-        
+
         return response()->json([
             'success' => true,
-            'template' => $template
+            'template' => $template,
         ]);
     }
 
@@ -180,11 +184,11 @@ class TenantRagConfigController extends Controller
     public function testConfig(Request $request, Tenant $tenant)
     {
         $query = $request->get('query', 'orario vigili urbani');
-        
+
         try {
             $kbService = app(\App\Services\RAG\KbSearchService::class);
             $result = $kbService->retrieve($tenant->id, $query, true);
-            
+
             return response()->json([
                 'success' => true,
                 'citations' => count($result['citations'] ?? []),
@@ -194,7 +198,7 @@ class TenantRagConfigController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -206,7 +210,7 @@ class TenantRagConfigController extends Controller
     {
         return Validator::make($request->all(), [
             'rag_profile' => 'required|in:custom,public_administration,ecommerce,customer_service',
-            
+
             // Hybrid search
             'vector_top_k' => 'required|integer|min:1|max:200',
             'bm25_top_k' => 'required|integer|min:1|max:300',
@@ -214,34 +218,34 @@ class TenantRagConfigController extends Controller
             'mmr_lambda' => 'required|numeric|min:0|max:1',
             'mmr_take' => 'required|integer|min:1|max:100',
             'neighbor_radius' => 'required|integer|min:0|max:10',
-            
+
             // Multi-query
             'multiquery_num' => 'required|integer|min:1|max:10',
             'multiquery_temperature' => 'required|numeric|min:0|max:1',
-            
+
             // Answer thresholds
             'min_citations' => 'required|integer|min:0|max:10',
             'min_confidence' => 'required|numeric|min:0|max:1',
             'fallback_message' => 'nullable|string|max:500',
-            
+
             // Reranker
             'reranker_driver' => 'required|in:embedding,cohere,llm,none',
             'reranker_top_n' => 'required|integer|min:1|max:100',
-            
+
             // Context
             'context_max_chars' => 'required|integer|min:1000|max:100000',
             'compress_if_over_chars' => 'required|integer|min:1000|max:25000',
             'compress_target_chars' => 'required|integer|min:500|max:15000',
-            
+
             // Advanced
             'hyde_weight_original' => 'required|numeric|min:0|max:1',
             'hyde_weight_hypothetical' => 'required|numeric|min:0|max:1',
             'llm_reranker_batch_size' => 'required|integer|min:1|max:20',
-            
+
             // Intents
             'intent_min_score' => 'required|numeric|min:0|max:1',
             'intent_execution_strategy' => 'required|in:priority_based,first_match',
-            
+
             // KB Selection
             'kb_selection_mode' => 'required|in:auto,strict,multi',
             'bm25_boost_factor' => 'required|numeric|min:0.1|max:5',
@@ -249,7 +253,7 @@ class TenantRagConfigController extends Controller
             'kb_upload_boost' => 'nullable|numeric|min:0.5|max:3',
             'kb_title_keyword_boosts' => 'nullable|string', // JSON
             'kb_location_boosts' => 'nullable|string',      // JSON
-            
+
             // Chunking
             'chunking_max_chars' => 'required|integer|min:500|max:8000',
             'chunking_overlap_chars' => 'required|integer|min:50|max:1000',

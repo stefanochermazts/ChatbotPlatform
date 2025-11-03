@@ -86,10 +86,62 @@
       📊 LLM Reranker usa AI per valutare rilevanza (più accurato ma +costo)
     </div>
   </div>
-  <div>
-    <button class="px-3 py-2 bg-indigo-600 text-white rounded">Esegui</button>
+  <div class="flex items-center gap-2">
+    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
+      🔍 Esegui Test
+    </button>
+    <button type="button" onclick="clearRagCache()" class="px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition text-sm">
+      🗑️ Clear Cache
+    </button>
+    <span id="cache-status" class="text-xs text-gray-500"></span>
   </div>
 </form>
+
+<script>
+function clearRagCache() {
+  const tenantSelect = document.querySelector('select[name="tenant_id"]');
+  const tenantId = tenantSelect.value;
+  
+  if (!tenantId) {
+    alert('Seleziona un tenant prima di clear la cache');
+    return;
+  }
+  
+  const statusEl = document.getElementById('cache-status');
+  statusEl.textContent = 'Clearing...';
+  statusEl.className = 'text-xs text-orange-500';
+  
+  // Call RAG Tester con flag speciale per clear cache
+  fetch('{{ route('admin.rag.run') }}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-TOKEN': document.querySelector('[name="_token"]').value
+    },
+    body: JSON.stringify({
+      tenant_id: tenantId,
+      query: '__clear_cache__',
+      _clear_cache_only: true
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    statusEl.textContent = '✓ Cache cleared!';
+    statusEl.className = 'text-xs text-green-600';
+    setTimeout(() => {
+      statusEl.textContent = '';
+    }, 3000);
+  })
+  .catch(err => {
+    statusEl.textContent = '✗ Error: ' + err.message;
+    statusEl.className = 'text-xs text-red-600';
+  });
+}
+
+function toggleConversationMessages(enabled) {
+  document.getElementById('conversation-messages').classList.toggle('hidden', !enabled);
+}
+</script>
 
 @if(isset($result))
   <div class="mt-6 grid gap-4">
@@ -397,6 +449,67 @@ Fonti:
           <div class="md:col-span-2 mb-4">
             <h3 class="font-medium text-base text-indigo-700">🎯 Intent Detection</h3>
             <div class="bg-indigo-50 border border-indigo-200 rounded p-3 mt-1">
+              
+              {{-- ✅ NEW: Intent Configuration Section --}}
+              @if(!empty($result['trace']['intent_detection']['config']))
+              <div class="mb-4 p-3 bg-white border border-indigo-300 rounded-lg">
+                <h4 class="font-medium text-sm text-indigo-800 flex items-center gap-2">
+                  ⚙️ Configurazione Intent
+                  <a href="{{ route('admin.tenants.rag-config.show', $tenant_id) }}" class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition">
+                    Modifica Config
+                  </a>
+                </h4>
+                <div class="grid md:grid-cols-4 gap-3 mt-2 text-xs">
+                  <div>
+                    <div class="text-gray-600">Min Score Threshold</div>
+                    <div class="font-bold text-lg text-indigo-600">{{ number_format($result['trace']['intent_detection']['config']['min_score'], 2) }}</div>
+                    <div class="text-[10px] text-gray-500">Intent con score < threshold vengono esclusi</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-600">Execution Strategy</div>
+                    <div class="font-bold text-indigo-600">
+                      @if($result['trace']['intent_detection']['config']['execution_strategy'] === 'first_match')
+                        <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm">🎯 First Match</span>
+                      @else
+                        <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">📊 Priority Based</span>
+                      @endif
+                    </div>
+                    <div class="text-[10px] text-gray-500 mt-1">
+                      {{ $result['trace']['intent_detection']['config']['execution_strategy'] === 'first_match' ? 'Solo primo intent' : 'Tutti gli intent sopra threshold' }}
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-gray-600">Intent Attivi</div>
+                    <div class="font-bold text-lg text-green-600">
+                      {{ count(array_filter($result['trace']['intent_detection']['config']['enabled_intents'] ?? [])) }}/5
+                    </div>
+                    <div class="text-[10px] text-gray-500">
+                      @foreach($result['trace']['intent_detection']['config']['enabled_intents'] ?? [] as $intent => $enabled)
+                        @if($enabled)
+                          <span class="inline-block mr-1">✓{{ $intent }}</span>
+                        @endif
+                      @endforeach
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-gray-600">Extra Keywords</div>
+                    <div class="font-bold text-lg text-orange-600">
+                      {{ count(array_filter($result['trace']['intent_detection']['config']['extra_keywords'] ?? [])) }}
+                    </div>
+                    <div class="text-[10px] text-gray-500">
+                      @forelse($result['trace']['intent_detection']['config']['extra_keywords'] ?? [] as $intent => $keywords)
+                        @if(!empty($keywords))
+                          <span class="inline-block mr-1">{{ $intent }}({{ count($keywords) }})</span>
+                        @endif
+                      @empty
+                        <span class="text-gray-400">Nessuna</span>
+                      @endforelse
+                    </div>
+                  </div>
+                </div>
+              </div>
+              @endif
+              
               <div class="grid md:grid-cols-2 gap-3">
                 <div>
                   <h4 class="font-medium text-sm">Query Processing</h4>
@@ -409,25 +522,57 @@ Fonti:
                 <div>
                   <h4 class="font-medium text-sm">Intent Results</h4>
                   <div class="text-xs mt-1">
-                    <div><strong>Detected:</strong> {{ implode(' > ', $result['trace']['intent_detection']['intents_detected']) }}</div>
-                    <div><strong>Executed:</strong> 
+                    <div><strong>Rilevati ({{ $result['trace']['intent_detection']['intents_count'] ?? count($result['trace']['intent_detection']['intents_detected']) }}):</strong> 
+                      @if(empty($result['trace']['intent_detection']['intents_detected']))
+                        <span class="text-gray-400">Nessuno</span>
+                      @else
+                        {{ implode(' > ', $result['trace']['intent_detection']['intents_detected']) }}
+                      @endif
+                    </div>
+                    <div><strong>Eseguito:</strong> 
                       @if(str_contains($result['trace']['intent_detection']['executed_intent'], '_semantic'))
                         <span class="px-1 py-0.5 bg-purple-100 text-purple-700 rounded">{{ $result['trace']['intent_detection']['executed_intent'] }}</span>
-                        <span class="text-xs text-purple-600 ml-1">(semantic)</span>
+                        <span class="text-xs text-purple-600 ml-1">(semantic fallback)</span>
+                      @elseif($result['trace']['intent_detection']['executed_intent'] === 'hybrid_rag')
+                        <span class="px-1 py-0.5 bg-gray-100 text-gray-700 rounded">hybrid_rag</span>
+                        <span class="text-xs text-gray-500 ml-1">(no intent match)</span>
                       @else
-                        <span class="px-1 py-0.5 bg-indigo-100 rounded">{{ $result['trace']['intent_detection']['executed_intent'] }}</span>
+                        <span class="px-1 py-0.5 bg-green-100 text-green-700 rounded">{{ $result['trace']['intent_detection']['executed_intent'] }}</span>
                       @endif
                     </div>
                   </div>
                 </div>
               </div>
               <div class="mt-3">
-                <h4 class="font-medium text-sm">Intent Scores</h4>
-                <div class="grid grid-cols-4 gap-2 mt-1 text-xs">
+                <h4 class="font-medium text-sm">Intent Scores @if(!empty($result['trace']['intent_detection']['config']['min_score'])) <span class="text-xs text-gray-500">(threshold: {{ number_format($result['trace']['intent_detection']['config']['min_score'], 2) }})</span>@endif</h4>
+                <div class="grid grid-cols-5 gap-2 mt-1 text-xs">
                   @foreach($result['trace']['intent_detection']['intent_scores'] as $intent => $score)
-                  <div class="bg-white border rounded p-2">
-                    <div class="font-medium">{{ ucfirst($intent) }}</div>
-                    <div class="text-lg font-bold {{ $score > 0 ? 'text-green-600' : 'text-gray-400' }}">{{ number_format($score, 3) }}</div>
+                  @php 
+                    $minScore = $result['trace']['intent_detection']['config']['min_score'] ?? 0.3;
+                    $passedThreshold = $score >= $minScore;
+                    $isEnabled = ($result['trace']['intent_detection']['config']['enabled_intents'][$intent] ?? true);
+                  @endphp
+                  <div class="bg-white border rounded p-2 {{ !$isEnabled ? 'opacity-50' : '' }} {{ $passedThreshold && $isEnabled ? 'ring-2 ring-green-400' : '' }}">
+                    <div class="font-medium flex items-center justify-between">
+                      <span>{{ ucfirst($intent) }}</span>
+                      @if(!$isEnabled)
+                        <span class="text-[10px] text-red-500">🚫</span>
+                      @elseif($passedThreshold)
+                        <span class="text-[10px] text-green-500">✓</span>
+                      @endif
+                    </div>
+                    <div class="text-lg font-bold {{ $passedThreshold && $isEnabled ? 'text-green-600' : ($score > 0 ? 'text-orange-500' : 'text-gray-400') }}">
+                      {{ number_format($score, 3) }}
+                    </div>
+                    @if(!$isEnabled)
+                      <div class="text-[10px] text-red-500">Disabilitato</div>
+                    @elseif($passedThreshold)
+                      <div class="text-[10px] text-green-600">✓ Sopra soglia</div>
+                    @elseif($score > 0)
+                      <div class="text-[10px] text-orange-500">⚠ Sotto soglia</div>
+                    @else
+                      <div class="text-[10px] text-gray-400">No match</div>
+                    @endif
                   </div>
                   @endforeach
                 </div>
