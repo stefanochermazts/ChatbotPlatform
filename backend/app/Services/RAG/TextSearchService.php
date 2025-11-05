@@ -3,6 +3,7 @@
 namespace App\Services\RAG;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TextSearchService
 {
@@ -97,10 +98,14 @@ class TextSearchService
             return [];
         }
         $nameLower = mb_strtolower($name);
-        // Tokenizza nome (nome + cognome)
+        // 🔧 FIX: Tokenizza TUTTI i termini (non solo primi 2) per supportare sinonimi espansi
+        // Es: "vigili urbani polizia locale municipale" -> tutti i termini vengono considerati
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
+        
+        // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
+        $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
         // Candidati via trigram/ILIKE, limit ampio per post-filter
         if ($knowledgeBaseId !== null) {
@@ -114,11 +119,12 @@ class TextSearchService
                         (LOWER(dc.content) ILIKE :phrase1)
                      OR (LOWER(dc.content) ILIKE :phrase2)
                      OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                     {$synonymConditions['sql']}
                      OR similarity(LOWER(dc.content), :name) > 0.2
                    )
                  ORDER BY similarity(LOWER(dc.content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'kb' => (int) $knowledgeBaseId,
                     'name' => $nameLower,
@@ -126,7 +132,7 @@ class TextSearchService
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         } else {
             $rows = DB::select(
@@ -137,18 +143,19 @@ class TextSearchService
                         (LOWER(content) ILIKE :phrase1)
                      OR (LOWER(content) ILIKE :phrase2)
                      OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                     {$synonymConditions['sql']}
                      OR similarity(LOWER(content), :name) > 0.2
                    )
                  ORDER BY similarity(LOWER(content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'name' => $nameLower,
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         }
 
@@ -170,12 +177,19 @@ class TextSearchService
             // normalizza per similarità
             $lower = mb_strtolower($content);
             // distanza approssimata nome-numero: min distanza in caratteri
+            // 🔧 FIX: Cerca posizione nome considerando TUTTI i termini sinonimi
             $namePos = mb_strpos($lower, $nameLower);
-            if ($namePos === false && $first !== '' && $last !== '') {
-                $p1 = mb_strpos($lower, $first);
-                $p2 = mb_strpos($lower, $last);
-                if ($p1 !== false && $p2 !== false) {
-                    $namePos = (int) floor(($p1 + $p2) / 2);
+            if ($namePos === false) {
+                // Prova a matchare qualsiasi coppia di termini sinonimi
+                foreach ($parts as $i => $term1) {
+                    foreach (array_slice($parts, $i + 1) as $term2) {
+                        $p1 = mb_strpos($lower, $term1);
+                        $p2 = mb_strpos($lower, $term2);
+                        if ($p1 !== false && $p2 !== false) {
+                            $namePos = (int) floor(($p1 + $p2) / 2);
+                            break 2; // Exit both loops
+                        }
+                    }
                 }
             }
             $phones = [];
@@ -244,9 +258,13 @@ class TextSearchService
         $name = trim($name);
         if ($name === '') return [];
         $nameLower = mb_strtolower($name);
+        // 🔧 FIX: Tokenizza TUTTI i termini per supportare sinonimi espansi
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
+        
+        // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
+        $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
         if ($knowledgeBaseId !== null) {
             $rows = DB::select(
@@ -258,11 +276,12 @@ class TextSearchService
                        (LOWER(dc.content) ILIKE :phrase1)
                     OR (LOWER(dc.content) ILIKE :phrase2)
                     OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                    {$synonymConditions['sql']}
                     OR similarity(LOWER(dc.content), :name) > 0.2
                    )
                  ORDER BY similarity(LOWER(dc.content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'kb' => (int) $knowledgeBaseId,
                     'name' => $nameLower,
@@ -270,7 +289,7 @@ class TextSearchService
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         } else {
             $rows = DB::select(
@@ -279,18 +298,19 @@ class TextSearchService
                      (LOWER(content) ILIKE :phrase1)
                   OR (LOWER(content) ILIKE :phrase2)
                   OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                  {$synonymConditions['sql']}
                   OR similarity(LOWER(content), :name) > 0.2
                  )
                  ORDER BY similarity(LOWER(content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'name' => $nameLower,
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         }
 
@@ -299,11 +319,20 @@ class TextSearchService
         foreach ($rows as $r) {
             $content = (string) $r->content;
             $lower = mb_strtolower($content);
+            // 🔧 FIX: Cerca posizione nome considerando TUTTI i termini sinonimi
             $namePos = mb_strpos($lower, $nameLower);
-            if ($namePos === false && $first !== '' && $last !== '') {
-                $p1 = mb_strpos($lower, $first);
-                $p2 = mb_strpos($lower, $last);
-                if ($p1 !== false && $p2 !== false) $namePos = (int) floor(($p1 + $p2) / 2);
+            if ($namePos === false) {
+                // Prova a matchare qualsiasi coppia di termini sinonimi
+                foreach ($parts as $i => $term1) {
+                    foreach (array_slice($parts, $i + 1) as $term2) {
+                        $p1 = mb_strpos($lower, $term1);
+                        $p2 = mb_strpos($lower, $term2);
+                        if ($p1 !== false && $p2 !== false) {
+                            $namePos = (int) floor(($p1 + $p2) / 2);
+                            break 2;
+                        }
+                    }
+                }
             }
             preg_match_all($pattern, $content, $m);
             $emails = $m[0] ?? [];
@@ -335,9 +364,13 @@ class TextSearchService
         $name = trim($name);
         if ($name === '') return [];
         $nameLower = mb_strtolower($name);
+        // 🔧 FIX: Tokenizza TUTTI i termini per supportare sinonimi espansi
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
+        
+        // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
+        $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
         if ($knowledgeBaseId !== null) {
             $rows = DB::select(
@@ -349,11 +382,12 @@ class TextSearchService
                        (LOWER(dc.content) ILIKE :phrase1)
                     OR (LOWER(dc.content) ILIKE :phrase2)
                     OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                    {$synonymConditions['sql']}
                     OR similarity(LOWER(dc.content), :name) > 0.2
                    )
                  ORDER BY similarity(LOWER(dc.content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'kb' => (int) $knowledgeBaseId,
                     'name' => $nameLower,
@@ -361,7 +395,7 @@ class TextSearchService
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         } else {
             $rows = DB::select(
@@ -370,18 +404,19 @@ class TextSearchService
                      (LOWER(content) ILIKE :phrase1)
                   OR (LOWER(content) ILIKE :phrase2)
                   OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                  {$synonymConditions['sql']}
                   OR similarity(LOWER(content), :name) > 0.2
                  )
                  ORDER BY similarity(LOWER(content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'name' => $nameLower,
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         }
 
@@ -395,11 +430,20 @@ class TextSearchService
         foreach ($rows as $r) {
             $content = (string) $r->content;
             $lower = mb_strtolower($content);
+            // 🔧 FIX: Cerca posizione nome considerando TUTTI i termini sinonimi
             $namePos = mb_strpos($lower, $nameLower);
-            if ($namePos === false && $first !== '' && $last !== '') {
-                $p1 = mb_strpos($lower, $first);
-                $p2 = mb_strpos($lower, $last);
-                if ($p1 !== false && $p2 !== false) $namePos = (int) floor(($p1 + $p2) / 2);
+            if ($namePos === false) {
+                // Prova a matchare qualsiasi coppia di termini sinonimi
+                foreach ($parts as $i => $term1) {
+                    foreach (array_slice($parts, $i + 1) as $term2) {
+                        $p1 = mb_strpos($lower, $term1);
+                        $p2 = mb_strpos($lower, $term2);
+                        if ($p1 !== false && $p2 !== false) {
+                            $namePos = (int) floor(($p1 + $p2) / 2);
+                            break 2;
+                        }
+                    }
+                }
             }
             preg_match_all($addrPattern, $content, $m);
             $addresses = $m[0] ?? [];
@@ -431,9 +475,13 @@ class TextSearchService
         $name = trim($name);
         if ($name === '') return [];
         $nameLower = mb_strtolower($name);
+        // 🔧 FIX: Tokenizza TUTTI i termini per supportare sinonimi espansi
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
         $last  = $parts[1] ?? '';
+        
+        // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
+        $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
         if ($knowledgeBaseId !== null) {
             $rows = DB::select(
@@ -445,11 +493,12 @@ class TextSearchService
                        (LOWER(dc.content) ILIKE :phrase1)
                     OR (LOWER(dc.content) ILIKE :phrase2)
                     OR (LOWER(dc.content) ILIKE :first AND LOWER(dc.content) ILIKE :last)
+                    {$synonymConditions['sql']}
                     OR similarity(LOWER(dc.content), :name) > 0.2
                    )
                  ORDER BY similarity(LOWER(dc.content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'kb' => (int) $knowledgeBaseId,
                     'name' => $nameLower,
@@ -457,7 +506,7 @@ class TextSearchService
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         } else {
             $rows = DB::select(
@@ -466,18 +515,19 @@ class TextSearchService
                      (LOWER(content) ILIKE :phrase1)
                   OR (LOWER(content) ILIKE :phrase2)
                   OR (LOWER(content) ILIKE :first AND LOWER(content) ILIKE :last)
+                  {$synonymConditions['sql']}
                   OR similarity(LOWER(content), :name) > 0.2
                  )
                  ORDER BY similarity(LOWER(content), :name) DESC
                  LIMIT 200",
-                [
+                array_merge([
                     't' => $tenantId,
                     'name' => $nameLower,
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
                     'last'  => '%'.$last.'%',
-                ]
+                ], $synonymConditions['params'])
             );
         }
 
@@ -505,11 +555,20 @@ class TextSearchService
         foreach ($rows as $r) {
             $content = (string) $r->content;
             $lower = mb_strtolower($content);
+            // 🔧 FIX: Cerca posizione nome considerando TUTTI i termini sinonimi
             $namePos = mb_strpos($lower, $nameLower);
-            if ($namePos === false && $first !== '' && $last !== '') {
-                $p1 = mb_strpos($lower, $first);
-                $p2 = mb_strpos($lower, $last);
-                if ($p1 !== false && $p2 !== false) $namePos = (int) floor(($p1 + $p2) / 2);
+            if ($namePos === false) {
+                // Prova a matchare qualsiasi coppia di termini sinonimi
+                foreach ($parts as $i => $term1) {
+                    foreach (array_slice($parts, $i + 1) as $term2) {
+                        $p1 = mb_strpos($lower, $term1);
+                        $p2 = mb_strpos($lower, $term2);
+                        if ($p1 !== false && $p2 !== false) {
+                            $namePos = (int) floor(($p1 + $p2) / 2);
+                            break 2;
+                        }
+                    }
+                }
             }
             
             $schedules = [];
@@ -633,6 +692,64 @@ class TextSearchService
     /**
      * Filtra potenziali falsi positivi (partite IVA, codici fiscali, date, etc.)
      */
+    /**
+     * Costruisce condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
+     * 
+     * Esempio: ["vigili", "urbani", "polizia", "locale"] genera:
+     * OR (LOWER(dc.content) ILIKE '%vigili%' AND LOWER(dc.content) ILIKE '%polizia%')
+     * OR (LOWER(dc.content) ILIKE '%vigili%' AND LOWER(dc.content) ILIKE '%locale%')
+     * OR (LOWER(dc.content) ILIKE '%urbani%' AND LOWER(dc.content) ILIKE '%polizia%')
+     * ...
+     * 
+     * @param  array<string>  $terms  Array di termini (nome originale + sinonimi)
+     * @param  bool  $useTableAlias  Se true usa "dc.content", altrimenti "content"
+     * @return array{sql: string, params: array<string, string>}
+     */
+    private function buildSynonymMatchingConditions(array $terms, bool $useTableAlias = false): array
+    {
+        if (count($terms) < 2) {
+            return ['sql' => '', 'params' => []];
+        }
+
+        $contentField = $useTableAlias ? 'dc.content' : 'content';
+        $conditions = [];
+        $params = [];
+        $paramIndex = 0;
+
+        // Genera tutte le combinazioni di coppie di termini (massimo 10 per evitare query troppo lunghe)
+        $maxPairs = min(10, (count($terms) * (count($terms) - 1)) / 2);
+        $pairsGenerated = 0;
+
+        for ($i = 0; $i < count($terms) && $pairsGenerated < $maxPairs; $i++) {
+            for ($j = $i + 1; $j < count($terms) && $pairsGenerated < $maxPairs; $j++) {
+                $term1 = trim($terms[$i]);
+                $term2 = trim($terms[$j]);
+                
+                // Skip termini troppo corti o identici
+                if (mb_strlen($term1) < 2 || mb_strlen($term2) < 2 || $term1 === $term2) {
+                    continue;
+                }
+
+                $key1 = "syn_term_{$paramIndex}_1";
+                $key2 = "syn_term_{$paramIndex}_2";
+                
+                $conditions[] = "(LOWER({$contentField}) ILIKE :{$key1} AND LOWER({$contentField}) ILIKE :{$key2})";
+                $params[$key1] = '%'.$term1.'%';
+                $params[$key2] = '%'.$term2.'%';
+                
+                $paramIndex++;
+                $pairsGenerated++;
+            }
+        }
+
+        $sql = !empty($conditions) ? 'OR '.implode(' OR ', $conditions) : '';
+
+        return [
+            'sql' => $sql,
+            'params' => $params,
+        ];
+    }
+
     private function isLikelyNotPhone(string $phone, string $content, string $originalMatch): bool
     {
         // Rimuovi prefisso internazionale per i controlli
