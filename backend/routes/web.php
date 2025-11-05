@@ -203,11 +203,11 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::get('/tenants/{tenant}/feedback-export', [FeedbackAdminController::class, 'export'])->name('tenants.feedback.export');
 
     // RAG Configuration
-    Route::get('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'show'])->name('rag-config.show');
-Route::post('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'update'])->name('rag-config.update');
-Route::delete('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'reset'])->name('rag-config.reset');
-Route::get('/rag-config/profile-template', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'getProfileTemplate'])->name('rag-config.profile-template');
-Route::post('/tenants/{tenant}/rag-config/test', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'testConfig'])->name('rag-config.test');
+    Route::get('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'show'])->name('tenants.rag-config.show');
+    Route::post('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'update'])->name('tenants.rag-config.update');
+    Route::delete('/tenants/{tenant}/rag-config', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'reset'])->name('tenants.rag-config.reset');
+    Route::get('/rag-config/profile-template', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'getProfileTemplate'])->name('rag-config.profile-template');
+    Route::post('/tenants/{tenant}/rag-config/test', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'testConfig'])->name('tenants.rag-config.test');
 
 // 🎯 NUOVE ROUTE: Scraping singolo URL e re-scraping documenti
 Route::post('/scraper/single-url', [App\Http\Controllers\Admin\ScraperAdminController::class, 'scrapeSingleUrl'])->name('scraper.single-url');

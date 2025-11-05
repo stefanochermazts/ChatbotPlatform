@@ -1,0 +1,59 @@
+{
+    "path1_direct": {
+        "status": "success",
+        "duration_ms": 15572.96,
+        "citations_count": 3,
+        "context_length": 4434,
+        "system_prompt_length": 450,
+        "llm_answer": "Il numero di telefono per contattare il comando della Polizia Locale di San Cesareo non è specificato nel contesto fornito. Ti consiglio di contattare il Comune di San Cesareo al numero 06.95898223 per ulteriori informazioni.",
+        "has_correct_phone": true,
+        "has_wrong_phone": false,
+        "citations": [
+            {
+                "id": 4304,
+                "score": 0.00980392156862745,
+                "snippet_preview": "Numeri ed indirizzi utili\n\nNome: [Polizia di Stato](https:\/\/www.comune.sancesareo.rm.it\/c058119\/zf\/i"
+            },
+            {
+                "id": 4350,
+                "score": 0.009900990099009901,
+                "snippet_preview": "06.95898223\n\nOrari apertura al pubblico Ats\n\n| Lunedì |   9:00 \\-11:00 |\n| --- | --- |\n| Ultimo vene"
+            },
+            {
+                "id": 4315,
+                "score": 0.009259259259259259,
+                "snippet_preview": "Numeri ed indirizzi utili\n\nNome: [Linea di ascolto Telefono Azzurro](https:\/\/www.comune.sancesareo.r"
+            }
+        ]
+    },
+    "path2_orchestration": {
+        "status": "success",
+        "duration_ms": 6309.33,
+        "citations_count": 3,
+        "confidence": 0.29413649531715025,
+        "llm_answer": "Il numero di telefono per contattare il Comando della Polizia Locale di San Cesareo non è specificato nei documenti forniti. Ti consiglio di contattare il numero generale del Comune al 06.95898223 per ulteriori informazioni.",
+        "has_correct_phone": true,
+        "has_wrong_phone": false,
+        "citations": [
+            {
+                "id": 4304,
+                "score": 0.00980392156862745,
+                "snippet_preview": "Numeri ed indirizzi utili\n\nNome: [Polizia di Stato](https:\/\/www.comune.sancesareo.rm.it\/c058119\/zf\/i"
+            },
+            {
+                "id": 4350,
+                "score": 0.009900990099009901,
+                "snippet_preview": "06.95898223\n\nOrari apertura al pubblico Ats\n\n| Lunedì |   9:00 \\-11:00 |\n| --- | --- |\n| Ultimo vene"
+            },
+            {
+                "id": 4315,
+                "score": 0.009259259259259259,
+                "snippet_preview": "Numeri ed indirizzi utili\n\nNome: [Linea di ascolto Telefono Azzurro](https:\/\/www.comune.sancesareo.r"
+            }
+        ]
+    },
+    "path3_rag_tester": {
+        "status": "error",
+        "error": "Call to a member function isAdmin() on null"
+    }
+}

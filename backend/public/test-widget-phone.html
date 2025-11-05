@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Test - Telefono Polizia Locale</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #2196f3;
+            margin-bottom: 20px;
+        }
+        .test-info h3 {
+            margin: 0 0 10px 0;
+            color: #1976d2;
+        }
+        .test-info ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+        .instructions {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .instructions h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .instructions ol {
+            line-height: 1.8;
+        }
+        .instructions code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #d63384;
+        }
+        .success-criteria {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .success-criteria h3 {
+            margin: 0 0 10px 0;
+            color: #155724;
+        }
+        .failure-criteria {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .failure-criteria h3 {
+            margin: 0 0 10px 0;
+            color: #721c24;
+        }
+        .debug-panel {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .debug-panel h3 {
+            margin: 0 0 10px 0;
+            color: #856404;
+        }
+        .debug-info {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .quick-test {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .quick-test button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .quick-test button:hover {
+            background: #45a049;
+        }
+        .quick-test button.clear {
+            background: #ff9800;
+        }
+        .quick-test button.clear:hover {
+            background: #f57c00;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧪 Widget Test - Telefono Polizia Locale</h1>
+        <p><strong>Tenant:</strong> San Cesareo (ID: 5)</p>
+        <p><strong>Query:</strong> "telefono comando polizia locale"</p>
+        <p><strong>Expected:</strong> 06.95898223 (Comando Polizia Locale)</p>
+    </div>
+
+    <div class="test-info">
+        <h3>📊 Backend Test Results</h3>
+        <ul>
+            <li>✅ PATH 1 (Direct PHP): <strong>SUCCESS</strong> - Returns 06.95898223</li>
+            <li>✅ PATH 2 (Orchestration): <strong>SUCCESS</strong> - Returns 06.95898223</li>
+            <li>✅ PATH 3 (RAG Tester Logic): <strong>SUCCESS</strong> - Returns 06.95898223</li>
+        </ul>
+        <p style="margin: 10px 0 0 0;"><strong>Goal:</strong> Verify Widget UI shows the same result</p>
+    </div>
+
+    <div class="instructions">
+        <h2>📋 Test Instructions</h2>
+        <ol>
+            <li>Open DevTools (<code>F12</code>)</li>
+            <li>Go to <strong>Network</strong> tab</li>
+            <li>Enable <strong>Preserve log</strong> and <strong>Disable cache</strong></li>
+            <li>Click the widget button (bottom-right corner)</li>
+            <li>Type the query: <code>telefono comando polizia locale</code></li>
+            <li>Press <strong>Enter</strong> and wait for response</li>
+            <li>Check the response below</li>
+        </ol>
+    </div>
+
+    <div class="quick-test">
+        <h2>🚀 Quick Actions</h2>
+        <button onclick="openWidget()">Open Widget</button>
+        <button onclick="sendTestQuery()" style="background: #2196f3;">Send Test Query (Auto)</button>
+        <button class="clear" onclick="clearCache()">Clear Cache & Reload</button>
+    </div>
+
+    <div class="success-criteria">
+        <h3>✅ Success Criteria</h3>
+        <ul>
+            <li>Response contains: <strong>"06.95898223"</strong></li>
+            <li>Response does NOT contain: "06.9587004" (Carabinieri)</li>
+            <li>Response does NOT contain: "Non ho trovato informazioni"</li>
+            <li>Citations: 3 documents</li>
+            <li>Doc 4350 in top 3 citations</li>
+        </ul>
+    </div>
+
+    <div class="failure-criteria">
+        <h3>❌ Failure Indicators</h3>
+        <ul>
+            <li>"Non ho trovato informazioni sufficienti nella base di conoscenza"</li>
+            <li>"06.9587004" (wrong phone - Carabinieri)</li>
+            <li>Empty response or timeout</li>
+            <li>0 citations or missing citations</li>
+        </ul>
+    </div>
+
+    <div class="debug-panel">
+        <h3>🔍 Debug Information</h3>
+        <div class="debug-info" id="debugInfo">
+            Waiting for widget interaction...<br>
+            Open DevTools Console to see detailed logs.
+        </div>
+    </div>
+
+    <!-- Widget Script -->
+    <script>
+        // Widget configuration
+        window.ChatbotConfig = {
+            tenantId: 5,
+            apiUrl: window.location.origin,
+            position: 'bottom-right',
+            theme: 'light',
+            debug: true // Enable debug logs
+        };
+
+        // Debug logging
+        const originalConsoleLog = console.log;
+        const debugDiv = document.getElementById('debugInfo');
+        let debugLines = [];
+
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            
+            // Capture widget-related logs
+            const message = args.join(' ');
+            if (message.includes('Widget') || message.includes('chat') || message.includes('06.')) {
+                debugLines.push(`[${new Date().toLocaleTimeString()}] ${message}`);
+                if (debugLines.length > 20) debugLines.shift(); // Keep last 20 lines
+                debugDiv.innerHTML = debugLines.join('<br>');
+                debugDiv.scrollTop = debugDiv.scrollHeight;
+            }
+        };
+
+        function openWidget() {
+            console.log('📍 Opening widget manually...');
+            // Try to find and click the widget button
+            const widgetBtn = document.querySelector('[data-widget-toggle]') || 
+                            document.querySelector('.chatbot-toggle') ||
+                            document.querySelector('#chatbot-toggle');
+            if (widgetBtn) {
+                widgetBtn.click();
+                console.log('✅ Widget opened');
+            } else {
+                console.warn('⚠️ Widget button not found. Is the widget script loaded?');
+            }
+        }
+
+        function sendTestQuery() {
+            console.log('📍 Attempting to send test query automatically...');
+            
+            // Wait for widget to be ready
+            setTimeout(() => {
+                const input = document.querySelector('.chatbot-input') ||
+                            document.querySelector('input[placeholder*="message"]') ||
+                            document.querySelector('textarea');
+                
+                if (input) {
+                    input.value = 'telefono comando polizia locale';
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    // Try to find and click send button
+                    const sendBtn = document.querySelector('.chatbot-send') ||
+                                  document.querySelector('button[type="submit"]');
+                    if (sendBtn) {
+                        sendBtn.click();
+                        console.log('✅ Test query sent!');
+                    } else {
+                        console.warn('⚠️ Send button not found. Please send manually.');
+                    }
+                } else {
+                    console.warn('⚠️ Input field not found. Please open widget first.');
+                }
+            }, 500);
+        }
+
+        function clearCache() {
+            console.log('🗑️ Clearing cache and reloading...');
+            localStorage.clear();
+            sessionStorage.clear();
+            location.reload(true);
+        }
+
+        // Log widget load status
+        window.addEventListener('load', () => {
+            console.log('📄 Page loaded');
+            console.log('🔧 Widget config:', window.ChatbotConfig);
+            
+            setTimeout(() => {
+                if (typeof window.ChatbotWidget !== 'undefined') {
+                    console.log('✅ Widget script loaded successfully');
+                } else {
+                    console.error('❌ Widget script not loaded. Check if chatbot-widget.js exists.');
+                }
+            }, 1000);
+        });
+
+        // Intercept fetch to log API calls
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const url = args[0];
+            if (typeof url === 'string' && url.includes('/api/chat/completions')) {
+                console.log('📡 API Request:', url);
+                originalConsoleLog('Request body:', args[1]?.body);
+            }
+            
+            return originalFetch.apply(this, args).then(response => {
+                if (typeof url === 'string' && url.includes('/api/chat/completions')) {
+                    response.clone().json().then(data => {
+                        console.log('📥 API Response:', data);
+                        
+                        // Check for phone number
+                        const content = data?.choices?.[0]?.message?.content || '';
+                        if (content.includes('06.95898223')) {
+                            console.log('✅ SUCCESS: Correct phone found!');
+                            debugDiv.innerHTML = '<strong style="color: green;">✅ SUCCESS: Response contains 06.95898223</strong><br>' + debugDiv.innerHTML;
+                        } else if (content.includes('06.9587004')) {
+                            console.error('❌ FAIL: Wrong phone (Carabinieri)');
+                            debugDiv.innerHTML = '<strong style="color: red;">❌ FAIL: Wrong phone 06.9587004</strong><br>' + debugDiv.innerHTML;
+                        } else if (content.includes('Non ho trovato')) {
+                            console.error('❌ FAIL: Generic fallback response');
+                            debugDiv.innerHTML = '<strong style="color: red;">❌ FAIL: "Non ho trovato" response</strong><br>' + debugDiv.innerHTML;
+                        }
+                        
+                        // Log citations
+                        const citations = data?.citations || [];
+                        console.log(`📋 Citations: ${citations.length}`);
+                        if (citations.length > 0) {
+                            citations.forEach((c, i) => {
+                                console.log(`   [${i+1}] Doc:${c.document_id || c.id} Score:${c.score}`);
+                            });
+                        }
+                    }).catch(e => console.error('Error parsing response:', e));
+                }
+                return response;
+            });
+        };
+    </script>
+
+    <!-- Load Widget Script -->
+    <script src="/widget/js/chatbot-widget.js"></script>
+</body>
+</html>
+

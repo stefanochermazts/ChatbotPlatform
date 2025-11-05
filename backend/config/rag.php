@@ -180,8 +180,11 @@ return [
     // 🎯 Citation Scoring Configuration
     // Multi-dimensional scoring for ranking RAG citations
     'scoring' => [
+        // Enable/disable citation scoring (default: false to match baseline behavior)
+        'enabled' => filter_var(env('RAG_SCORING_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        
         // Minimum composite score threshold for filtering (0.0-1.0)
-        'min_confidence' => (float) env('RAG_SCORING_MIN_CONFIDENCE', 0.30),
+        'min_confidence' => (float) env('RAG_SCORING_MIN_CONFIDENCE', 0.001),
         
         // Dimension weights (must sum to ~1.0)
         'weights' => [

@@ -12,7 +12,7 @@
       <a href="{{ route('admin.scraper.edit', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-emerald-100 text-emerald-700 rounded text-sm hover:bg-emerald-200">
         🕷️ Scraper
       </a>
-      <a href="{{ route('admin.rag-config.show', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-purple-100 text-purple-700 rounded text-sm hover:bg-purple-200">
+      <a href="{{ route('admin.tenants.rag-config.show', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-purple-100 text-purple-700 rounded text-sm hover:bg-purple-200">
         🎛️ RAG Config
       </a>
       <a href="{{ route('admin.tenants.feedback.index', $tenant) }}" class="inline-flex items-center px-3 py-2 bg-amber-100 text-amber-700 rounded text-sm hover:bg-amber-200">
@@ -97,7 +97,7 @@
       <p class="text-sm text-blue-700 mb-3">
         Le configurazioni degli intent (abilitazione, soglie, modalità KB) sono ora gestite nella nuova interfaccia RAG unificata.
       </p>
-      <a href="{{ route('admin.rag-config.show', $tenant) }}" 
+      <a href="{{ route('admin.tenants.rag-config.show', $tenant) }}" 
          class="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
         🎛️ Vai alla Configurazione RAG
       </a>

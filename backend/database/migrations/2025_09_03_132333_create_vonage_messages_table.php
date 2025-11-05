@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('vonage_messages', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->onDelete('cascade');
-            $table->string('message_id')->nullable()->index(); // UUID da Vonage
+            $table->string('message_id')->nullable(); // UUID da Vonage (index added below)
             $table->string('from'); // Numero/ID mittente
             $table->string('to'); // Numero/ID destinatario
             $table->text('message'); // Contenuto del messaggio
@@ -28,7 +28,7 @@ return new class extends Migration
             // Indici per performance
             $table->index(['tenant_id', 'created_at']);
             $table->index(['tenant_id', 'channel']);
-            $table->index(['message_id']);
+            $table->index(['message_id']); // Index for message_id (not inline to avoid duplicate)
         });
     }
 

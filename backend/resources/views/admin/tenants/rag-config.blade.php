@@ -25,7 +25,7 @@
             </div>
 
             <!-- Profile Selector -->
-            <form id="rag-config-form" method="POST" action="{{ route('admin.rag-config.update', $tenant) }}">
+            <form id="rag-config-form" method="POST" action="{{ route('admin.tenants.rag-config.update', $tenant) }}">
                 @csrf
                 <div class="mb-6 p-4 bg-blue-50 rounded-lg">
                     <label for="rag_profile" class="block text-sm font-medium text-gray-700 mb-2">
@@ -950,7 +950,7 @@ async function testConfig() {
     console.log('CSRF Token:', window.csrfToken);
     
     try {
-        const response = await fetch(`{{ route('admin.rag-config.test', $tenant) }}`, {
+        const response = await fetch(`{{ route('admin.tenants.rag-config.test', $tenant) }}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1050,7 +1050,7 @@ async function resetToDefaults() {
     }
     
     try {
-        const response = await fetch(`{{ route('admin.rag-config.reset', $tenant) }}`, {
+        const response = await fetch(`{{ route('admin.tenants.rag-config.reset', $tenant) }}`, {
             method: 'DELETE',
             headers: {
                 'X-CSRF-TOKEN': window.csrfToken

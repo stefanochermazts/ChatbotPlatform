@@ -125,7 +125,7 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
 
             // Step 5: Citation Scoring (NEW!)
             $stepStart = microtime(true);
-            if (! empty($citations)) {
+            if (! empty($citations) && (bool) config('rag.scoring.enabled', false)) {
                 // Normalize citation format for scorer (expects 'content' field)
                 $normalizedCitations = array_map(function ($citation) {
                     if (! isset($citation['content'])) {
@@ -144,7 +144,7 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
                     'query' => $queryText,
                     'intent' => $intentData['intent'] ?? '',
                     'tenant_id' => $tenantId,
-                    'min_confidence' => (float) config('rag.answer.min_confidence', 0.05),
+                    'min_confidence' => (float) config('rag.scoring.min_confidence', 0.001),
                 ]);
 
                 // Replace citations with scored & sorted ones

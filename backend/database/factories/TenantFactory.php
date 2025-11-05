@@ -32,18 +32,12 @@ class TenantFactory extends Factory
             'default_language' => 'it',
             'custom_system_prompt' => null,
             'custom_context_template' => null,
-            'intents_enabled' => [
-                'thanks' => true,
-                'schedule' => true,
-                'address' => true,
-                'email' => true,
-                'phone' => true,
-            ],
+            // intents_enabled campo obsoleto - ora usa rag_settings.intents.enabled
             'extra_intent_keywords' => [],
             'kb_scope_mode' => 'relaxed',
             'intent_min_score' => null,
-            // I nuovi tenant erediteranno automaticamente i sinonimi di default
-            'custom_synonyms' => DefaultSynonymsSeeder::getDefaultSynonyms(),
+            // I nuovi tenant erediteranno automaticamente i sinonimi di default  
+            'custom_synonyms' => [],  // Empty for tests - avoid serialization issues
         ];
     }
 }

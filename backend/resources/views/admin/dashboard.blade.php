@@ -17,7 +17,7 @@
         @endforeach
       </select>
       @if($selectedTenant)
-        <a class="text-blue-600 underline" href="{{ route('admin.rag-config.show', $selectedTenant) }}">Apri RAG config del tenant</a>
+        <a class="text-blue-600 underline" href="{{ route('admin.tenants.rag-config.show', $selectedTenant) }}">Apri RAG config del tenant</a>
       @endif
       <span class="ml-auto text-xs text-gray-600">Scope: <strong>{{ $ragScope ?? 'global' }}</strong></span>
     </form>
