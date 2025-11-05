@@ -16,7 +16,7 @@ class ContextBuilder
      *
      * @param  array<int, array{title?:string,url?:string,snippet?:string,chunk_text?:string,phone?:string,email?:string,address?:string,schedule?:string,document_source_url?:string}>  $citations
      * @param  int  $tenantId  Tenant ID for custom context template
-     * @param  array{compression_enabled?:bool,max_chars?:int}  $options  Optional configuration overrides
+     * @param  array{compression_enabled?:bool,max_chars?:int,for_preview?:bool}  $options  Optional configuration overrides
      * @return array{context:string, sources: array<int, array{title:string,url:string}>}
      */
     public function build(array $citations, int $tenantId, array $options = []): array
@@ -26,6 +26,7 @@ class ContextBuilder
         $maxChars = (int) ($options['max_chars'] ?? ($cfg['max_chars'] ?? 4000));
         $compressOver = (int) ($cfg['compress_if_over_chars'] ?? 600);
         $compressTarget = (int) ($cfg['compress_target_chars'] ?? 300);
+        $forPreview = (bool) ($options['for_preview'] ?? false);
 
         // Dedup su testo e URL
         $seenHash = [];
@@ -41,7 +42,11 @@ class ContextBuilder
 
         $parts = [];
         foreach ($unique as $c) {
-            $snippet = (string) ($c['snippet'] ?? $c['chunk_text'] ?? '');
+            // 🔧 FIX: Use full chunk_text for LLM context to prevent hallucinations
+            // Use short snippet only for UI preview
+            $snippet = $forPreview
+                ? (string) ($c['snippet'] ?? $c['chunk_text'] ?? '')
+                : (string) ($c['chunk_text'] ?? $c['snippet'] ?? '');
 
             // Compress if enabled and snippet is too long
             if ($enabled && mb_strlen($snippet) > $compressOver) {

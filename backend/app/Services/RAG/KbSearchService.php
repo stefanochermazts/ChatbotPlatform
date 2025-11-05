@@ -14,6 +14,7 @@ class KbSearchService
         private readonly MilvusClient $milvus,
         private readonly TextSearchService $text,
         private readonly TenantRagConfigService $tenantConfig,
+        private readonly SynonymExpansionService $synonymExpansion,
         private readonly RerankerInterface $reranker = new EmbeddingReranker(new \App\Services\LLM\OpenAIEmbeddingsService),
         private readonly ?MultiQueryExpander $mq = null,
         private readonly RagCache $cache = new RagCache,
@@ -44,7 +45,7 @@ class KbSearchService
 
         // 🔧 ESPANSIONE SINONIMI: Espandi sempre la query con i sinonimi del tenant
         // Questo migliora significativamente il retrieval semantico e BM25
-        $expandedQuery = $this->expandQueryWithSynonyms($normalizedQuery, $tenantId);
+        $expandedQuery = $this->synonymExpansion->expand($normalizedQuery, $tenantId);
 
         $profiling['breakdown']['Query Normalization'] = round((microtime(true) - $stepStart) * 1000, 2);
 
@@ -97,7 +98,7 @@ class KbSearchService
             // ⏱️ STEP 4: Debug Information Building (Enhanced with Intent Config)
             $stepStart = microtime(true);
             $q = mb_strtolower($query);
-            $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
+            $expandedQ = $this->synonymExpansion->expand($q, $tenantId);
 
             // Get intent configuration for debug
             $intentConfig = $this->tenantConfig->getIntentsConfig($tenantId);
@@ -1304,7 +1305,7 @@ class KbSearchService
         $name = $this->extractNameFromQuery($query, $intentType);
 
         // Espandi il nome con sinonimi per migliorare la ricerca
-        $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
+        $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
 
         switch ($intentType) {
             case 'thanks':
@@ -1466,93 +1467,19 @@ class KbSearchService
     }
 
     /**
-     * Espande il nome estratto con sinonimi per migliorare la ricerca nei documenti
+     * @deprecated Use SynonymExpansionService::expandName() instead
      */
     private function expandNameWithSynonyms(string $name, ?int $tenantId = null): string
     {
-        $synonyms = $this->getTenantSynonyms($tenantId);
-
-        // Colleziona tutti i termini senza duplicazioni
-        $allTerms = [$name];
-
-        // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
-        $sortedSynonyms = $synonyms;
-        uksort($sortedSynonyms, fn ($a, $b) => strlen($b) - strlen($a));
-
-        foreach ($sortedSynonyms as $term => $synonymList) {
-            if (str_contains(strtolower($name), strtolower($term))) {
-                // Aggiungi i sinonimi alla collezione
-                $synonymWords = explode(' ', $synonymList);
-                foreach ($synonymWords as $word) {
-                    $word = trim($word);
-                    if ($word !== '' && ! in_array(strtolower($word), array_map('strtolower', $allTerms))) {
-                        $allTerms[] = $word;
-                    }
-                }
-                // Prendi solo il primo match per evitare sovrapposizioni
-                break;
-            }
-        }
-
-        return implode(' ', $allTerms);
+        return $this->synonymExpansion->expandName($name, $tenantId);
     }
 
     /**
-     * Espande la query con sinonimi comuni per migliorare il retrieval semantico e BM25
-     *
-     * @param  string  $query  Query originale
-     * @param  int|null  $tenantId  ID del tenant per sinonimi personalizzati
-     * @return string Query espansa con sinonimi
+     * @deprecated Use SynonymExpansionService::expand() instead
      */
     private function expandQueryWithSynonyms(string $query, ?int $tenantId = null): string
     {
-        $synonyms = $this->getTenantSynonyms($tenantId);
-
-        if (empty($synonyms)) {
-            return $query; // Nessun sinonimo configurato
-        }
-
-        // Normalizza la query per il matching case-insensitive
-        $queryLower = mb_strtolower($query);
-        $expanded = $query;
-        $addedSynonyms = [];
-
-        // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
-        $sortedSynonyms = $synonyms;
-        uksort($sortedSynonyms, fn ($a, $b) => strlen($b) - strlen($a));
-
-        foreach ($sortedSynonyms as $term => $synonymList) {
-            $termLower = mb_strtolower($term);
-
-            // Match case-insensitive con word boundary per evitare match parziali
-            // Es: "comune" non deve matchare in "comunemente"
-            if (preg_match('/\b'.preg_quote($termLower, '/').'\b/u', $queryLower)) {
-                // Aggiungi i sinonimi evitando duplicati
-                $synonymWords = preg_split('/[\s,]+/', $synonymList, -1, PREG_SPLIT_NO_EMPTY);
-                foreach ($synonymWords as $synonym) {
-                    $synonym = trim($synonym);
-                    $synonymLower = mb_strtolower($synonym);
-
-                    // Evita duplicati: non aggiungere se già presente nella query o nei sinonimi aggiunti
-                    // FIX: Use word boundary regex instead of str_contains to avoid false positives
-                    // (e.g., "tel" should not match inside "telefono")
-                    $alreadyInQuery = preg_match('/\b'.preg_quote($synonymLower, '/').'\b/u', $queryLower);
-
-                    if ($synonym !== '' &&
-                        ! $alreadyInQuery &&
-                        ! in_array($synonymLower, $addedSynonyms, true)) {
-                        $addedSynonyms[] = $synonymLower;
-                    }
-                }
-            }
-        }
-
-        // Aggiungi i sinonimi alla query
-        if (! empty($addedSynonyms)) {
-            $expanded .= ' '.implode(' ', $addedSynonyms);
-        }
-
-        return $expanded;
+        return $this->synonymExpansion->expand($query, $tenantId);
     }
 
     /**
@@ -1785,7 +1712,7 @@ class KbSearchService
      */
     private function buildSemanticQuery(string $name, string $intentType, ?int $tenantId = null): string
     {
-        $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
+        $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
 
         // Mantieni il bigram "polizia locale" se presente, evita termini rumorosi/esoterici
         $parts = [];
@@ -2078,7 +2005,7 @@ class KbSearchService
         ]);
 
         // Espandi la query con sinonimi per ricerca diretta
-        $expandedTerms = $this->expandQueryWithSynonyms($query, $tenantId);
+        $expandedTerms = $this->synonymExpansion->expand($query, $tenantId);
 
         // Cerca documenti che contengono i termini target
         $searchTerms = [
@@ -2348,7 +2275,7 @@ class KbSearchService
     private function attemptTextFallback(string $intentType, int $tenantId, string $name, string $originalQuery, ?int $knowledgeBaseId = null): array
     {
         // Usa la ricerca testuale diretta come ultima risorsa
-        $expandedName = $this->expandNameWithSynonyms($name, $tenantId);
+        $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
 
         $results = match ($intentType) {
             'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
@@ -2559,29 +2486,19 @@ class KbSearchService
     }
 
     /**
-     * Ottieni sinonimi personalizzati del tenant con fallback ai sinonimi globali
+     * @deprecated Moved to SynonymExpansionService - kept for backward compatibility
      */
     private function getTenantSynonyms(?int $tenantId): array
     {
-        if ($tenantId === null) {
-            return $this->getSynonymsMap(); // Fallback a sinonimi globali
-        }
-
-        $tenant = Tenant::find($tenantId);
-        if (! $tenant) {
-            return $this->getSynonymsMap(); // Fallback se tenant non trovato
-        }
-
-        // Se il tenant ha sinonimi personalizzati, usali; altrimenti fallback
-        if (! empty($tenant->custom_synonyms)) {
-            return (array) $tenant->custom_synonyms;
-        }
-
-        return $this->getSynonymsMap(); // Fallback a sinonimi globali
+        // Delegate to new service but extract from cache
+        $tenant = $tenantId ? Tenant::find($tenantId) : null;
+        return $tenant && !empty($tenant->custom_synonyms)
+            ? (array) $tenant->custom_synonyms
+            : $this->getSynonymsMap();
     }
 
     /**
-     * Mappa centralizzata dei sinonimi (fallback globale)
+     * @deprecated Moved to SynonymExpansionService::getGlobalSynonyms() - kept for backward compatibility
      */
     private function getSynonymsMap(): array
     {
