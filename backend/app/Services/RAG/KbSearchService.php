@@ -199,6 +199,13 @@ class KbSearchService
             if ($result !== null) {
                 // Espansione opzionale info di contatto (abilitata via flag)
                 $contactExpansionEnabled = (bool) ($this->tenantConfig->getConfig($tenantId)['features']['contact_expansion'] ?? false);
+                Log::info("🎯 [INTENT] Contact expansion check", [
+                    'tenant_id' => $tenantId,
+                    'intent_type' => $intentType,
+                    'contact_expansion_enabled' => $contactExpansionEnabled,
+                    'is_contact_intent' => in_array($intentType, ['phone', 'email', 'address']),
+                    'will_expand' => $contactExpansionEnabled && in_array($intentType, ['phone', 'email', 'address']),
+                ]);
                 if ($contactExpansionEnabled && in_array($intentType, ['phone', 'email', 'address'])) {
                     $expansionResult = $this->executeContactInfoExpansion($intentType, $tenantId, $query, $debug, $selectedKbIdIntent, $result);
                     if ($expansionResult !== null) {
