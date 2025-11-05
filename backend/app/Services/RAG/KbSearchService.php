@@ -82,13 +82,21 @@ class KbSearchService
         $profiling['breakdown']['Intent Detection'] = round((microtime(true) - $stepStart) * 1000, 2);
 
         // 📊 LOG: Intent Detection Results
+        // 🔧 FIX: detectIntents() restituisce array di stringhe, non array di array
         if (! empty($intents)) {
             Log::info('🎯 [INTENT] Intent detected', [
                 'tenant_id' => $tenantId,
                 'query' => $query,
-                'intents_detected' => array_column($intents, 'type'),
+                'intents_detected' => $intents, // Array di stringhe: ['phone', 'email', etc.]
                 'intents_count' => count($intents),
-                'top_intent' => $intents[0]['type'] ?? null,
+                'top_intent' => $intents[0] ?? null, // Prima stringa dell'array
+                'detection_time_ms' => $profiling['breakdown']['Intent Detection'],
+            ]);
+        } else {
+            Log::info('🎯 [INTENT] Nessun intent rilevato', [
+                'tenant_id' => $tenantId,
+                'query' => $query,
+                'normalized_query' => $normalizedQuery,
                 'detection_time_ms' => $profiling['breakdown']['Intent Detection'],
             ]);
         }
@@ -141,8 +149,19 @@ class KbSearchService
         ]);
 
         // Esegui l'intent con score più alto (già ordinati per priorità in detectIntents)
+        Log::info('🔍 [RETRIEVE] Inizio esecuzione intent', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'intents_count' => count($intents),
+            'intents_list' => $intents,
+        ]);
+        
         foreach ($intents as $intentType) {
-            Log::info("🔍 [RETRIEVE] Testando intent: {$intentType}");
+            Log::info("🔍 [RETRIEVE] Testando intent: {$intentType}", [
+                'tenant_id' => $tenantId,
+                'query' => $query,
+                'intent_index' => array_search($intentType, $intents),
+            ]);
 
             // Usa la stessa logica di selezione KB del metodo principale
             if ($useMultiKb) {
@@ -162,6 +181,13 @@ class KbSearchService
             }
 
             // 🔧 Prima prova l'intent NORMALE (mantiene la logica esistente che funziona)
+            Log::info("🚀 [RETRIEVE] Eseguendo executeIntent", [
+                'intent_type' => $intentType,
+                'tenant_id' => $tenantId,
+                'query' => $query,
+                'selected_kb_id' => $selectedKbIdIntent,
+            ]);
+            
             $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
 
             Log::info("📊 [RETRIEVE] Risultato intent {$intentType}", [
@@ -1225,7 +1251,8 @@ class KbSearchService
     private function detectIntents(string $query, ?int $tenantId = null): array
     {
         $q = mb_strtolower($query);
-        $expandedQ = $this->expandQueryWithSynonyms($q, $tenantId);
+        // 🔧 FIX: Usa SynonymExpansionService invece del metodo deprecato
+        $expandedQ = $this->synonymExpansion->expand($q, $tenantId);
         $intents = [];
 
         // Ottieni configurazione intent del tenant
@@ -1302,44 +1329,104 @@ class KbSearchService
      */
     private function executeIntent(string $intentType, int $tenantId, string $query, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
+        Log::info("🎯 [EXECUTE-INTENT] Inizio esecuzione intent", [
+            'intent_type' => $intentType,
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'knowledge_base_id' => $knowledgeBaseId,
+        ]);
+        
         $name = $this->extractNameFromQuery($query, $intentType);
+        
+        Log::info("🎯 [EXECUTE-INTENT] Nome estratto", [
+            'intent_type' => $intentType,
+            'extracted_name' => $name,
+        ]);
 
         // Espandi il nome con sinonimi per migliorare la ricerca
         $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
+        
+        Log::info("🎯 [EXECUTE-INTENT] Nome espanso con sinonimi", [
+            'intent_type' => $intentType,
+            'original_name' => $name,
+            'expanded_name' => $expandedName,
+        ]);
 
         switch ($intentType) {
             case 'thanks':
                 // Intent speciale: restituisce direttamente una risposta cortese senza cercare documenti
+                Log::info("🎯 [EXECUTE-INTENT] Eseguendo intent 'thanks'");
                 return $this->executeThanksIntent($tenantId, $query, $debug);
             case 'schedule':
+                Log::info("🎯 [EXECUTE-INTENT] Cercando schedule", [
+                    'expanded_name' => $expandedName,
+                    'knowledge_base_id' => $knowledgeBaseId,
+                ]);
                 $results = $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'schedule';
                 break;
             case 'phone':
+                Log::info("🎯 [EXECUTE-INTENT] Cercando telefoni", [
+                    'expanded_name' => $expandedName,
+                    'knowledge_base_id' => $knowledgeBaseId,
+                ]);
                 $results = $this->text->findPhonesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'phone';
                 break;
             case 'email':
+                Log::info("🎯 [EXECUTE-INTENT] Cercando email", [
+                    'expanded_name' => $expandedName,
+                    'knowledge_base_id' => $knowledgeBaseId,
+                ]);
                 $results = $this->text->findEmailsNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'email';
                 break;
             case 'address':
+                Log::info("🎯 [EXECUTE-INTENT] Cercando indirizzi", [
+                    'expanded_name' => $expandedName,
+                    'knowledge_base_id' => $knowledgeBaseId,
+                ]);
                 $results = $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
                 $field = 'address';
                 break;
             default:
+                Log::warning("🎯 [EXECUTE-INTENT] Intent type sconosciuto", [
+                    'intent_type' => $intentType,
+                ]);
                 return null;
         }
+        
+        Log::info("🎯 [EXECUTE-INTENT] Risultati ricerca", [
+            'intent_type' => $intentType,
+            'results_count' => count($results),
+            'field' => $field,
+        ]);
 
         // Se la ricerca specifica non trova nulla, prova ricerca semantica con sinonimi
         if ($results === []) {
+            Log::info("🎯 [EXECUTE-INTENT] Nessun risultato trovato, provo fallback semantico", [
+                'intent_type' => $intentType,
+                'name' => $name,
+            ]);
             $semanticResults = $this->executeSemanticFallback($intentType, $tenantId, $name, $query, $debug, $knowledgeBaseId);
             if ($semanticResults !== null) {
+                Log::info("🎯 [EXECUTE-INTENT] Fallback semantico trovato risultati", [
+                    'intent_type' => $intentType,
+                    'citations_count' => count($semanticResults['citations'] ?? []),
+                ]);
                 return $semanticResults;
             }
 
+            Log::info("🎯 [EXECUTE-INTENT] Nessun risultato trovato né con ricerca specifica né con fallback", [
+                'intent_type' => $intentType,
+            ]);
             return null;
         }
+        
+        Log::info("🎯 [EXECUTE-INTENT] Risultati trovati con ricerca specifica", [
+            'intent_type' => $intentType,
+            'results_count' => count($results),
+        ]);
 
         // ⚡ OPTIMIZATION: Batch load documents (avoid N+1 query)
         $documentIds = array_unique(array_map(fn ($r) => (int) $r['document_id'], $results));

@@ -108,6 +108,17 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
 
             // Step 4: RAG Retrieval
             $stepStart = microtime(true);
+            
+            // 🔍 DEBUG: Log query prima del retrieval per tracciare intent detection
+            Log::info('🔍 [WIDGET-ORCHESTRATION] Chiamando retrieval', [
+                'tenant_id' => $tenantId,
+                'original_query' => $queryText,
+                'final_query' => $finalQuery,
+                'is_complete_query' => $intentData['is_complete_query'] ?? false,
+                'complete_intent_type' => $intentData['intent_type'] ?? null,
+                'will_call' => $intentData['is_complete_query'] ? 'retrieveComplete' : 'retrieve',
+            ]);
+            
             $retrieval = $intentData['is_complete_query']
                 ? $this->kbSearch->retrieveComplete($tenantId, $finalQuery, $intentData, true)
                 : $this->kbSearch->retrieve($tenantId, $finalQuery, true);
