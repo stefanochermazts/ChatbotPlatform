@@ -172,7 +172,9 @@ class SynonymExpansionService
             // Sinonimi per uffici pubblici
             'comune' => 'municipio municipalità ente locale',
             'municipio' => 'comune municipalità',
-            'anagrafe' => 'ufficio anagrafico stato civile',
+            'anagrafe' => 'ufficio anagrafico stato civile servizi demografici',
+            'servizi demografici' => 'anagrafe ufficio anagrafico stato civile',
+            'stato civile' => 'anagrafe ufficio anagrafico',
             'tributi' => 'tasse imposte fiscale',
 
             // Sinonimi per contatti

@@ -1,0 +1,16 @@
+=== DIRECT CHAT TEST ===
+
+1. Retrieving citations...
+   Citations: 3
+2. Building context...
+   Context length: 4558 chars
+3. Calling LLM...
+
+✅ LLM RESPONSE:
+================================================================================
+Per contattare il comando della Polizia Locale di San Cesareo, puoi utilizzare il numero di telefono 06.95898223. 
+
+Se hai bisogno di ulteriori informazioni o assistenza, non esitare a chiedere!
+================================================================================
+
+🎉 SUCCESS! Telefono corretto nella risposta!

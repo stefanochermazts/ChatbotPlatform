@@ -1292,6 +1292,17 @@ class KbSearchService
 
         // Filtra e ordina per score (più alto = più specifico)
         arsort($scores);
+
+        Log::debug('🎯 [INTENT] Score evaluation', [
+            'tenant_id' => $tenantId,
+            'original_query' => $query,
+            'normalized_query' => $q,
+            'expanded_query' => $expandedQ,
+            'min_score' => $minScore,
+            'execution_strategy' => $executionStrategy,
+            'enabled_intents' => $enabledIntents,
+            'scores' => $scores,
+        ]);
         foreach ($scores as $intent => $score) {
             // ✅ FIX BUG 1: Rispetta il threshold min_score
             if ($score >= $minScore) {
@@ -1369,7 +1380,7 @@ class KbSearchService
                     'expanded_name' => $expandedName,
                     'knowledge_base_id' => $knowledgeBaseId,
                 ]);
-                $results = $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
+                $results = $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId, $name);
                 $field = 'schedule';
                 break;
             case 'phone':
@@ -1393,7 +1404,7 @@ class KbSearchService
                     'expanded_name' => $expandedName,
                     'knowledge_base_id' => $knowledgeBaseId,
                 ]);
-                $results = $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId);
+                $results = $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId, $name);
                 $field = 'address';
                 break;
             default:
@@ -1631,7 +1642,7 @@ class KbSearchService
                 $debugInfo['semantic_fallback']['retry_results_found'] = count($retryHits);
                 if (! empty($retryHits)) {
                     // Ricicla il percorso di estrazione
-                    $data = $this->extractIntentDataFromSemanticResults($retryHits, $intentType, $tenantId);
+                    $data = $this->extractIntentDataFromSemanticResults($retryHits, $intentType, $tenantId, $name);
                     if (! empty($data)) {
                         return [
                             'citations' => $data,
@@ -1647,7 +1658,7 @@ class KbSearchService
         }
 
         // Filtra i risultati per estrarre solo quelli che contengono informazioni del tipo richiesto
-        $filteredResults = $this->extractIntentDataFromSemanticResults($semanticHits, $intentType, $tenantId);
+        $filteredResults = $this->extractIntentDataFromSemanticResults($semanticHits, $intentType, $tenantId, $name);
         if ($knowledgeBaseId !== null) {
             // filtra risultati per KB
             $docIds = array_values(array_unique(array_column($filteredResults, 'document_id')));
@@ -1833,7 +1844,7 @@ class KbSearchService
     /**
      * Estrae dati specifici dell'intent dai risultati semantici
      */
-    private function extractIntentDataFromSemanticResults(array $semanticHits, string $intentType, int $tenantId): array
+    private function extractIntentDataFromSemanticResults(array $semanticHits, string $intentType, int $tenantId, string $name): array
     {
         $results = [];
         $processedCount = 0;
@@ -1844,6 +1855,11 @@ class KbSearchService
             'tenant_id' => $tenantId,
             'total_hits' => count($semanticHits),
         ]);
+
+        $nameNormalized = mb_strtolower(trim($name));
+        $primaryTerms = array_values(array_filter(array_unique(preg_split('/\s+/', $nameNormalized, -1, PREG_SPLIT_NO_EMPTY) ?: []), static fn(string $term) => mb_strlen($term) >= 3));
+        $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
+        $expandedTerms = array_values(array_filter(array_unique(preg_split('/\s+/', mb_strtolower($expandedName), -1, PREG_SPLIT_NO_EMPTY) ?: []), static fn(string $term) => mb_strlen($term) >= 3));
 
         foreach ($semanticHits as $hit) {
             $processedCount++;
@@ -1871,9 +1887,19 @@ class KbSearchService
                 continue;
             }
 
+            if (! $this->contentContainsAnyTerm($content, $primaryTerms, $expandedTerms)) {
+                Log::debug('🚫 [EXTRACT] Chunk scartato: nome non presente', [
+                    'doc_id' => $docId,
+                    'intent_type' => $intentType,
+                    'name' => $name,
+                ]);
+
+                continue;
+            }
+
             // Usa TextSearchService per estrarre dati specifici dal contenuto
             $extracted = match ($intentType) {
-                'schedule' => $this->extractScheduleFromContent($content),
+                'schedule' => $this->extractScheduleFromContent($content, array_merge($primaryTerms, $expandedTerms)),
                 'phone' => $this->extractPhoneFromContent($content),
                 'email' => $this->extractEmailFromContent($content),
                 'address' => $this->extractAddressFromContent($content),
@@ -1901,6 +1927,15 @@ class KbSearchService
                         'excerpt' => mb_substr($content, 0, 300).(mb_strlen($content) > 300 ? '...' : ''),
                     ];
                 }
+            } elseif ($intentType === 'schedule' && stripos($content, 'riceve per appuntamento') !== false) {
+                $extractedCount++;
+                $results[] = [
+                    'document_id' => (int) $hit['document_id'],
+                    'chunk_index' => (int) $hit['chunk_index'],
+                    'schedule' => 'Riceve per appuntamento (orario su richiesta)',
+                    'score' => (float) $hit['score'],
+                    'excerpt' => mb_substr($content, 0, 300).(mb_strlen($content) > 300 ? '...' : ''),
+                ];
             }
         }
 
@@ -1922,7 +1957,7 @@ class KbSearchService
     /**
      * Estrae orari da un contenuto usando i pattern migliorati
      */
-    private function extractScheduleFromContent(string $content): array
+    private function extractScheduleFromContent(string $content, array $terms = []): array
     {
         Log::debug('⏰ [SCHEDULE] Estrazione orari da contenuto', [
             'content_length' => strlen($content),
@@ -1930,7 +1965,7 @@ class KbSearchService
         ]);
 
         // 🚀 TECNICA EVOLUTA 1: MULTI-STEP CONTEXT-AWARE EXTRACTION
-        $advancedResult = $this->advancedScheduleExtraction($content);
+        $advancedResult = $this->advancedScheduleExtraction($content, $terms);
         if (! empty($advancedResult)) {
             Log::info('🎯 [SCHEDULE] Estrazione avanzata riuscita', [
                 'method' => 'context_aware_extraction',
@@ -1989,6 +2024,59 @@ class KbSearchService
         return $uniqueSchedules;
     }
 
+    private function contentContainsAnyTerm(string $content, array $primaryTerms, array $fallbackTerms): bool
+    {
+        $terms = $primaryTerms !== [] ? $primaryTerms : $fallbackTerms;
+        if ($terms === []) {
+            return true;
+        }
+
+        $lower = mb_strtolower($content);
+        foreach ($terms as $term) {
+            $term = trim($term);
+            if ($term === '' || mb_strlen($term) < 3) {
+                continue;
+            }
+            if (mb_strpos($lower, $term) !== false) {
+                return true;
+            }
+        }
+
+        if ($primaryTerms !== [] && $fallbackTerms !== []) {
+            foreach ($fallbackTerms as $term) {
+                $term = trim($term);
+                if ($term === '' || mb_strlen($term) < 3) {
+                    continue;
+                }
+                if (mb_strpos($lower, $term) !== false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function stringContainsAnyTerm(string $text, array $terms): bool
+    {
+        $lower = mb_strtolower($text);
+        $genericTerms = ['ufficio', 'uffici', 'servizio', 'servizi', 'comune', 'municipio'];
+        foreach ($terms as $term) {
+            $term = trim(mb_strtolower($term));
+            if ($term === '' || mb_strlen($term) < 3) {
+                continue;
+            }
+            if (in_array($term, $genericTerms, true)) {
+                continue;
+            }
+            if (mb_strpos($lower, $term) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * 🚀 TECNICA RAG EVOLUTA: CONTEXT-AWARE SCHEDULE EXTRACTION
      *
@@ -1999,7 +2087,7 @@ class KbSearchService
      * 4. Fuzzy Table Parsing - Gestisce tabelle malformate
      * 5. Inference-Based Completion - Inferisce orari da giorni di apertura
      */
-    private function advancedScheduleExtraction(string $content): array
+    private function advancedScheduleExtraction(string $content, array $terms = []): array
     {
         Log::debug('🚀 [ADVANCED] Inizio estrazione avanzata orari');
 
@@ -2015,13 +2103,16 @@ class KbSearchService
         $results = [];
 
         foreach ($contexts as $context) {
+            if ($terms !== [] && ! $this->stringContainsAnyTerm($context['entity'], $terms)) {
+                continue;
+            }
             Log::debug("🎯 [ADVANCED] Processando contesto: {$context['entity']}", [
                 'context_start' => $context['start'],
                 'context_length' => $context['length'],
             ]);
 
             // STEP 2: PROXIMITY-BASED EXTRACTION - Estrae dati vicini al contesto
-            $extracted = $this->extractFromContext($content, $context);
+            $extracted = $this->extractFromContext($content, $context, $terms);
 
             if (! empty($extracted['schedules'])) {
                 $results = array_merge($results, $extracted['schedules']);
@@ -2066,7 +2157,7 @@ class KbSearchService
                 $entity = $matches[0][0];
 
                 // Determina la lunghezza del contesto da analizzare (500 caratteri dopo l'entità)
-                $contextLength = min(800, strlen($content) - $start);
+                $contextLength = min(400, strlen($content) - $start);
 
                 $contexts[] = [
                     'type' => $type,
@@ -2170,7 +2261,7 @@ class KbSearchService
     /**
      * STEP 2: Estrae dati da un contesto specifico
      */
-    private function extractFromContext(string $content, array $context): array
+    private function extractFromContext(string $content, array $context, array $terms = []): array
     {
         $start = $context['start'];
         $length = $context['length'];
@@ -2209,18 +2300,73 @@ class KbSearchService
             '/(?:martedì|giovedì|venerdì)\s+(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})/iu',
         ];
 
+        $scheduleCandidates = [];
+
+        $tableCandidates = $this->extractSchedulesFromTableRows($contextText);
+        if ($tableCandidates !== []) {
+            foreach ($tableCandidates as $candidate) {
+                $scheduleCandidates[] = [
+                    'value' => $candidate['value'],
+                    'position' => $context['start'] + $candidate['position'],
+                ];
+            }
+        }
         foreach ($schedulePatterns as $pattern) {
-            if (preg_match_all($pattern, $contextText, $scheduleMatches, PREG_SET_ORDER)) {
+            if (preg_match_all($pattern, $contextText, $scheduleMatches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
                 foreach ($scheduleMatches as $match) {
                     if (isset($match[1]) && isset($match[2])) {
-                        $schedule = $match[1].'-'.$match[2];
-                        // Valida che sia un orario sensato
-                        if ($this->isValidTimeRange($match[1], $match[2])) {
-                            $extracted['schedules'][] = $schedule;
+                        $startValue = $match[1][0];
+                        $endValue = $match[2][0];
+                        if ($this->isValidTimeRange($startValue, $endValue)) {
+                            $scheduleCandidates[] = [
+                                'value' => $startValue.'-'.$endValue,
+                                'position' => $match[0][1],
+                            ];
                         }
                     }
                 }
             }
+        }
+
+        $added = false;
+        foreach ($scheduleCandidates as $candidate) {
+            if ($terms !== []) {
+                $windowStart = max(0, $candidate['position'] - 120);
+                $window = substr($contextText, $windowStart, 240);
+                if (! $this->stringContainsAnyTerm($window, $terms) && ! $this->stringContainsAnyTerm($context['entity'], $terms)) {
+                    continue;
+                }
+            }
+
+            $extracted['schedules'][] = $candidate['value'];
+            $added = true;
+        }
+
+        if (! $added) {
+            if (preg_match('/([^.\n]{0,80}(?:riceve|solo|previo|su)[^.\n]{0,80}appuntamento[^.\n]*)/iu', $contextText, $appointmentMatch, PREG_OFFSET_CAPTURE)) {
+                $windowStart = max(0, $appointmentMatch[0][1] - 120);
+                $window = substr($contextText, $windowStart, 240);
+                if ($terms === [] || $this->stringContainsAnyTerm($window, $terms) || $this->stringContainsAnyTerm($context['entity'], $terms)) {
+                    $extracted['schedules'][] = preg_replace('/\s+/', ' ', trim($appointmentMatch[0][0]));
+                    $added = true;
+                }
+            }
+        }
+
+        if (! $added) {
+            if (preg_match('/([^.\n]{0,80}prenotazione[^.\n]{0,80})/iu', $contextText, $bookingMatch, PREG_OFFSET_CAPTURE)) {
+                $windowStart = max(0, $bookingMatch[0][1] - 120);
+                $window = substr($contextText, $windowStart, 240);
+                if ($terms === [] || $this->stringContainsAnyTerm($window, $terms) || $this->stringContainsAnyTerm($context['entity'], $terms)) {
+                    $extracted['schedules'][] = preg_replace('/\s+/', ' ', trim($bookingMatch[0][0]));
+                    $added = true;
+                }
+            }
+        }
+
+        if (! $added && stripos($contextText, 'riceve per appuntamento') !== false) {
+            $extracted['schedules'][] = 'Riceve per appuntamento';
+            $added = true;
         }
 
         Log::debug('📊 [EXTRACT] Dati estratti dal contesto', [
@@ -2232,6 +2378,77 @@ class KbSearchService
         ]);
 
         return $extracted;
+    }
+
+    private function extractSchedulesFromTableRows(string $contextText): array
+    {
+        $candidates = [];
+        $lines = preg_split('/\r?\n/', $contextText) ?: [];
+        $cursor = 0;
+        $dayPattern = '/^(?:\*{0,2})?(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica|lun|mar|mer|gio|ven|sab|dom)(?:\*{0,2})?$/iu';
+
+        foreach ($lines as $line) {
+            $lineLength = mb_strlen($line) + 1;
+            $lineStart = $cursor;
+            $cursor += $lineLength;
+
+            if (substr_count($line, '|') < 2) {
+                continue;
+            }
+
+            $rawCells = array_map(static fn ($cell) => trim($cell), explode('|', $line));
+            $cells = array_values(array_filter($rawCells, static fn ($cell) => $cell !== '' && $cell !== '---'));
+
+            if ($cells === []) {
+                continue;
+            }
+
+            $dayCell = $cells[0] ?? '';
+            $dayCellNormalized = preg_replace('/\s+/', ' ', strip_tags($dayCell));
+
+            if (! preg_match($dayPattern, $dayCellNormalized, $dayMatch)) {
+                continue;
+            }
+
+            $times = [];
+            foreach (array_slice($cells, 1) as $cell) {
+                $normalizedCell = preg_replace('/\s+/', ' ', strip_tags($cell));
+                if ($normalizedCell === '' || $normalizedCell === '**CHIUSO**' || strcasecmp($normalizedCell, 'CHIUSO') === 0) {
+                    if (strcasecmp($normalizedCell, 'CHIUSO') === 0 || stripos($normalizedCell, 'CHIUSO') !== false) {
+                        $times[] = 'Chiuso';
+                    }
+                    continue;
+                }
+
+                if (preg_match_all('/(\d{1,2}[:\.]?\d{2})\s*[-–—]\s*(\d{1,2}[:\.]?\d{2})/', $normalizedCell, $rangeMatches)) {
+                    foreach ($rangeMatches[1] as $idx => $startTime) {
+                        $endTime = $rangeMatches[2][$idx] ?? null;
+                        $times[] = $endTime ? ($startTime.'-'.$endTime) : $startTime;
+                    }
+                    continue;
+                }
+
+                if (preg_match_all('/\d{1,2}[:\.]?\d{2}/', $normalizedCell, $singleMatches)) {
+                    $times[] = implode(' ', $singleMatches[0]);
+                }
+            }
+
+            if ($times === []) {
+                continue;
+            }
+
+            $day = ucfirst($dayMatch[1]);
+            $timeValue = $day.': '.implode('; ', $times);
+
+            $relativePosition = $lineStart + (mb_stripos($line, $dayMatch[1]) ?: 0);
+
+            $candidates[] = [
+                'value' => $timeValue,
+                'position' => $relativePosition,
+            ];
+        }
+
+        return $candidates;
     }
 
     /**
@@ -2356,6 +2573,45 @@ class KbSearchService
         preg_match_all($pattern3, $content, $matches3);
         $addresses = array_merge($addresses, $matches3[0] ?? []);
 
+        // Pattern 4: estrazione da tabelle Markdown/HTML
+        $lines = preg_split('/\r?\n/', $content) ?: [];
+        $cursor = 0;
+        $addressKeywords = ['indirizzo', 'sede', 'ubicazione', 'dove', 'presso', 'civico'];
+
+        foreach ($lines as $line) {
+            $lineLength = mb_strlen($line) + 1;
+            $lineStart = mb_strpos($content, $line, $cursor);
+            if ($lineStart === false) {
+                $lineStart = $cursor;
+            }
+            $cursor = $lineStart + $lineLength;
+
+            if (substr_count($line, '|') < 2) {
+                continue;
+            }
+
+            $rawCells = explode('|', $line);
+            foreach ($rawCells as $cell) {
+                $normalized = preg_replace('/\s+/', ' ', trim(strip_tags($cell)));
+                if ($normalized === '' || $normalized === '---') {
+                    continue;
+                }
+
+                $lower = mb_strtolower($normalized);
+                $containsKeyword = false;
+                foreach ($addressKeywords as $keyword) {
+                    if (mb_strpos($lower, $keyword) !== false) {
+                        $containsKeyword = true;
+                        break;
+                    }
+                }
+
+                if ($containsKeyword || preg_match($pattern1, $normalized) || preg_match($pattern3, $normalized)) {
+                    $addresses[] = $normalized;
+                }
+            }
+        }
+
         // Pulisci e rimuovi duplicati
         $addresses = array_map('trim', $addresses);
         $addresses = array_filter($addresses, fn ($addr) => mb_strlen($addr) >= 5); // Min 5 caratteri
@@ -2372,10 +2628,10 @@ class KbSearchService
         $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
 
         $results = match ($intentType) {
-            'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
+            'schedule' => $this->text->findSchedulesNearName($tenantId, $expandedName, 5, $knowledgeBaseId, $name),
             'phone' => $this->text->findPhonesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
             'email' => $this->text->findEmailsNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
-            'address' => $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId),
+            'address' => $this->text->findAddressesNearName($tenantId, $expandedName, 5, $knowledgeBaseId, $name),
             default => []
         };
 
@@ -3229,6 +3485,14 @@ class KbSearchService
         // STEP 3: Filtro minimale basato sulla query (solo per escludere chunk completamente irrilevanti)
         $relevantChunks = $this->filterRelevantChunks($allChunks, $query);
 
+        Log::debug('🎯 [COMPLETE-RETRIEVAL] Chunk filtering summary', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'total_chunks' => count($allChunks),
+            'relevant_chunks' => count($relevantChunks),
+            'sample_chunk_ids' => array_slice(array_map(static fn ($chunk) => $chunk->id ?? null, $relevantChunks), 0, 15),
+        ]);
+
         // STEP 4: Costruisci risposta nel formato standard
         $citations = $this->buildCitationsFromChunks($relevantChunks);
 
@@ -3237,6 +3501,7 @@ class KbSearchService
         Log::info('✅ [COMPLETE-RETRIEVAL] Complete retrieval finished', [
             'tenant_id' => $tenantId,
             'total_documents' => count($targetDocuments),
+            'document_ids' => array_map(static fn ($doc) => $doc->id ?? null, $targetDocuments),
             'total_chunks' => count($allChunks),
             'relevant_chunks' => count($relevantChunks),
             'final_citations' => count($citations),

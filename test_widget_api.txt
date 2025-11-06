@@ -1,0 +1,3 @@
+=== TEST WIDGET ENDPOINT ===
+
+❌ API key not found for tenant 5!

@@ -73,6 +73,11 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
             // Step 2: Intent Detection
             $stepStart = microtime(true);
             $intentData = $this->completeDetector->detectCompleteIntent($queryText);
+            Log::debug('🎯 [COMPLETE-DETECTOR] Evaluation', [
+                'tenant_id' => $tenantId,
+                'query' => $queryText,
+                'intent_data' => $intentData,
+            ]);
             $this->profiler->profile([
                 'step' => 'intent_detection',
                 'duration_ms' => (microtime(true) - $stepStart) * 1000,
