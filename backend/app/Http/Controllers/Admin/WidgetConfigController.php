@@ -119,6 +119,7 @@ class WidgetConfigController extends Controller
             'enabled' => 'boolean',
             'widget_name' => 'required|string|max:255',
             'welcome_message' => 'nullable|string|max:1000',
+            'source_link_text' => 'nullable|string|max:100',
             'position' => ['required', Rule::in(['bottom-right', 'bottom-left', 'top-right', 'top-left'])],
             'auto_open' => 'boolean',
             

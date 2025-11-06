@@ -101,6 +101,22 @@
                       placeholder="Ciao! Sono l'assistente virtuale di {{ $tenant->name }}. Come posso aiutarti oggi?">{{ old('welcome_message', $config->welcome_message) }}</textarea>
             @error('welcome_message')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
           </div>
+          
+          <div class="mt-4">
+            <label for="source_link_text" class="block text-sm font-medium text-gray-700">
+              Testo Link Fonte
+              <span class="text-gray-500 text-xs">(appare nei link alle fonti)</span>
+            </label>
+            <input type="text" name="source_link_text" id="source_link_text" 
+                   value="{{ old('source_link_text', $config->source_link_text ?? 'Fonte') }}"
+                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="Fonte"
+                   maxlength="100">
+            <p class="mt-1 text-sm text-gray-500">
+              Personalizza il testo del link alle fonti. Es: "Approfondisci qui", "Vedi il sito", "Leggi di più"
+            </p>
+            @error('source_link_text')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+          </div>
         </div>
         
         <!-- Theme Configuration -->

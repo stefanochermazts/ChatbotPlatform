@@ -16,6 +16,7 @@ class WidgetConfig extends Model
         'enabled',
         'widget_name',
         'welcome_message',
+        'source_link_text',
         'position',
         'auto_open',
         'theme',

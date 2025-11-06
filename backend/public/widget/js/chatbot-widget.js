@@ -2676,6 +2676,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       this.agentSessionId = null;
       this.handoffStatus = 'bot_only'; // bot_only, handoff_pending, operator_active
       this.operatorInfo = null;
+      this.sessionStartFailed = false; // 🔧 FIX: Track if session creation failed to avoid repeated attempts
       
       // Event emitter for real-time updates
       this.events = new EventEmitter();
@@ -2722,16 +2723,29 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
         };
       } catch (error) {
         console.error('🚨 Failed to start agent session:', error);
-        // Fallback to local session management
-        this.agentSessionId = 'fallback_' + Date.now();
-        return { sessionId: this.agentSessionId, status: 'bot_only' };
+        // 🔧 FIX: Don't create fallback ID - it will cause 422 errors when sending messages
+        // The widget will still work for chatbot, just not for agent console tracking
+        this.agentSessionId = null;
+        return null;
       }
     }
 
     async sendMessage(content, senderType = 'user') {
-      if (!this.agentSessionId) {
+      // 🔧 FIX: Only try to start session if we don't have one AND it's not already failed
+      if (!this.agentSessionId && !this.sessionStartFailed) {
         console.warn('🚨 No agent session active, starting one...');
-        await this.startSession();
+        const result = await this.startSession();
+        if (!result || !result.sessionId) {
+          console.warn('🚨 Agent session start failed, skipping agent console integration');
+          this.sessionStartFailed = true;
+          return; // Don't try to send to agent console
+        }
+      }
+
+      // 🔧 FIX: Don't try to send if session creation failed
+      if (!this.agentSessionId || this.sessionStartFailed) {
+        console.log('🎯 Agent console disabled, skipping message send to agent console');
+        return;
       }
 
       try {
@@ -2764,13 +2778,21 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
 
     async requestHandoff(reason = 'user_request', priority = 'normal') {
       // 🎯 Se non c'è una sessione attiva, creala prima
-      if (!this.agentSessionId) {
+      // 🔧 FIX: Don't attempt if session creation already failed
+      if (!this.agentSessionId && !this.sessionStartFailed) {
         console.log('🎯 No active session, starting new session for handoff...');
-        const sessionStarted = await this.startSession();
-        if (!sessionStarted) {
+        const result = await this.startSession();
+        if (!result || !result.sessionId) {
           console.warn('🚨 Failed to start session for handoff');
+          this.sessionStartFailed = true;
           return false;
         }
+      }
+      
+      // 🔧 FIX: Can't request handoff if session creation failed
+      if (this.sessionStartFailed) {
+        console.warn('🚨 Cannot request handoff: Agent console session unavailable');
+        return false;
       }
 
       try {

@@ -40,6 +40,9 @@ class ContextBuilder
             $unique[] = $c;
         }
 
+        // 🎨 Load tenant for widget config (source link text)
+        $tenant = Tenant::find($tenantId);
+        
         $parts = [];
         foreach ($unique as $c) {
             // 🔧 FIX: Use full chunk_text for LLM context to prevent hallucinations
@@ -73,7 +76,10 @@ class ContextBuilder
             // ✅ ADD: Source URL (matches RagTestController logic)
             $sourceInfo = '';
             if (! empty($c['document_source_url'])) {
-                $sourceInfo = "\n[Fonte: ".$c['document_source_url'].']';
+                // 🔧 FIX: Use valid markdown link format [text](url) instead of [text: url]
+                // 🎨 USE: Configurable source link text from widget config
+                $sourceLinkText = $tenant->widgetConfig->source_link_text ?? 'Fonte';
+                $sourceInfo = "\n\n[".$sourceLinkText."](".$c['document_source_url'].')';
             }
 
             // Combine all parts
@@ -95,7 +101,7 @@ class ContextBuilder
         }
 
         // ✅ ADD: Apply tenant custom_context_template (matches RagTestController logic)
-        $tenant = Tenant::find($tenantId);
+        // Note: $tenant already loaded earlier for widget config
         if ($tenant && ! empty($tenant->custom_context_template)) {
             $context = "\n\n".str_replace('{context}', $rawContext, $tenant->custom_context_template);
         } else {
