@@ -20,7 +20,18 @@ class TextSearchService
         // FIX: Use OR logic instead of AND logic for better synonym expansion support
         // Convert query to OR-separated terms: "tel phone comando" -> "tel | phone | comando"
         $terms = preg_split('/\s+/', trim($query), -1, PREG_SPLIT_NO_EMPTY);
-        $orQuery = implode(' | ', $terms);
+        $sanitizedTerms = $this->sanitizeTsQueryTerms($terms);
+
+        if ($sanitizedTerms === []) {
+            Log::warning('⚠️ [TEXT-SEARCH] Nessun termine valido dopo sanitizzazione tsquery', [
+                'tenant_id' => $tenantId,
+                'raw_query' => $query,
+            ]);
+
+            return [];
+        }
+
+        $orQuery = implode(' | ', $sanitizedTerms);
 
         if ($knowledgeBaseId !== null) {
             $sql = <<<SQL
@@ -73,6 +84,79 @@ class TextSearchService
                 'score' => (float) $r->score,
             ];
         }, $rows);
+    }
+
+    /**
+     * Sanitize terms before building a Postgres tsquery string.
+     *
+     * Removes reserved characters (|, &, !, :, etc.), strips punctuation from markdown tables,
+     * splits multi-token fragments, lowercases, deduplicates and limits the total number of tokens
+     * to avoid SQLSTATE[42601] errors such as:
+     *   "errore di sintassi in tsquery: 'Contesto | conversazione | ... | |----------|--------------|'"
+     *
+     * @param  array<int, string>  $terms
+     * @return array<int, string>
+     */
+    private function sanitizeTsQueryTerms(array $terms): array
+    {
+        if ($terms === []) {
+            return [];
+        }
+
+        $cleaned = [];
+
+        foreach ($terms as $term) {
+            $term = trim($term);
+
+            if ($term === '') {
+                continue;
+            }
+
+            // Remove explicit tsquery operators and markdown pipe characters
+            $term = str_replace(['|', '&', '!', ':', '(', ')', '<', '>', '~', '*', '"', '\''], ' ', $term);
+
+            // Replace remaining punctuation (e.g. table separators like ---) with spaces
+            $term = preg_replace('/[^\\p{L}\\p{N}\\s]+/u', ' ', $term);
+            $term = preg_replace('/\\s+/u', ' ', (string) $term);
+            $term = trim((string) $term);
+
+            if ($term === '') {
+                continue;
+            }
+
+            foreach (preg_split('/\\s+/u', $term, -1, PREG_SPLIT_NO_EMPTY) as $token) {
+                $token = mb_strtolower(trim($token, "-_"));
+
+                if ($token === '' || mb_strlen($token) < 2) {
+                    continue;
+                }
+
+                $cleaned[] = $token;
+            }
+        }
+
+        if ($cleaned === []) {
+            return [];
+        }
+
+        // Deduplicate while preserving order
+        $unique = [];
+        $seen = [];
+
+        foreach ($cleaned as $token) {
+            if (isset($seen[$token])) {
+                continue;
+            }
+
+            $seen[$token] = true;
+            $unique[] = $token;
+
+            if (count($unique) >= 60) {
+                break; // guard against excessively long queries
+            }
+        }
+
+        return $unique;
     }
 
     public function getChunkSnippet(int $documentId, int $chunkIndex, int $max = 300): ?string
@@ -332,7 +416,18 @@ class TextSearchService
                     break;
                 }
             }
-            if ($requiredTerms !== [] && !$hasRequiredTerm) {
+            if ($requiredTerms !== [] && ! $hasRequiredTerm) {
+                Log::debug('⛔ [INTENT-SCHEDULE] Chunk scartato: termini richiesti assenti', [
+                    'tenant_id' => $tenantId,
+                    'name' => $name,
+                    'original_name' => $originalName,
+                    'document_id' => (int) $r->document_id,
+                    'chunk_index' => (int) $r->chunk_index,
+                    'checked_terms' => $requiredTerms,
+                    'generic_terms_filtered' => $genericTerms,
+                    'content_preview' => mb_substr($lower, 0, 160),
+                ]);
+
                 continue;
             }
             // 🔧 FIX: Cerca posizione nome considerando TUTTI i termini sinonimi
@@ -570,6 +665,15 @@ class TextSearchService
                 }
 
                 if (! $hasContextTerm) {
+                    Log::debug('⛔ [INTENT-SCHEDULE] Chunk scartato: termini contesto assenti vicino all\'orario', [
+                        'tenant_id' => $tenantId,
+                        'name' => $name,
+                        'document_id' => (int) $r->document_id,
+                        'chunk_index' => (int) $r->chunk_index,
+                        'context_window' => mb_substr($contextSegment, 0, 160),
+                        'required_terms' => $requiredTerms,
+                    ]);
+
                     continue;
                 }
 
@@ -683,22 +787,23 @@ class TextSearchService
         foreach ($rows as $r) {
             $content = (string) $r->content;
             $lower = mb_strtolower($content);
-            $requiredTerms = $primaryParts !== [] ? $primaryParts : $parts;
-            $hasRequiredTerm = false;
-            foreach ($requiredTerms as $term) {
-                $term = trim($term);
-                if ($term === '' || mb_strlen($term) < 3) {
-                    continue;
-                }
-                if (in_array($term, $genericTerms, true)) {
-                    continue;
-                }
-                if (mb_strpos($lower, $term) !== false) {
-                    $hasRequiredTerm = true;
-                    break;
-                }
-            }
-            if ($requiredTerms !== [] && !$hasRequiredTerm) {
+            $requiredTerms = $primaryParts !== []
+                ? array_values(array_unique(array_merge($primaryParts, $parts)))
+                : $parts;
+            $termPositions = $this->collectTermPositions($lower, $requiredTerms, $genericTerms);
+
+            if ($requiredTerms !== [] && $termPositions === []) {
+                Log::debug('⛔ [INTENT-SCHEDULE] Chunk scartato: termini richiesti assenti', [
+                    'tenant_id' => $tenantId,
+                    'name' => $name,
+                    'original_name' => $originalName,
+                    'document_id' => (int) $r->document_id,
+                    'chunk_index' => (int) $r->chunk_index,
+                    'checked_terms' => $requiredTerms,
+                    'generic_terms_filtered' => $genericTerms,
+                    'content_preview' => mb_substr($lower, 0, 160),
+                ]);
+
                 continue;
             }
             // 🔧 FIX: Cerca posizione nome considerando TUTTI i termini sinonimi
@@ -734,7 +839,20 @@ class TextSearchService
                     }
                 }
             }
+            if ($parts !== [] && $namePos === false && ! empty($termPositions)) {
+                $namePos = min($termPositions);
+            }
             if ($parts !== [] && $namePos === false) {
+                Log::debug('⛔ [INTENT-SCHEDULE] Chunk scartato: impossibile determinare posizione nome', [
+                    'tenant_id' => $tenantId,
+                    'name' => $name,
+                    'original_name' => $originalName,
+                    'document_id' => (int) $r->document_id,
+                    'chunk_index' => (int) $r->chunk_index,
+                    'parts' => $parts,
+                    'content_preview' => mb_substr($lower, 0, 160),
+                ]);
+
                 continue;
             }
             
@@ -778,10 +896,26 @@ class TextSearchService
         }
 
         if ($scheduleCandidates === []) {
+                Log::debug('ℹ️ [INTENT-SCHEDULE] Nessun orario strutturato trovato, si prova fallback appuntamento', [
+                    'tenant_id' => $tenantId,
+                    'name' => $name,
+                    'document_id' => (int) $r->document_id,
+                    'chunk_index' => (int) $r->chunk_index,
+                    'content_preview' => mb_substr($content, 0, 200),
+                ]);
+
                 $appointmentText = $this->extractAppointmentSchedule($content, $primaryParts ?: $parts);
                 if ($appointmentText !== null) {
                     $label = $this->extractEntityLabel($content, $primaryParts ?: $parts, $namePos);
                     if ($label === null && ($primaryParts !== [] || $parts !== [])) {
+                        Log::debug('⛔ [INTENT-SCHEDULE] Fallback appuntamento scartato: label non trovata', [
+                            'tenant_id' => $tenantId,
+                            'name' => $name,
+                            'appointment' => $appointmentText,
+                            'document_id' => (int) $r->document_id,
+                            'chunk_index' => (int) $r->chunk_index,
+                        ]);
+
                         continue;
                     }
                     $posAppointment = mb_strpos($content, $appointmentText);
@@ -805,14 +939,46 @@ class TextSearchService
         foreach ($scheduleCandidates as $candidate) {
             $sched = $candidate['value'];
             $pos = $candidate['position'] ?? mb_strpos($content, $sched);
-                $dist = $namePos !== false && $pos !== false ? abs($pos - $namePos) : 9999;
-                if ($parts !== [] && ($namePos === false || $dist > 350)) {
+                $effectiveDistance = 9999;
+                if (! empty($termPositions)) {
+                    foreach ($termPositions as $termPos) {
+                        if ($pos !== false) {
+                            $effectiveDistance = min($effectiveDistance, abs($pos - $termPos));
+                        }
+                    }
+                } elseif ($namePos !== false && $pos !== false) {
+                    $effectiveDistance = abs($pos - $namePos);
+                }
+
+                if ($parts !== [] && $effectiveDistance > 350) {
+                    Log::debug('⛔ [INTENT-SCHEDULE] Candidato orario scartato per distanza', [
+                        'tenant_id' => $tenantId,
+                        'name' => $name,
+                        'document_id' => (int) $r->document_id,
+                        'chunk_index' => (int) $r->chunk_index,
+                        'schedule_value' => $sched,
+                        'distance' => $effectiveDistance,
+                        'name_pos' => $namePos,
+                        'schedule_pos' => $pos,
+                        'term_positions' => $termPositions,
+                    ]);
+
                     continue;
                 }
                 $sim = $this->trigramSimilarity($lower, $nameLower);
-                $score = $sim + max(0.0, 1.0 - min($dist, 350) / 350.0);
+                $score = $sim + max(0.0, 1.0 - min($effectiveDistance, 350) / 350.0);
                 $excerpt = $this->excerptAround($content, (int) ($pos !== false ? $pos : 0), 300);
                 $entityLabel = $this->extractEntityLabel($content, $primaryParts ?: $parts, $namePos);
+                Log::debug('✅ [INTENT-SCHEDULE] Orario valido estratto', [
+                    'tenant_id' => $tenantId,
+                    'name' => $name,
+                    'document_id' => (int) $r->document_id,
+                    'chunk_index' => (int) $r->chunk_index,
+                    'schedule_value' => trim((string) $sched),
+                    'score' => $score,
+                    'distance' => $effectiveDistance,
+                    'entity_label' => $entityLabel,
+                ]);
                 $out[] = [
                 'schedule' => trim((string) $sched),
                     'document_id' => (int) $r->document_id,
@@ -1047,6 +1213,41 @@ class TextSearchService
     }
 
     /**
+     * Raccoglie le posizioni dei termini rilevanti nel testo (già in lower-case),
+     * ignorando quelli generici.
+     *
+     * @param  string  $text
+     * @param  array<int, string>  $terms
+     * @param  array<int, string>  $genericTerms
+     * @return array<int, int>
+     */
+    private function collectTermPositions(string $text, array $terms, array $genericTerms): array
+    {
+        $positions = [];
+
+        foreach ($terms as $term) {
+            $term = trim($term);
+            if ($term === '' || mb_strlen($term) < 3) {
+                continue;
+            }
+            if (in_array($term, $genericTerms, true)) {
+                continue;
+            }
+
+            $needle = mb_strtolower($term);
+            $offset = 0;
+            while (($pos = mb_strpos($text, $needle, $offset)) !== false) {
+                $positions[] = $pos;
+                $offset = $pos + max(1, mb_strlen($needle));
+            }
+        }
+
+        sort($positions);
+
+        return array_values(array_unique($positions));
+    }
+
+    /**
      * Valida che una stringa estratta sia effettivamente un orario e non una falsa positiva
      */
     private function isValidSchedule(string $schedule, string $content, int $offset): bool
@@ -1154,7 +1355,7 @@ class TextSearchService
         $paramIndex = 0;
 
         // Genera tutte le combinazioni di coppie di termini (massimo 10 per evitare query troppo lunghe)
-        $maxPairs = min(10, (count($terms) * (count($terms) - 1)) / 2);
+        $maxPairs = min(45, (count($terms) * (count($terms) - 1)) / 2);
         $pairsGenerated = 0;
 
         for ($i = 0; $i < count($terms) && $pairsGenerated < $maxPairs; $i++) {

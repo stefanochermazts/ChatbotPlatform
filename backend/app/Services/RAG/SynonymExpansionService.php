@@ -104,27 +104,45 @@ class SynonymExpansionService
 
         // Colleziona tutti i termini senza duplicazioni
         $allTerms = [$name];
+        $lowerAllTerms = [mb_strtolower($name)];
 
         // Ordina i sinonimi per lunghezza decrescente per match più specifici prima
         $sortedSynonyms = $synonyms;
         uksort($sortedSynonyms, fn ($a, $b) => strlen($b) - strlen($a));
 
         foreach ($sortedSynonyms as $term => $synonymList) {
-            if (str_contains(strtolower($name), strtolower($term))) {
-                // Aggiungi i sinonimi alla collezione
-                $synonymWords = explode(' ', $synonymList);
-                foreach ($synonymWords as $word) {
-                    $word = trim($word);
-                    if ($word !== '' && ! in_array(strtolower($word), array_map('strtolower', $allTerms))) {
-                        $allTerms[] = $word;
+            if (str_contains(mb_strtolower($name), mb_strtolower($term))) {
+                // Mantieni la frase completa come sinonimo (es: "polizia locale")
+                if ($synonymList !== '') {
+                    $candidates = preg_split('/[\s,]+/', $synonymList, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+                    foreach ($candidates as $candidate) {
+                        $candidate = trim($candidate);
+                        if ($candidate === '') {
+                            continue;
+                        }
+                        $lowerCandidate = mb_strtolower($candidate);
+                        if (! in_array($lowerCandidate, $lowerAllTerms, true)) {
+                            $allTerms[] = $candidate;
+                            $lowerAllTerms[] = $lowerCandidate;
+                        }
+                    }
+
+                    // Se la frase contiene uno spazio, aggiungi anche la frase intera
+                    if (str_contains($synonymList, ' ')) {
+                        $lowerPhrase = mb_strtolower($synonymList);
+                        if (! in_array($lowerPhrase, $lowerAllTerms, true)) {
+                            $allTerms[] = $synonymList;
+                            $lowerAllTerms[] = $lowerPhrase;
+                        }
                     }
                 }
-                // Prendi solo il primo match per evitare sovrapposizioni
-                break;
+
+                break; // Evita sovrapposizioni multiple
             }
         }
 
-        return implode(' ', $allTerms);
+        return implode(' ', array_unique($allTerms));
     }
 
     /**
