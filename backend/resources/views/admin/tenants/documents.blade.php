@@ -107,7 +107,29 @@
           @foreach ($documents as $doc)
             <tr class="border-t">
               <td class="p-3">{{ $doc->title }}</td>
-              <td class="p-3">{{ $doc->source }}</td>
+              <td class="p-3">
+                <div class="text-xs uppercase tracking-wide text-slate-500">{{ $doc->source }}</div>
+
+                @if ($doc->source_url)
+                  <a
+                    href="{{ $doc->source_url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-indigo-600 hover:underline"
+                    title="{{ $doc->source_url }}"
+                  >
+                    {{ \Illuminate\Support\Str::limit($doc->source_url, 70) }}
+                  </a>
+
+                  @if ($doc->source_page_title)
+                    <div class="mt-1 text-xs text-slate-500">
+                      {{ \Illuminate\Support\Str::limit($doc->source_page_title, 90) }}
+                    </div>
+                  @endif
+                @else
+                  <span class="text-slate-400">N/A</span>
+                @endif
+              </td>
               <td class="p-3">{{ $doc->ingestion_status }}</td>
               <td class="p-3">
                 <a class="text-indigo-600 hover:underline mr-3" href="{{ url('storage/'.$doc->path) }}" target="_blank">Apri</a>
