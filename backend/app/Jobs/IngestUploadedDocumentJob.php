@@ -161,6 +161,11 @@ class IngestUploadedDocumentJob implements ShouldQueue
             $chunkTexts = array_map(function ($chunk) {
                 return is_array($chunk) ? ($chunk['text'] ?? '') : (string) $chunk;
             }, $allChunks);
+
+            // Generate embedding-friendly text (tables flattened to plain text)
+            $embeddingTexts = array_map(function (string $chunk) use ($parsing): string {
+                return $parsing->flattenMarkdownTables($chunk);
+            }, $chunkTexts);
             
             $total = count($chunkTexts);
             $this->updateDoc($doc, ['ingestion_progress' => 10]);
@@ -168,7 +173,7 @@ class IngestUploadedDocumentJob implements ShouldQueue
             // ========================================
             // STEP 4: Generate embeddings
             // ========================================
-            $embeddingResults = $embeddings->embedBatch($chunkTexts);
+            $embeddingResults = $embeddings->embedBatch($embeddingTexts);
             
             if (count($embeddingResults) !== $total) {
                 throw new \RuntimeException('Dimensione vettori non corrisponde ai chunk');

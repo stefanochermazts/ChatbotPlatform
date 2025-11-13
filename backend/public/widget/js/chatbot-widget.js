@@ -670,6 +670,15 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
           html = html.replace(markdownPattern, `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">$1</a>`);
         }
         
+        // 2.b Fix casi con testo senza "[" (es. "https://...](###URLMASK0###)")
+        const orphanPattern = new RegExp(`([\\w\\-.:/?#%=&+@]+)\\]\\(${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g');
+        if (orphanPattern.test(html)) {
+          html = html.replace(orphanPattern, (_match, linkText) => {
+            const text = linkText.trim();
+            return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${text}</a>`;
+          });
+        }
+
         // 3. Fallback: sostituisci placeholder standalone (non in link)
         if (html.includes(placeholder)) {
           console.log('🔧 Replacing standalone placeholder:', placeholder, '→', href);
@@ -734,10 +743,113 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     }
 
     static sanitize(html) {
-      // Rimuove script tags e attributi pericolosi per sicurezza
-      return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                .replace(/on\w+="[^"]*"/g, '')
-                .replace(/javascript:/gi, 'blocked:');
+      if (typeof DOMParser === 'undefined') {
+        return html
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/on\w+="[^"]*"/g, '')
+          .replace(/javascript:/gi, 'blocked:');
+      }
+
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+        const container = doc.querySelector('div') || doc.body;
+
+        const ALLOWED_TAGS = new Set([
+          'a', 'p', 'br', 'strong', 'em', 'code', 'pre', 'span', 'div', 'ul',
+          'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+          'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'del', 'blockquote', 'hr'
+        ]);
+
+        const ALLOWED_ATTRS = {
+          a: ['href', 'target', 'rel', 'title', 'aria-label', 'class'],
+          div: ['class', 'role'],
+          span: ['class'],
+          p: ['class'],
+          strong: ['class'],
+          em: ['class'],
+          code: ['class'],
+          pre: ['class'],
+          ul: ['class'],
+          ol: ['class'],
+          li: ['class'],
+          table: ['class', 'role'],
+          thead: ['class'],
+          tbody: ['class'],
+          tfoot: ['class'],
+          tr: ['class'],
+          th: ['class', 'scope', 'colspan', 'rowspan'],
+          td: ['class', 'colspan', 'rowspan'],
+          h1: ['class'],
+          h2: ['class'],
+          h3: ['class'],
+          h4: ['class'],
+          h5: ['class'],
+          h6: ['class'],
+          blockquote: ['class'],
+          del: ['class']
+        };
+
+        const sanitizeNode = (node) => {
+          const children = Array.from(node.childNodes);
+
+          children.forEach((child) => {
+            if (child.nodeType === 1) { // Element
+              const tag = child.tagName.toLowerCase();
+
+              if (!ALLOWED_TAGS.has(tag)) {
+                const fragment = doc.createDocumentFragment();
+                while (child.firstChild) {
+                  fragment.appendChild(child.firstChild);
+                }
+                child.replaceWith(fragment);
+                return;
+              }
+
+              const allowed = ALLOWED_ATTRS[tag] || [];
+              Array.from(child.attributes).forEach((attr) => {
+                const name = attr.name.toLowerCase();
+                if (!allowed.includes(name) || attr.value.includes('javascript:')) {
+                  child.removeAttribute(attr.name);
+                }
+              });
+
+              if (tag === 'a') {
+                const href = child.getAttribute('href') || '';
+                const safeHref = href.trim();
+                const isSafeProtocol = safeHref === '' ||
+                  safeHref.startsWith('#') ||
+                  safeHref.startsWith('/') ||
+                  safeHref.startsWith('mailto:') ||
+                  safeHref.startsWith('tel:') ||
+                  safeHref.startsWith('http://') ||
+                  safeHref.startsWith('https://');
+
+                if (!isSafeProtocol) {
+                  child.removeAttribute('href');
+                }
+
+                if (child.getAttribute('target') === '_blank') {
+                  child.setAttribute('rel', 'noopener noreferrer');
+                }
+              }
+
+              sanitizeNode(child);
+            } else if (child.nodeType === 8) { // Comment
+              child.remove();
+            }
+          });
+        };
+
+        sanitizeNode(container);
+        return container.innerHTML;
+      } catch (error) {
+        console.warn('Markdown sanitization fallback due to error:', error);
+        return html
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/on\w+="[^"]*"/g, '')
+          .replace(/javascript:/gi, 'blocked:');
+      }
     }
 
     static parseTables(html) {
@@ -881,14 +993,14 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       if (rows.length === 0) return match;
       
       // Crea HTML della tabella
-      let tableHtml = '<div class="chatbot-table-container">';
-      tableHtml += '<table class="chatbot-table">';
+      let tableHtml = '<div class="chatbot-table-container" role="region">';
+      tableHtml += '<table class="chatbot-table" role="table">';
       
       // Header
       if (rows.length > 0) {
         tableHtml += '<thead><tr>';
         rows[0].forEach(cell => {
-          tableHtml += `<th class="chatbot-table-header">${this.escapeHtml(cell)}</th>`;
+          tableHtml += `<th class="chatbot-table-header" scope="col">${this.escapeHtml(cell)}</th>`;
         });
         tableHtml += '</tr></thead>';
       }
@@ -976,8 +1088,8 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
     static buildTableFromRows(rows) {
       if (rows.length < 2) return '';
       
-      let tableHtml = '<div class="chatbot-table-container">';
-      tableHtml += '<table class="chatbot-table">';
+      let tableHtml = '<div class="chatbot-table-container" role="region">';
+      tableHtml += '<table class="chatbot-table" role="table">';
       
       let headerProcessed = false;
       let inBody = false;
@@ -997,7 +1109,7 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
             // Prima riga = header
             tableHtml += '<thead><tr>';
             for (let cell of row.cells) {
-              tableHtml += `<th class="chatbot-table-header">${this.escapeHtml(cell)}</th>`;
+              tableHtml += `<th class="chatbot-table-header" scope="col">${this.escapeHtml(cell)}</th>`;
             }
             tableHtml += '</tr></thead>';
             headerProcessed = true;
@@ -1707,12 +1819,17 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
                 📎 ${citations.length === 1 ? 'Fonte' : 'Fonti'} (${citations.length})
               </div>
               <div class="chatbot-citations-list">
-                ${citations.map((citation, index) => `
-                  <a href="${citation.url || '#'}" target="_blank" rel="noopener noreferrer" 
-                     class="chatbot-citation-simple" title="${citation.title || 'Documento'}">
-                    ${index + 1}. ${citation.title || 'Documento'}
+                ${citations.map((citation, index) => {
+                  const href = citation.page_url || citation.document_source_url || citation.url || '#';
+                  const label = citation.document_title || citation.title || `Fonte ${index + 1}`;
+                  const title = citation.description || label || 'Apri documento';
+                  return `
+                  <a href="${href}" target="_blank" rel="noopener noreferrer" 
+                     class="chatbot-citation-simple" title="${title}">
+                    ${index + 1}. ${label}
                   </a>
-                `).join('')}
+                `;
+                }).join('')}
               </div>
             </div>
           `;
@@ -1726,12 +1843,13 @@ console.warn('🔧 MARKDOWN FIX: Should see "🔧 Markdown URL masking" + "🔧 
       citations.forEach((citation, index) => {
         const citationEl = document.createElement('a');
         citationEl.className = 'chatbot-citation';
-        citationEl.href = citation.url || '#';
+        citationEl.href = citation.page_url || citation.document_source_url || citation.url || '#';
         citationEl.target = '_blank';
         citationEl.rel = 'noopener noreferrer';
         citationEl.role = 'listitem';
-        citationEl.textContent = `${index + 1}. ${citation.title || 'Documento'}`;
-        citationEl.title = citation.description || citation.title || 'Apri documento';
+        const label = citation.document_title || citation.title || `Fonte ${index + 1}`;
+        citationEl.textContent = `${index + 1}. ${label}`;
+        citationEl.title = citation.description || label || 'Apri documento';
         
         citationsList.appendChild(citationEl);
       });

@@ -9,6 +9,7 @@ use App\Contracts\Chat\ChatProfilingServiceInterface;
 use App\Contracts\Chat\ContextScoringServiceInterface;
 use App\Contracts\Chat\FallbackStrategyServiceInterface;
 use App\Exceptions\ChatException;
+use App\Services\CitationService;
 use App\Services\LLM\OpenAIChatService;
 use App\Services\RAG\CompleteQueryDetector;
 use App\Services\RAG\ContextBuilder;
@@ -19,6 +20,7 @@ use App\Services\RAG\TenantRagConfigService;
 use Generator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -46,7 +48,8 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
         private readonly TenantRagConfigService $tenantConfig,
         private readonly ContextScoringServiceInterface $scorer,
         private readonly FallbackStrategyServiceInterface $fallback,
-        private readonly ChatProfilingServiceInterface $profiler
+        private readonly ChatProfilingServiceInterface $profiler,
+        private readonly CitationService $citationService
     ) {}
 
     /**
@@ -187,9 +190,23 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
                 'success' => true,
             ]);
 
+            // Step 6.1: Normalizzazione citazioni + enrichment titoli / URL
+            $stepStart = microtime(true);
+            $normalizedCitations = $this->citationService->getCitations($filteredCitations, $tenantId);
+            $citations = $normalizedCitations->toArray();
+
+            $this->profiler->profile([
+                'step' => 'citation_normalization',
+                'duration_ms' => (microtime(true) - $stepStart) * 1000,
+                'correlation_id' => $correlationId,
+                'tenant_id' => $tenantId,
+                'success' => true,
+                'citations_count' => count($citations),
+            ]);
+
             // Step 7: Context Building (UNIFIED with RagTestController)
             $stepStart = microtime(true);
-            $contextResult = $this->contextBuilder->build($filteredCitations, $tenantId, [
+            $contextResult = $this->contextBuilder->build($citations, $tenantId, [
                 'compression_enabled' => false, // Disable LLM compression for lower latency
             ]);
             $contextText = is_array($contextResult) ? ($contextResult['context'] ?? '') : $contextResult;
@@ -204,6 +221,18 @@ class ChatOrchestrationService implements ChatOrchestrationServiceInterface
 
             // Step 8: Prepare LLM Payload
             $payload = $this->buildLLMPayload($request, $queryText, $contextText, $tenantId);
+
+            Log::channel('rag')->debug('RAG prompt payload', [
+                'tenant_id' => $tenantId,
+                'correlation_id' => $correlationId,
+                'messages' => array_map(static function (array $message) {
+                    return [
+                        'role' => $message['role'] ?? 'unknown',
+                        'content_preview' => Str::limit((string) ($message['content'] ?? ''), 500),
+                    ];
+                }, $payload['messages'] ?? []),
+                'context_excerpt' => Str::limit($contextText, 800),
+            ]);
 
             // Step 9: LLM Generation
             $stepStart = microtime(true);
@@ -435,7 +464,13 @@ IMPORTANTE per i link:
 - Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
 - NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
 - NON creare link se non conosci l\'URL esatto della fonte
-- Usa il titolo originale del documento, non descrizioni generiche';
+- Usa il titolo originale del documento, non descrizioni generiche
+
+IMPORTANTE per i dati tabellari:
+- Dai priorità ai blocchi marcati come "Table (alta priorità)" o alle sezioni che contengono tabelle Markdown (righe con "|")
+- Mantieni la struttura tabellare quando rispondi: usa tabelle Markdown con le stesse intestazioni e righe presenti nel contesto
+- Se è presente anche "Tabella (testo lineare di supporto)", usala come riferimento ma restituisci comunque la tabella Markdown completa
+- Non convertire le tabelle in testo libero né omettere righe o colonne rilevanti';
         }
         array_unshift($payload['messages'], ['role' => 'system', 'content' => $systemPrompt]);
 

@@ -117,6 +117,25 @@
             </p>
             @error('source_link_text')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
           </div>
+
+          <div class="mt-4">
+            <label for="max_citation_sources" class="block text-sm font-medium text-gray-700">
+              Numero massimo di citazioni da mostrare
+            </label>
+            <input type="number"
+                   name="max_citation_sources"
+                   id="max_citation_sources"
+                   min="1"
+                   max="100"
+                   value="{{ old('max_citation_sources', $maxCitationSources) }}"
+                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="Es. 5"
+                   aria-describedby="max-citation-help">
+            <p id="max-citation-help" class="mt-1 text-sm text-gray-500">
+              Definisce il numero massimo di fonti mostrate sotto ogni risposta del widget (valori consentiti 1-100).
+            </p>
+            @error('max_citation_sources')<div class="text-red-600 text-sm mt-1">{{ $message }}</div>@enderror
+          </div>
         </div>
         
         <!-- Theme Configuration -->

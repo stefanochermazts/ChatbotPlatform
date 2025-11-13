@@ -6,7 +6,7 @@ use App\Services\Chat\FallbackStrategyService;
 use App\Exceptions\ChatException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase as BaseTestCase;
 
 /**
  * Tests for FallbackStrategyService
@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * @group chat
  * @group services
  */
-class FallbackStrategyServiceTest extends TestCase
+class FallbackStrategyServiceTest extends BaseTestCase
 {
     private FallbackStrategyService $service;
     

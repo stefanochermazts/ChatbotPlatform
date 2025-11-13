@@ -2,11 +2,14 @@
 
 namespace App\Services\RAG;
 
+use App\Contracts\Ingestion\TextParsingServiceInterface;
 use App\Models\Tenant;
 use App\Services\LLM\OpenAIChatService;
 
 class ContextBuilder
 {
+    private ?TextParsingServiceInterface $textParser = null;
+
     public function __construct(private readonly OpenAIChatService $chat) {}
 
     /**
@@ -32,7 +35,8 @@ class ContextBuilder
         $seenHash = [];
         $unique = [];
         foreach ($citations as $c) {
-            $key = sha1(mb_strtolower(trim(($c['snippet'] ?? '').'|'.($c['url'] ?? ''))));
+            $hashSource = ($c['snippet'] ?? $c['chunk_text'] ?? '').'|'.($c['url'] ?? $c['document_source_url'] ?? '');
+            $key = sha1(mb_strtolower(trim($hashSource)));
             if (isset($seenHash[$key])) {
                 continue;
             }
@@ -43,6 +47,7 @@ class ContextBuilder
         // 🎨 Load tenant for widget config (source link text)
         $tenant = Tenant::find($tenantId);
         
+        $tableParts = [];
         $parts = [];
         foreach ($unique as $c) {
             // 🔧 FIX: Use full chunk_text for LLM context to prevent hallucinations
@@ -51,8 +56,10 @@ class ContextBuilder
                 ? (string) ($c['snippet'] ?? $c['chunk_text'] ?? '')
                 : (string) ($c['chunk_text'] ?? $c['snippet'] ?? '');
 
-            // Compress if enabled and snippet is too long
-            if ($enabled && mb_strlen($snippet) > $compressOver) {
+            $isTableChunk = $this->containsMarkdownTable($snippet);
+
+            // Compress if enabled and snippet is too long (skip for tables to preserve structure)
+            if ($enabled && ! $isTableChunk && mb_strlen($snippet) > $compressOver) {
                 $snippet = $this->compressSnippet($snippet, $compressTarget);
             }
 
@@ -84,7 +91,17 @@ class ContextBuilder
 
             // Combine all parts
             if ($snippet !== '') {
-                $parts[] = "[{$title}]\n{$snippet}{$extra}{$sourceInfo}";
+                $payloadSnippet = $isTableChunk
+                    ? $this->formatTableSnippet($snippet)
+                    : $snippet;
+
+                if ($payloadSnippet !== '') {
+                    if ($isTableChunk) {
+                        $tableParts[] = "[{$title}]\n{$payloadSnippet}{$extra}{$sourceInfo}";
+                    } else {
+                        $parts[] = "[{$title}]\n{$payloadSnippet}{$extra}{$sourceInfo}";
+                    }
+                }
             } elseif ($extra !== '') {
                 // If no snippet but has structured fields, still include it
                 $parts[] = "[{$title}]{$extra}{$sourceInfo}";
@@ -93,7 +110,11 @@ class ContextBuilder
 
         // Budget semplice per caratteri
         $rawContext = '';
-        foreach ($parts as $p) {
+        $orderedParts = $tableParts;
+        foreach ($parts as $part) {
+            $orderedParts[] = $part;
+        }
+        foreach ($orderedParts as $p) {
             if (mb_strlen($rawContext) + mb_strlen($p) + 5 > $maxChars) {
                 break;
             } // +5 for separator
@@ -133,5 +154,68 @@ class ContextBuilder
         $out = (string) ($res['choices'][0]['message']['content'] ?? '');
 
         return $out !== '' ? $out : mb_substr($text, 0, $targetChars);
+    }
+
+    private function containsMarkdownTable(string $text): bool
+    {
+        if (trim($text) === '') {
+            return false;
+        }
+
+        $lines = preg_split('/\r?\n/', $text) ?: [];
+        $tableLines = 0;
+
+        foreach ($lines as $line) {
+            $pipeCount = substr_count($line, '|');
+            if ($pipeCount >= 2) {
+                $tableLines++;
+                if ($tableLines >= 2) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function formatTableSnippet(string $snippet): string
+    {
+        $normalized = trim($snippet);
+        if ($normalized === '') {
+            return '';
+        }
+
+        // Ensure we have a blank line before table for Markdown rendering
+        if (! \str_starts_with($normalized, '|')) {
+            $adjusted = preg_replace('/(\S)\n(\|)/', "$1\n\n$2", $normalized);
+            if (is_string($adjusted)) {
+                $normalized = $adjusted;
+            }
+        }
+
+        $flattened = $this->flattenTable($normalized);
+
+        $output = "**Table (alta priorità)**\n\n".$normalized;
+
+        if ($flattened !== '' && $flattened !== $normalized) {
+            $output .= "\n\nTabella (testo lineare di supporto):\n".$flattened;
+        }
+
+        return $output;
+    }
+
+    private function flattenTable(string $tableMarkdown): string
+    {
+        try {
+            $this->textParser ??= \app(TextParsingServiceInterface::class);
+        } catch (\Throwable) {
+            $this->textParser = null;
+        }
+
+        if ($this->textParser === null) {
+            return $tableMarkdown;
+        }
+
+        return (string) $this->textParser->flattenMarkdownTables($tableMarkdown);
     }
 }

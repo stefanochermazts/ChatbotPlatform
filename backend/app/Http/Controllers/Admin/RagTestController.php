@@ -231,14 +231,20 @@ class RagTestController extends Controller
             if ($tenant && ! empty($tenant->custom_system_prompt)) {
                 $messages[] = ['role' => 'system', 'content' => $tenant->custom_system_prompt];
             } else {
-                $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
+            $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
 
 IMPORTANTE per i link:
 - Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)
 - Se citi una fonte, usa format markdown: [Titolo del documento](URL mostrato in [Fonte: URL])
 - NON inventare testi descrittivi per i link (es. evita [Gestione Entrate](url_sbagliato))
 - NON creare link se non conosci l\'URL esatto della fonte
-- Usa il titolo originale del documento, non descrizioni generiche'];
+- Usa il titolo originale del documento, non descrizioni generiche
+
+IMPORTANTE per i dati tabellari:
+- Dai priorità ai blocchi marcati come "Table (alta priorità)" o alle sezioni che contengono tabelle Markdown (righe con "|")
+- Mantieni la struttura tabellare quando rispondi: usa tabelle Markdown con le stesse intestazioni e righe presenti nel contesto
+- Se è presente anche "Tabella (testo lineare di supporto)", usala come riferimento ma restituisci comunque la tabella Markdown completa
+- Non convertire le tabelle in testo libero né omettere righe o colonne rilevanti'];
             }
 
             $messages[] = ['role' => 'user', 'content' => 'Domanda: '.$data['query']."\n".$contextText];

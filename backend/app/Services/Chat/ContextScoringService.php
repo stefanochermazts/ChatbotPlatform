@@ -119,13 +119,16 @@ class ContextScoringService implements ContextScoringServiceInterface
         
         $scored = [];
         foreach ($citations as $citation) {
-            // Validate citation structure
-            if (!isset($citation['content'])) {
+            $content = (string) ($citation['content'] ?? $citation['chunk_text'] ?? $citation['snippet'] ?? '');
+
+            if (trim($content) === '') {
                 Log::warning('scoring.invalid_citation_skipped', [
                     'citation_keys' => array_keys($citation)
                 ]);
                 continue;
             }
+
+            $citation['content'] = $content;
             
             // Calculate individual dimension scores
             $sourceScore = $this->calculateSourceScore($citation);

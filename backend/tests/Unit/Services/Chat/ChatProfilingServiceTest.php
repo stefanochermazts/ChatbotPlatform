@@ -5,7 +5,7 @@ namespace Tests\Unit\Services\Chat;
 use App\Services\Chat\ChatProfilingService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase as BaseTestCase;
 
 /**
  * Tests for ChatProfilingService
@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
  * @group chat
  * @group services
  */
-class ChatProfilingServiceTest extends TestCase
+class ChatProfilingServiceTest extends BaseTestCase
 {
     private ChatProfilingService $service;
     

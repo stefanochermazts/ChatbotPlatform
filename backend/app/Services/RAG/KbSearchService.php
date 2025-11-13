@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Services\LLM\OpenAIEmbeddingsService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class KbSearchService
 {
@@ -419,6 +420,19 @@ class KbSearchService
                         'all_document_ids' => array_column($vecHit, 'document_id'),
                         'all_scores' => array_column($vecHit, 'score'),
                     ]);
+
+                    Log::channel('rag')->debug('RAG vector search results', [
+                        'tenant_id' => $tenantId,
+                        'query' => $q,
+                        'top_results' => array_map(static function ($hit) {
+                            return [
+                                'document_id' => $hit['document_id'] ?? null,
+                                'score' => $hit['score'] ?? null,
+                                'distance' => $hit['distance'] ?? null,
+                                'preview' => Str::limit((string) ($hit['content'] ?? ''), 300),
+                            ];
+                        }, array_slice($vecHit, 0, 10)),
+                    ]);
                 }
 
                 // ⏱️ BM25 Search Timing
@@ -447,6 +461,25 @@ class KbSearchService
                             'content_preview' => substr($hit['content'] ?? '', 0, 100),
                         ];
                     }, array_slice($bmHit, 0, 5)),
+                ]);
+
+                Log::channel('rag')->debug('RAG per-query retrieval summary', [
+                    'tenant_id' => $tenantId,
+                    'query' => $q,
+                    'vector_hits' => array_map(static function ($hit) {
+                        return [
+                            'document_id' => $hit['document_id'] ?? null,
+                            'score' => $hit['score'] ?? null,
+                            'preview' => Str::limit((string) ($hit['content'] ?? ''), 300),
+                        ];
+                    }, array_slice($vecHit, 0, 10)),
+                    'bm25_hits' => array_map(static function ($hit) {
+                        return [
+                            'document_id' => $hit['document_id'] ?? null,
+                            'score' => $hit['score'] ?? null,
+                            'preview' => Str::limit((string) ($hit['content'] ?? ''), 300),
+                        ];
+                    }, array_slice($bmHit, 0, 10)),
                 ]);
 
                 $trace['per_query'][] = [
@@ -870,6 +903,19 @@ class KbSearchService
                     'score' => $c['score'] ?? 'unknown',
                 ];
             }, array_slice($cits, 0, 3)),
+        ]);
+
+        Log::channel('rag')->debug('RAG final citations payload', [
+            'tenant_id' => $tenantId,
+            'query' => $query,
+            'citations' => array_map(static function ($citation) {
+                return [
+                    'document_id' => $citation['document_id'] ?? $citation['id'] ?? null,
+                    'score' => $citation['score'] ?? null,
+                    'preview' => Str::limit((string) ($citation['chunk_text'] ?? $citation['snippet'] ?? ''), 400),
+                    'source_url' => $citation['document_source_url'] ?? $citation['url'] ?? null,
+                ];
+            }, array_slice($cits, 0, 10)),
         ]);
 
         // 📊 LOG PROFILAZIONE DETTAGLIATA

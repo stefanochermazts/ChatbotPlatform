@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\WidgetConfig;
+use App\Services\SettingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -12,6 +13,11 @@ use Illuminate\Validation\Rule;
 
 class WidgetConfigController extends Controller
 {
+    public function __construct(
+        private readonly SettingService $settingService
+    ) {
+    }
+
     /**
      * Display widget configurations list
      */
@@ -82,6 +88,7 @@ class WidgetConfigController extends Controller
         
         // Get the API key for this tenant
         $apiKey = $tenant->getWidgetApiKey();
+        $maxCitationSources = $this->settingService->getMaxCitationSources($tenant->id);
         
         $themes = [
             'default' => 'Default Blue',
@@ -104,7 +111,15 @@ class WidgetConfigController extends Controller
             'gpt-3.5-turbo' => 'GPT-3.5 Turbo'
         ];
         
-        return view('admin.widget-config.edit', compact('tenant', 'config', 'apiKey', 'themes', 'positions', 'models'));
+        return view('admin.widget-config.edit', compact(
+            'tenant',
+            'config',
+            'apiKey',
+            'themes',
+            'positions',
+            'models',
+            'maxCitationSources'
+        ));
     }
     
     /**
@@ -155,6 +170,9 @@ class WidgetConfigController extends Controller
             'allowed_domains' => 'nullable|array',
             'allowed_domains.*' => 'nullable|string|max:255',
             'enable_analytics' => 'boolean',
+            
+            // Citations Configuration
+            'max_citation_sources' => 'required|integer|min:1|max:100',
             
             // Operator Configuration
             'operator_enabled' => 'boolean',
@@ -207,8 +225,13 @@ class WidgetConfigController extends Controller
         $validated['updated_by'] = auth()->id();
         $validated['last_updated_at'] = now();
         
+        $maxCitationSources = (string) $validated['max_citation_sources'];
+        unset($validated['max_citation_sources']);
+        
         $config->fill($validated);
         $config->save();
+        
+        $this->settingService->set($tenant->id, 'widget.max_citation_sources', $maxCitationSources);
         
         return redirect()
             ->route('admin.widget-config.show', $tenant)

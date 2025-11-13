@@ -55,7 +55,7 @@ return [
     // Tenants can override via rag_settings.hybrid.* JSON field
     // TenantRagConfigService::getRetrievalConfig() is the SINGLE SOURCE OF TRUTH
     'hybrid' => [
-        'vector_top_k'    => 100, // Numero max di risultati vector search (1-1000)
+        'vector_top_k'    => 10,  // Numero max di risultati vector search (1-1000)
         'bm25_top_k'      => 30,  // Numero max di risultati BM25 text search (1-1000)
         'rrf_k'           => 60,  // Parametro K per Reciprocal Rank Fusion (1-100)
         'mmr_lambda'      => 0.1, // Peso diversità vs rilevanza in MMR (0.0-1.0, lower = more diversity)

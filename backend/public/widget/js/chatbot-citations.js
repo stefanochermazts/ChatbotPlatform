@@ -147,9 +147,13 @@
 
       const citationElements = citations.map((citation, index) => {
         const icon = this.getDocumentIcon(citation.document_type);
-        const title = this.escapeHtml(citation.title);
-        const snippet = this.escapeHtml(citation.snippet);
+        const rawTitle = citation.document_title || citation.title || `Fonte ${index + 1}`;
+        const title = this.escapeHtml(rawTitle);
+        const snippet = this.escapeHtml(citation.snippet || citation.chunk_text || '');
+        const pageUrl = citation.page_url || citation.document_source_url || citation.url || '#';
         
+        const documentId = citation.document_id || citation.id || '';
+
         return `
           <div class="chatbot-citation" data-citation-index="${index}">
             <div class="chatbot-citation-header">
@@ -157,9 +161,11 @@
               <button 
                 type="button"
                 class="chatbot-citation-title"
-                data-document-id="${citation.id}"
+                data-document-id="${documentId}"
                 data-chunk-index="${citation.chunk_index || 0}"
                 data-chunk-text="${this.escapeHtml(citation.chunk_text || '')}"
+                data-document-title="${title}"
+                data-document-url="${this.escapeHtml(pageUrl)}"
                 aria-describedby="citation-${index}-snippet"
                 title="Clicca per visualizzare il documento"
               >

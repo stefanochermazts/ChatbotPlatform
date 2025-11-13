@@ -91,6 +91,11 @@ class Tenant extends Model
         return $this->hasMany(KnowledgeBase::class);
     }
 
+    public function settings(): HasMany
+    {
+        return $this->hasMany(TenantSetting::class);
+    }
+
     /**
      * Relazione con i messaggi Vonage
      */

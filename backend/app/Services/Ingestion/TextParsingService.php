@@ -36,6 +36,87 @@ class TextParsingService implements TextParsingServiceInterface
         
         return trim($text);
     }
+
+    /**
+     * Convert Markdown tables to a plain-text representation suitable for embeddings.
+     *
+     * Example:
+     * | Nome | Ruolo |
+     * | --- | --- |
+     * | Mario Rossi | Presidente |
+     *
+     * becomes:
+     * Nome: Mario Rossi; Ruolo: Presidente
+     *
+     * @param  string  $text
+     * @return string
+     */
+    public function flattenMarkdownTables(string $text): string
+    {
+        if ($text === '') {
+            return $text;
+        }
+
+        $pattern = '/((?:\|[^\n]+\|\s*(?:\n|$))+)/u';
+
+        return preg_replace_callback($pattern, function (array $matches): string {
+            $block = trim($matches[0]);
+            $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), fn ($line) => $line !== ''));
+
+            if (count($lines) < 2) {
+                return $block;
+            }
+
+            $rows = array_map(function (string $line): array {
+                $cells = array_map('trim', explode('|', $line));
+                return array_values(array_filter($cells, fn ($cell) => $cell !== ''));
+            }, $lines);
+
+            if (count($rows) < 2) {
+                return $block;
+            }
+
+            $headers = array_shift($rows);
+
+            if ($headers === [] || $this->isSeparatorRow($headers)) {
+                return $block;
+            }
+
+            if (isset($rows[0]) && $this->isSeparatorRow($rows[0])) {
+                array_shift($rows);
+            }
+
+            if ($rows === []) {
+                return $block;
+            }
+
+            $flatRows = [];
+
+            foreach ($rows as $row) {
+                if ($this->isSeparatorRow($row)) {
+                    continue;
+                }
+
+                $pairs = [];
+
+                foreach ($headers as $idx => $header) {
+                    $value = $row[$idx] ?? '';
+
+                    if ($value === '') {
+                        continue;
+                    }
+
+                    $pairs[] = $header.': '.$value;
+                }
+
+                if ($pairs !== []) {
+                    $flatRows[] = implode('; ', $pairs);
+                }
+            }
+
+            return $flatRows !== [] ? implode("\n", $flatRows) : $block;
+        }, $text);
+    }
     
     /**
      * {@inheritDoc}
@@ -188,6 +269,27 @@ class TextParsingService implements TextParsingServiceInterface
         $text = preg_replace('/^[.\-=\s]+$/m', '', $text);
         
         return trim($text);
+    }
+
+    private function isSeparatorRow(array $cells): bool
+    {
+        if ($cells === []) {
+            return false;
+        }
+
+        foreach ($cells as $cell) {
+            $cell = trim($cell);
+
+            if ($cell === '') {
+                continue;
+            }
+
+            if (!preg_match('/^[:\-=]+$/u', $cell)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 

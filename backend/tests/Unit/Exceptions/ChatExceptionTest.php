@@ -126,7 +126,7 @@ class ChatExceptionTest extends TestCase
         $this->assertArrayHasKey('file', $logArray);
         $this->assertArrayHasKey('line', $logArray);
         $this->assertArrayHasKey('tenant_id', $logArray['context']);
-        $this->assertStringContainsString('ChatExceptionTest.php', $logArray['file']);
+        $this->assertStringContainsString('ChatException.php', $logArray['file']);
         $this->assertIsInt($logArray['line']);
     }
     

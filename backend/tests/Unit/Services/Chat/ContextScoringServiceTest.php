@@ -4,7 +4,8 @@ namespace Tests\Unit\Services\Chat;
 
 use App\Services\Chat\ContextScoringService;
 use App\Exceptions\ChatException;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Support\Facades\Config;
+use Tests\TestCase as BaseTestCase;
 
 /**
  * Tests for ContextScoringService
@@ -13,13 +14,19 @@ use PHPUnit\Framework\TestCase;
  * @group chat
  * @group services
  */
-class ContextScoringServiceTest extends TestCase
+class ContextScoringServiceTest extends BaseTestCase
 {
     private ContextScoringService $service;
     
     protected function setUp(): void
     {
         parent::setUp();
+        Config::set('rag.scoring.weights', [
+            'source' => 0.20,
+            'quality' => 0.30,
+            'authority' => 0.25,
+            'intent_match' => 0.25,
+        ]);
         $this->service = new ContextScoringService();
     }
     

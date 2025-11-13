@@ -108,15 +108,11 @@ class ChunkingServiceTest extends TestCase
         
         $result = $this->service->chunkTables([$table]);
         
-        $this->assertGreaterThanOrEqual(2, count($result), 
-            "Should create at least 2 chunks for 2 data rows");
-        
-        // Each chunk should be a table row
-        foreach ($result as $chunk) {
-            $this->assertEquals('table_row', $chunk['type']);
-            $this->assertStringContainsString(':', $chunk['text'], 
-                "Chunk should contain key:value pairs");
-        }
+        $this->assertCount(1, $result, "Small tables should be preserved as a single chunk");
+        $this->assertEquals('table', $result[0]['type']);
+        $this->assertStringContainsString('Elenco contatti', $result[0]['text']);
+        $this->assertStringContainsString('Mario Rossi', $result[0]['text']);
+        $this->assertStringContainsString('luigi@example.com', $result[0]['text']);
     }
     
     /** @test */

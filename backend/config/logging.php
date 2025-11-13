@@ -83,6 +83,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // 🤖 RAG: Log dedicato per pipeline Retrieval-Augmented Generation
+        'rag' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/rag.log'),
+            'level' => 'debug',
+            'days' => 14,
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
