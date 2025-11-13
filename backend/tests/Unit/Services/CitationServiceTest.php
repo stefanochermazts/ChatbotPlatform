@@ -30,6 +30,7 @@ class CitationServiceTest extends TestCase
             return Document::create([
                 'tenant_id' => $tenant->id,
                 'title' => "Documento {$index}",
+                'source_page_title' => "Documento {$index}",
                 'source' => 'upload',
                 'path' => "documents/{$index}.pdf",
                 'source_url' => "https://example.com/doc-{$index}",
@@ -56,7 +57,8 @@ class CitationServiceTest extends TestCase
 
         $document = Document::create([
             'tenant_id' => $tenant->id,
-            'title' => 'Delibera Consiglio Comunale',
+            'title' => 'Delibera Consiglio Comunale (Scraped)',
+            'source_page_title' => 'Delibera Consiglio Comunale',
             'source' => 'upload',
             'path' => 'documents/delibera.pdf',
             'source_url' => 'https://example.com/delibera',
@@ -89,6 +91,7 @@ class CitationServiceTest extends TestCase
         $documentB = Document::create([
             'tenant_id' => $tenantB->id,
             'title' => 'Documento riservato',
+            'source_page_title' => 'Documento riservato',
             'source' => 'upload',
             'path' => 'documents/riservato.pdf',
             'source_url' => 'https://example.com/riservato',
@@ -120,6 +123,7 @@ class CitationServiceTest extends TestCase
             $document = Document::create([
                 'tenant_id' => $tenant->id,
                 'title' => "Doc {$index}",
+                'source_page_title' => "Doc {$index}",
                 'source' => 'upload',
                 'path' => "documents/{$index}.pdf",
                 'source_url' => "https://example.com/doc-{$index}",

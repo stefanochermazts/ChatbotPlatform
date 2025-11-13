@@ -27,6 +27,23 @@ class KbSearchService
     // Lingue attive per il tenant corrente (codici ISO, lowercase)
     private array $activeLangs = ['it'];
 
+    private function formatCitationTitle(?string $sourcePageTitle, ?string $fallbackTitle): ?string
+    {
+        $title = $sourcePageTitle ?? $fallbackTitle;
+
+        if ($title === null) {
+            return null;
+        }
+
+        $decoded = html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $stripped = strip_tags($decoded);
+        $withoutSuffix = preg_replace('/\s*\(Scraped\)$/i', '', $stripped ?? '');
+        $normalized = preg_replace('/\s+/u', ' ', $withoutSuffix ?? '');
+        $clean = trim($normalized ?? '');
+
+        return $clean !== '' ? $clean : null;
+    }
+
     /**
      * @param  int  $limit  Numero massimo di documenti da citare
      * @param  array  $opts  ['top_k' => int, 'mmr_lambda' => float]
@@ -781,7 +798,7 @@ class KbSearchService
         $documents = [];
         if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
+                'SELECT id, title, source_page_title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
@@ -841,9 +858,14 @@ class KbSearchService
                 ];
             }
 
+            $documentTitle = $this->formatCitationTitle($doc->source_page_title ?? null, $doc->title ?? null);
+            $rawTitle = (string) ($doc->title ?? '');
+            $displayTitle = $documentTitle ?? ($rawTitle !== '' ? $rawTitle : 'Documento '.$doc->id);
+
             $cits[] = [
                 'id' => (int) $doc->id,
-                'title' => (string) $doc->title,
+                'title' => $displayTitle,
+                'document_title' => $displayTitle,
                 'url' => url('storage/'.$doc->path),
                 'snippet' => $snippet,
                 'score' => (float) $base['score'],
@@ -1497,7 +1519,7 @@ class KbSearchService
         $documents = [];
         if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
+                'SELECT id, title, source_page_title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
@@ -1518,9 +1540,14 @@ class KbSearchService
             // Get full chunk text for deep-link highlighting
             $chunkText = $this->text->getChunkSnippet((int) $r['document_id'], (int) $r['chunk_index'], 5000) ?? '';
 
+            $documentTitle = $this->formatCitationTitle($doc->source_page_title ?? null, $doc->title ?? null);
+            $rawTitle = (string) ($doc->title ?? '');
+            $displayTitle = $documentTitle ?? ($rawTitle !== '' ? $rawTitle : 'Documento '.$doc->id);
+
             $citation = [
                 'id' => (int) $doc->id,
-                'title' => (string) $doc->title,
+                'title' => $displayTitle,
+                'document_title' => $displayTitle,
                 'url' => url('storage/'.$doc->path),
                 'snippet' => $snippet,
                 'score' => (float) $r['score'],
@@ -1742,7 +1769,7 @@ class KbSearchService
                 $documents = [];
                 if (! empty($documentIds)) {
                     $docs = DB::select(
-                        'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
+                        'SELECT id, title, source_page_title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                         array_merge($documentIds, [$tenantId])
                     );
                     foreach ($docs as $doc) {
@@ -1754,9 +1781,14 @@ class KbSearchService
                 foreach ($directResults as $result) {
                     $doc = $documents[(int) $result['document_id']] ?? null;
                     if ($doc) {
+                        $documentTitle = $this->formatCitationTitle($doc->source_page_title ?? null, $doc->title ?? null);
+                        $rawTitle = (string) ($doc->title ?? '');
+                        $displayTitle = $documentTitle ?? ($rawTitle !== '' ? $rawTitle : 'Documento '.$doc->id);
+
                         $citation = [
                             'id' => (int) $doc->id,
-                            'title' => (string) $doc->title,
+                            'title' => $displayTitle,
+                            'document_title' => $displayTitle,
                             'url' => url('storage/'.$doc->path),
                             'snippet' => $result['excerpt'],
                             'score' => (float) $result['score'],
@@ -1788,7 +1820,7 @@ class KbSearchService
         $documents = [];
         if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
+                'SELECT id, title, source_page_title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
@@ -1819,9 +1851,14 @@ class KbSearchService
 
             $debugInfo['semantic_fallback']['citation_debug'][$i]['db_query_result'] = 'found_correct_tenant';
 
+            $documentTitle = $this->formatCitationTitle($doc->source_page_title ?? null, $doc->title ?? null);
+            $rawTitle = (string) ($doc->title ?? '');
+            $displayTitle = $documentTitle ?? ($rawTitle !== '' ? $rawTitle : 'Documento '.$doc->id);
+
             $citation = [
                 'id' => (int) $doc->id,
-                'title' => (string) $doc->title,
+                'title' => $displayTitle,
+                'document_title' => $displayTitle,
                 'url' => url('storage/'.$doc->path),
                 'snippet' => $result['excerpt'],
                 'score' => (float) $result['score'],
@@ -2690,7 +2727,7 @@ class KbSearchService
         $documents = [];
         if (! empty($documentIds)) {
             $docs = DB::select(
-                'SELECT id, title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
+                'SELECT id, title, source_page_title, path, source_url FROM documents WHERE id IN ('.implode(',', array_fill(0, count($documentIds), '?')).') AND tenant_id = ?',
                 array_merge($documentIds, [$tenantId])
             );
             foreach ($docs as $doc) {
@@ -2711,9 +2748,14 @@ class KbSearchService
             // Get full chunk text for deep-link highlighting
             $chunkText = $this->text->getChunkSnippet((int) $r['document_id'], (int) $r['chunk_index'], 5000) ?? '';
 
+            $documentTitle = $this->formatCitationTitle($doc->source_page_title ?? null, $doc->title ?? null);
+            $rawTitle = (string) ($doc->title ?? '');
+            $displayTitle = $documentTitle ?? ($rawTitle !== '' ? $rawTitle : 'Documento '.$doc->id);
+
             $citation = [
                 'id' => (int) $doc->id,
-                'title' => (string) $doc->title,
+                'title' => $displayTitle,
+                'document_title' => $displayTitle,
                 'url' => url('storage/'.$doc->path),
                 'snippet' => $snippet,
                 'score' => (float) $r['score'],

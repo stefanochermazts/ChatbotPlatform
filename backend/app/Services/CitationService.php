@@ -52,10 +52,19 @@ class CitationService
 
         if ($documentIds->isNotEmpty()) {
             try {
-                $documentTitles = Document::query()
+                $documents = Document::query()
                     ->where('tenant_id', $tenantId)
                     ->whereIn('id', $documentIds)
-                    ->pluck('title', 'id');
+                    ->get(['id', 'title', 'source_page_title']);
+
+                $documentTitles = $documents->mapWithKeys(function (Document $document) {
+                    $title = $this->formatDocumentTitle(
+                        $document->source_page_title,
+                        $document->title
+                    );
+
+                    return [$document->id => $title];
+                });
             } catch (Throwable $exception) {
                 Log::error('citations.document_lookup_failed', [
                     'tenant_id' => $tenantId,
@@ -85,6 +94,23 @@ class CitationService
 
             return $normalized;
         });
+    }
+
+    private function formatDocumentTitle(?string $sourcePageTitle, ?string $fallbackTitle): ?string
+    {
+        $title = $sourcePageTitle ?? $fallbackTitle;
+
+        if ($title === null) {
+            return null;
+        }
+
+        $decoded = html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $stripped = strip_tags($decoded);
+        $withoutSuffix = preg_replace('/\s*\(Scraped\)$/i', '', $stripped ?? '');
+        $normalized = preg_replace('/\s+/u', ' ', $withoutSuffix ?? '');
+        $clean = trim($normalized ?? '');
+
+        return $clean !== '' ? $clean : null;
     }
 }
 

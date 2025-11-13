@@ -15,6 +15,7 @@ class Document extends Model
         'tenant_id',
         'knowledge_base_id',
         'title',
+        'source_page_title',
         'source',
         'path',
         'extracted_path',

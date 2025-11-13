@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Jobs\IngestUploadedDocumentJob;
 use App\Services\Scraper\ContentQualityAnalyzer;
 use App\Services\Scraper\JavaScriptRenderer;
+use App\Services\Scraper\ProgressStateService;
 use App\Services\Scraper\ScraperLogger;
 use League\HTMLToMarkdown\HtmlConverter;
 use Illuminate\Support\Facades\Http;
@@ -28,17 +29,22 @@ class WebScraperService
     private ?ScraperProgress $progress = null;
     private array $urlsQueue = [];
     private string $sessionId;
+    private int $currentTenantId = 0;
+    private ProgressStateService $progressStateService;
     private ?ScraperConfig $currentConfig = null; // Current scraper config for tenant patterns
     
-    public function __construct()
+    public function __construct(?ProgressStateService $progressStateService = null)
     {
         $this->qualityAnalyzer = new ContentQualityAnalyzer();
         $this->sessionId = 'scraper_' . uniqid();
+        $this->progressStateService = $progressStateService ?? app(ProgressStateService::class);
     }
 
     public function scrapeForTenant(int $tenantId, ?int $scraperConfigId = null): array
     {
         $tenant = Tenant::findOrFail($tenantId);
+        $this->currentTenantId = $tenantId;
+        $this->currentTenantId = $tenantId;
         $config = $scraperConfigId
             ? ScraperConfig::where('tenant_id', $tenantId)->where('id', $scraperConfigId)->first()
             : ScraperConfig::where('tenant_id', $tenantId)->first();
@@ -113,6 +119,10 @@ class WebScraperService
     public function scrapeForTenantParallel(int $tenantId, ?int $scraperConfigId = null): array
     {
         $tenant = Tenant::findOrFail($tenantId);
+        $this->currentTenantId = $tenantId;
+        $config = $scraperConfigId
+        $tenant = Tenant::findOrFail($tenantId);
+        $this->currentTenantId = $tenantId;
         $config = $scraperConfigId
             ? ScraperConfig::where('tenant_id', $tenantId)->where('id', $scraperConfigId)->first()
             : ScraperConfig::where('tenant_id', $tenantId)->first();
@@ -166,8 +176,31 @@ class WebScraperService
             'duration_seconds' => round($duration, 2)
         ]);
 
-        // Finalizza progress
-        $this->finalizeProgress('dispatched');
+        // Finalizza progress gestendo transizione a "dispatched" tramite servizio dedicato
+        $progressId = $this->progress?->id;
+        if ($progressId) {
+            $transitioned = $this->progressStateService->transitionToDispatched(
+                $this->currentTenantId,
+                $progressId
+            );
+
+            if ($transitioned) {
+                $this->progress->refresh();
+            } else {
+                \Log::warning('Scraper progress transition to dispatched not permitted; falling back to completed', [
+                    'session_id' => $this->sessionId,
+                    'progress_id' => $progressId,
+                    'tenant_id' => $this->currentTenantId,
+                ]);
+                $this->finalizeProgress('completed');
+            }
+        } else {
+            \Log::warning('Scraper progress instance missing during finalize; defaulting to completed status', [
+                'session_id' => $this->sessionId,
+                'tenant_id' => $this->currentTenantId ?? null,
+            ]);
+            $this->finalizeProgress('completed');
+        }
         
         // Log finale sessione
         ScraperLogger::sessionCompleted(
@@ -266,6 +299,7 @@ class WebScraperService
                     $result = [
                         'url' => $url,
                         'title' => $extractedContent['title'],
+                        'source_page_title' => $extractedContent['source_page_title'] ?? null,
                         'content' => $extractedContent['content'],
                         'depth' => $depth,
                         'quality_analysis' => $extractedContent['quality_analysis'] ?? null
@@ -576,7 +610,7 @@ class WebScraperService
                     'content_length' => strlen($readabilityResult['content']),
                     'content_preview' => substr($readabilityResult['content'], 0, 200)
                 ]);
-                return $readabilityResult;
+                $extractedContent = $readabilityResult;
             }
         }
         
@@ -584,6 +618,8 @@ class WebScraperService
             \Log::warning("❌ All extraction methods failed", ['url' => $url]);
             return null;
         }
+        
+        $extractedContent['source_page_title'] = $this->prepareSourcePageTitle($html);
         
         // STEP 2: Post-processing con quality score
         $extractedContent['quality_analysis'] = [
@@ -1919,6 +1955,9 @@ class WebScraperService
                 // Contenuto identico - aggiorna solo timestamp
                 $targetKbId = $config->target_knowledge_base_id;
                 $updateData = ['last_scraped_at' => now()];
+                if (array_key_exists('source_page_title', $result)) {
+                    $updateData['source_page_title'] = $result['source_page_title'];
+                }
                 if ($targetKbId && $existingDocument->knowledge_base_id !== (int) $targetKbId) {
                     $updateData['knowledge_base_id'] = (int) $targetKbId;
                 }
@@ -2026,7 +2065,10 @@ class WebScraperService
                         } catch (\Throwable) {
                             $targetKbId = null;
                         }
-                        $updateData = [ 'last_scraped_at' => now() ];
+                        $updateData = ['last_scraped_at' => now()];
+                        if (array_key_exists('source_page_title', $result)) {
+                            $updateData['source_page_title'] = $result['source_page_title'];
+                        }
                         if ($targetKbId && $existingDocument->knowledge_base_id !== (int) $targetKbId) {
                             $updateData['knowledge_base_id'] = (int) $targetKbId;
                         }
@@ -2132,6 +2174,7 @@ class WebScraperService
             'tenant_id' => $tenant->id,
             'knowledge_base_id' => $targetKbId,
             'title' => $result['title'] . ' (Scraped)',
+            'source_page_title' => $result['source_page_title'] ?? null,
             'path' => $path,
             'source_url' => $result['url'],
             'content_hash' => $contentHash,
@@ -2860,6 +2903,27 @@ class WebScraperService
         return null;
     }
 
+    private function prepareSourcePageTitle(string $html): ?string
+    {
+        $rawTitle = $this->extractTitleFromHtml($html);
+        if (! $rawTitle) {
+            return null;
+        }
+
+        $sanitized = $this->sanitizeSourcePageTitle($rawTitle);
+
+        return $sanitized !== '' ? $sanitized : null;
+    }
+
+    private function sanitizeSourcePageTitle(string $title): string
+    {
+        $decoded = html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $stripped = strip_tags($decoded);
+        $normalized = preg_replace('/\s+/', ' ', $stripped ?? '');
+
+        return trim(mb_substr((string) $normalized, 0, 512));
+    }
+
     private function updateExistingDocument(Document $existingDocument, array $result, string $markdownContent, string $contentHash): void
     {
         // Incrementa versione
@@ -2902,6 +2966,7 @@ class WebScraperService
         // Aggiorna record documento
         $existingDocument->update([
             'title' => $result['title'] . ' (Scraped)',
+            'source_page_title' => $result['source_page_title'] ?? null,
             'path' => $newPath,
             'content_hash' => $contentHash,
             'last_scraped_at' => now(),
