@@ -121,9 +121,6 @@ class WebScraperService
         $tenant = Tenant::findOrFail($tenantId);
         $this->currentTenantId = $tenantId;
         $config = $scraperConfigId
-        $tenant = Tenant::findOrFail($tenantId);
-        $this->currentTenantId = $tenantId;
-        $config = $scraperConfigId
             ? ScraperConfig::where('tenant_id', $tenantId)->where('id', $scraperConfigId)->first()
             : ScraperConfig::where('tenant_id', $tenantId)->first();
             
