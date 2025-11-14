@@ -247,6 +247,24 @@ class MilvusClient
         }
     }
 
+    public function listPrimaryIdsByTenant(int $tenantId): array
+    {
+        $result = $this->executePythonOperation('list_ids_by_tenant', [
+            'tenant_id' => $tenantId,
+        ]);
+
+        if (! $result['success']) {
+            Log::error('milvus.list_ids_by_tenant_failed', [
+                'tenant_id' => $tenantId,
+                'error' => $result['error'] ?? 'Unknown error',
+            ]);
+
+            return [];
+        }
+
+        return array_map('intval', $result['ids'] ?? []);
+    }
+
     public function createPartition(string $partitionName): void
     {
         $result = $this->executePythonOperation('create_partition', [

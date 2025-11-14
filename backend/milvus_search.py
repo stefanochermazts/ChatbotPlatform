@@ -190,6 +190,48 @@ def count_by_tenant(collection_name, tenant_id):
             "error_type": type(e).__name__
         }
 
+def list_ids_by_tenant(collection_name, tenant_id):
+    """Ritorna tutti i primary ID per un tenant"""
+    try:
+        connect_milvus()
+        collection = Collection(collection_name)
+        collection.load()
+
+        expr = f"tenant_id == {tenant_id}"
+        batch_size = 16384
+        offset = 0
+        collected_ids = []
+
+        while True:
+            results = collection.query(
+                expr=expr,
+                output_fields=["id"],
+                limit=batch_size,
+                offset=offset
+            )
+
+            if not results:
+                break
+
+            collected_ids.extend(int(r.get("id")) for r in results if r.get("id") is not None)
+
+            if len(results) < batch_size:
+                break
+
+            offset += batch_size
+
+        return {
+            "success": True,
+            "ids": collected_ids
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
 def count_by_document(collection_name, tenant_id, document_id):
     """Conta i chunk per uno specifico documento"""
     try:
@@ -384,6 +426,15 @@ def main():
                 sys.exit(1)
             
             result = count_by_tenant(collection_name, tenant_id)
+            
+        elif operation == 'list_ids_by_tenant':
+            tenant_id = int(params.get('tenant_id', 0))
+            
+            if tenant_id <= 0:
+                print(json.dumps({"success": False, "error": "valid tenant_id is required"}))
+                sys.exit(1)
+            
+            result = list_ids_by_tenant(collection_name, tenant_id)
             
         elif operation == 'count_by_document':
             tenant_id = int(params.get('tenant_id', 0))

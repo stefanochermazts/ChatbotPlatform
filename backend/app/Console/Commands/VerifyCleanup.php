@@ -166,17 +166,54 @@ class VerifyCleanup extends Command
 
                 if ($fix) {
                     if ($vectorCount > $expectedChunks) {
-                        // Più vettori che chunks - cancella vettori in eccesso
                         $this->line('   🔧 Cleaning up excess vectors in Milvus...');
 
-                        // Get document IDs che dovrebbero esistere
-                        $validDocIds = DB::table('documents')
-                            ->where('tenant_id', $tenantId)
-                            ->pluck('id')
-                            ->toArray();
+                        $milvusIds = $milvus->listPrimaryIdsByTenant($tenantId);
+                        if ($milvusIds === []) {
+                            $this->warn('   ⚠️  Unable to retrieve vector IDs from Milvus');
+                        } else {
+                            $chunks = DB::table('document_chunks')
+                                ->where('tenant_id', $tenantId)
+                                ->select('document_id', 'chunk_index')
+                                ->get();
 
-                        // TODO: Implementa cleanup selettivo in Milvus
-                        $this->warn('   ⚠️  Selective Milvus cleanup not yet implemented');
+                            $missingChunkIndex = 0;
+                            $expectedIds = [];
+
+                            foreach ($chunks as $chunk) {
+                                if ($chunk->chunk_index === null) {
+                                    $missingChunkIndex++;
+                                    continue;
+                                }
+
+                                $expectedIds[] = ($chunk->document_id * 100000) + (int) $chunk->chunk_index;
+                            }
+
+                            if ($missingChunkIndex > 0) {
+                                $this->warn("   ⚠️  {$missingChunkIndex} chunks senza chunk_index: impossibile calcolare primary ID per questi record");
+                            }
+
+                            $expectedLookup = array_fill_keys($expectedIds, true);
+                            $excessIds = [];
+
+                            foreach ($milvusIds as $id) {
+                                if (! isset($expectedLookup[$id])) {
+                                    $excessIds[] = $id;
+                                }
+                            }
+
+                            if (empty($excessIds)) {
+                                $this->info('   ✅ No extra vectors found after comparison');
+                            } else {
+                                $this->warn('   ⚠️  Found '.count($excessIds).' vectors without matching chunks. Removing...');
+                                foreach (array_chunk($excessIds, 5000) as $batch) {
+                                    $milvus->deleteByPrimaryIds($batch);
+                                }
+                            }
+                        }
+
+                        $vectorCount = $milvus->countByTenant($tenantId);
+                        $this->line("   • Vectors in Milvus (after cleanup): {$vectorCount}");
                     } else {
                         // Meno vettori che chunks - reprocessa documenti
                         $this->line('   🔧 Reprocessing documents for missing vectors...');
