@@ -22,6 +22,7 @@ class AdminAuthController extends Controller
         $expected = (string) config('app.admin_token');
         if ($expected !== '' && hash_equals($expected, $data['token'])) {
             $request->session()->put('admin_authenticated', true);
+
             return redirect()->route('admin.dashboard');
         }
 
@@ -31,7 +32,7 @@ class AdminAuthController extends Controller
     public function logout(Request $request)
     {
         $request->session()->forget('admin_authenticated');
+
         return redirect()->route('admin.login');
     }
 }
-

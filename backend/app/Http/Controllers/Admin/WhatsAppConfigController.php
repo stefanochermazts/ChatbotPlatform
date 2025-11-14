@@ -15,21 +15,22 @@ class WhatsAppConfigController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        
+
         // Auto-scoping per clienti
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             $tenants = $user->tenants()->wherePivot('role', 'customer')->orderBy('name')->get();
         } else {
             // Admin vede tutti i tenant
             $tenants = Tenant::orderBy('name')->get();
         }
-        
+
         // Arricchisci i tenant con info WhatsApp
         $tenants = $tenants->map(function ($tenant) {
             $config = $tenant->getWhatsAppConfig();
             $tenant->whatsapp_status = $config['is_active'] ? 'active' : 'inactive';
             $tenant->whatsapp_number = $config['phone_number'];
             $tenant->messages_count = $tenant->vonageMessages()->count();
+
             return $tenant;
         });
 
@@ -42,9 +43,9 @@ class WhatsAppConfigController extends Controller
     public function show(Tenant $tenant)
     {
         $this->checkTenantAccess($tenant);
-        
+
         $config = $tenant->getWhatsAppConfig();
-        
+
         return view('admin.whatsapp-config.show', compact('tenant', 'config'));
     }
 
@@ -54,18 +55,18 @@ class WhatsAppConfigController extends Controller
     public function update(Request $request, Tenant $tenant)
     {
         $this->checkTenantAccess($tenant);
-        
+
         $validated = $request->validate([
             'phone_number' => [
-                'nullable', 
-                'string', 
+                'nullable',
+                'string',
                 'regex:/^\+?[1-9]\d{1,14}$/',
-                Rule::unique('tenants', 'whatsapp_config->phone_number')->ignore($tenant->id)
+                Rule::unique('tenants', 'whatsapp_config->phone_number')->ignore($tenant->id),
             ],
             'is_active' => 'boolean',
             'welcome_message' => 'nullable|string|max:1000',
             'business_hours.enabled' => 'boolean',
-            'business_hours.timezone' => 'nullable|string|in:' . implode(',', timezone_identifiers_list()),
+            'business_hours.timezone' => 'nullable|string|in:'.implode(',', timezone_identifiers_list()),
             'business_hours.monday.start' => 'nullable|date_format:H:i',
             'business_hours.monday.end' => 'nullable|date_format:H:i',
             'business_hours.tuesday.start' => 'nullable|date_format:H:i',
@@ -87,7 +88,7 @@ class WhatsAppConfigController extends Controller
 
         // Prepara la configurazione
         $currentConfig = $tenant->getWhatsAppConfig();
-        
+
         $whatsappConfig = [
             'phone_number' => $validated['phone_number'] ?? null,
             'is_active' => $validated['is_active'] ?? false,
@@ -97,38 +98,38 @@ class WhatsAppConfigController extends Controller
                 'timezone' => $validated['business_hours']['timezone'] ?? 'Europe/Rome',
                 'monday' => [
                     'start' => $validated['business_hours']['monday']['start'] ?? '09:00',
-                    'end' => $validated['business_hours']['monday']['end'] ?? '18:00'
+                    'end' => $validated['business_hours']['monday']['end'] ?? '18:00',
                 ],
                 'tuesday' => [
                     'start' => $validated['business_hours']['tuesday']['start'] ?? '09:00',
-                    'end' => $validated['business_hours']['tuesday']['end'] ?? '18:00'
+                    'end' => $validated['business_hours']['tuesday']['end'] ?? '18:00',
                 ],
                 'wednesday' => [
                     'start' => $validated['business_hours']['wednesday']['start'] ?? '09:00',
-                    'end' => $validated['business_hours']['wednesday']['end'] ?? '18:00'
+                    'end' => $validated['business_hours']['wednesday']['end'] ?? '18:00',
                 ],
                 'thursday' => [
                     'start' => $validated['business_hours']['thursday']['start'] ?? '09:00',
-                    'end' => $validated['business_hours']['thursday']['end'] ?? '18:00'
+                    'end' => $validated['business_hours']['thursday']['end'] ?? '18:00',
                 ],
                 'friday' => [
                     'start' => $validated['business_hours']['friday']['start'] ?? '09:00',
-                    'end' => $validated['business_hours']['friday']['end'] ?? '18:00'
+                    'end' => $validated['business_hours']['friday']['end'] ?? '18:00',
                 ],
                 'saturday' => [
                     'start' => $validated['business_hours']['saturday']['start'] ?? '09:00',
-                    'end' => $validated['business_hours']['saturday']['end'] ?? '13:00'
+                    'end' => $validated['business_hours']['saturday']['end'] ?? '13:00',
                 ],
                 'sunday' => [
                     'closed' => $validated['business_hours']['sunday']['closed'] ?? true,
                     'start' => $validated['business_hours']['sunday']['start'] ?? null,
-                    'end' => $validated['business_hours']['sunday']['end'] ?? null
-                ]
+                    'end' => $validated['business_hours']['sunday']['end'] ?? null,
+                ],
             ],
             'auto_response' => [
                 'enabled' => $validated['auto_response']['enabled'] ?? true,
-                'response_delay' => $validated['auto_response']['response_delay'] ?? 1
-            ]
+                'response_delay' => $validated['auto_response']['response_delay'] ?? 1,
+            ],
         ];
 
         // Aggiorna il tenant
@@ -145,24 +146,24 @@ class WhatsAppConfigController extends Controller
     public function test(Request $request, Tenant $tenant)
     {
         $this->checkTenantAccess($tenant);
-        
-        if (!$tenant->hasWhatsAppConfig()) {
+
+        if (! $tenant->hasWhatsAppConfig()) {
             return response()->json([
                 'success' => false,
-                'message' => 'WhatsApp non configurato per questo tenant'
+                'message' => 'WhatsApp non configurato per questo tenant',
             ], 400);
         }
 
         $config = $tenant->getWhatsAppConfig();
-        
+
         // Verifica configurazione Vonage
         $vonageApiKey = config('services.vonage.api_key');
         $vonageApiSecret = config('services.vonage.api_secret');
-        
-        if (!$vonageApiKey || !$vonageApiSecret) {
+
+        if (! $vonageApiKey || ! $vonageApiSecret) {
             return response()->json([
                 'success' => false,
-                'message' => 'Credenziali Vonage non configurate'
+                'message' => 'Credenziali Vonage non configurate',
             ], 400);
         }
 
@@ -173,6 +174,7 @@ class WhatsAppConfigController extends Controller
 
             if ($response->successful()) {
                 $balance = $response->json();
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Configurazione WhatsApp valida',
@@ -180,22 +182,22 @@ class WhatsAppConfigController extends Controller
                         'phone_number' => $config['phone_number'],
                         'vonage_balance' => $balance['value'] ?? 'N/A',
                         'webhook_urls' => [
-                            'inbound' => config('services.vonage.webhook_base_url') . '/api/v1/vonage/whatsapp/inbound',
-                            'status' => config('services.vonage.webhook_base_url') . '/api/v1/vonage/whatsapp/status'
-                        ]
-                    ]
+                            'inbound' => config('services.vonage.webhook_base_url').'/api/v1/vonage/whatsapp/inbound',
+                            'status' => config('services.vonage.webhook_base_url').'/api/v1/vonage/whatsapp/status',
+                        ],
+                    ],
                 ]);
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Errore nella connessione a Vonage: ' . $response->body()
+                    'message' => 'Errore nella connessione a Vonage: '.$response->body(),
                 ], 400);
             }
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Errore nel test: ' . $e->getMessage()
+                'message' => 'Errore nel test: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -206,10 +208,10 @@ class WhatsAppConfigController extends Controller
     private function checkTenantAccess(Tenant $tenant)
     {
         $user = auth()->user();
-        
-        if (!$user->isAdmin()) {
+
+        if (! $user->isAdmin()) {
             $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id')->toArray();
-            if (!in_array($tenant->id, $userTenantIds)) {
+            if (! in_array($tenant->id, $userTenantIds)) {
                 abort(403, 'Non hai accesso a questo tenant.');
             }
         }

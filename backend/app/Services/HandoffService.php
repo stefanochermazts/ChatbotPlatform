@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\ConversationSession;
 use App\Models\ConversationMessage;
+use App\Models\ConversationSession;
 use App\Models\HandoffRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -23,14 +23,15 @@ class HandoffService
         try {
             // 🔒 Verifica che non ci sia già un handoff attivo
             $existingHandoff = $session->handoffRequests()
-                                     ->whereIn('status', ['pending', 'assigned', 'in_progress'])
-                                     ->first();
+                ->whereIn('status', ['pending', 'assigned', 'in_progress'])
+                ->first();
 
             if ($existingHandoff) {
                 Log::info('handoff.already_exists', [
                     'session_id' => $session->session_id,
-                    'existing_handoff_id' => $existingHandoff->id
+                    'existing_handoff_id' => $existingHandoff->id,
                 ]);
+
                 return $existingHandoff;
             }
 
@@ -43,14 +44,14 @@ class HandoffService
                 'context_data' => $contextData,
                 'priority' => $priority,
                 'status' => 'pending',
-                'requested_at' => now()
+                'requested_at' => now(),
             ]);
 
             // 🔄 Aggiorna status sessione
             $session->update([
                 'handoff_status' => 'handoff_requested',
                 'handoff_requested_at' => now(),
-                'handoff_reason' => $reason
+                'handoff_reason' => $reason,
             ]);
 
             // 📨 Messaggio di sistema per notificare handoff
@@ -64,7 +65,7 @@ class HandoffService
                 'handoff_id' => $handoffRequest->id,
                 'trigger_type' => $triggerType,
                 'priority' => $priority,
-                'event_broadcasted' => true
+                'event_broadcasted' => true,
             ]);
 
             return $handoffRequest;
@@ -72,7 +73,7 @@ class HandoffService
         } catch (\Exception $e) {
             Log::error('handoff.request_failed', [
                 'session_id' => $session->session_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
@@ -84,11 +85,11 @@ class HandoffService
     public function assignToOperator(HandoffRequest $handoffRequest, User $operator): bool
     {
         try {
-            if (!$operator->isOperator()) {
+            if (! $operator->isOperator()) {
                 throw new \InvalidArgumentException('User is not an operator');
             }
 
-            if (!$operator->canTakeNewConversation()) {
+            if (! $operator->canTakeNewConversation()) {
                 throw new \InvalidArgumentException('Operator cannot take new conversations');
             }
 
@@ -105,7 +106,7 @@ class HandoffService
                 Log::info('handoff.assigned', [
                     'handoff_id' => $handoffRequest->id,
                     'operator_id' => $operator->id,
-                    'session_id' => $handoffRequest->conversationSession->session_id
+                    'session_id' => $handoffRequest->conversationSession->session_id,
                 ]);
             }
 
@@ -115,8 +116,9 @@ class HandoffService
             Log::error('handoff.assignment_failed', [
                 'handoff_id' => $handoffRequest->id,
                 'operator_id' => $operator->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -145,7 +147,7 @@ class HandoffService
                 Log::info('handoff.resolved', [
                     'handoff_id' => $handoffRequest->id,
                     'outcome' => $outcome,
-                    'satisfaction' => $satisfaction
+                    'satisfaction' => $satisfaction,
                 ]);
             }
 
@@ -154,8 +156,9 @@ class HandoffService
         } catch (\Exception $e) {
             Log::error('handoff.resolution_failed', [
                 'handoff_id' => $handoffRequest->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -174,7 +177,7 @@ class HandoffService
 
                 Log::info('handoff.escalated', [
                     'original_handoff_id' => $handoffRequest->id,
-                    'escalated_handoff_id' => $escalatedRequest->id
+                    'escalated_handoff_id' => $escalatedRequest->id,
                 ]);
             }
 
@@ -183,8 +186,9 @@ class HandoffService
         } catch (\Exception $e) {
             Log::error('handoff.escalation_failed', [
                 'handoff_id' => $handoffRequest->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -198,18 +202,18 @@ class HandoffService
 
         try {
             $timedOutHandoffs = HandoffRequest::where('status', 'pending')
-                                            ->where('requested_at', '<=', now()->subMinutes($timeoutMinutes))
-                                            ->get();
+                ->where('requested_at', '<=', now()->subMinutes($timeoutMinutes))
+                ->get();
 
             foreach ($timedOutHandoffs as $handoff) {
                 $handoff->update([
                     'status' => 'timeout',
-                    'resolution_notes' => "Handoff timed out after {$timeoutMinutes} minutes"
+                    'resolution_notes' => "Handoff timed out after {$timeoutMinutes} minutes",
                 ]);
 
                 // 🔄 Reset session to bot-only
                 $handoff->conversationSession->update([
-                    'handoff_status' => 'bot_only'
+                    'handoff_status' => 'bot_only',
                 ]);
 
                 $timeoutCount++;
@@ -217,13 +221,13 @@ class HandoffService
                 Log::warning('handoff.timeout', [
                     'handoff_id' => $handoff->id,
                     'session_id' => $handoff->conversationSession->session_id,
-                    'timeout_minutes' => $timeoutMinutes
+                    'timeout_minutes' => $timeoutMinutes,
                 ]);
             }
 
         } catch (\Exception $e) {
             Log::error('handoff.timeout_handling_failed', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
 
@@ -248,10 +252,10 @@ class HandoffService
             $timedOut = $query->where('status', 'timeout')->count();
 
             $avgWaitTime = $query->whereNotNull('wait_time_seconds')
-                                ->avg('wait_time_seconds') ?? 0;
+                ->avg('wait_time_seconds') ?? 0;
 
             $avgResolutionTime = $query->whereNotNull('resolution_time_seconds')
-                                     ->avg('resolution_time_seconds') ?? 0;
+                ->avg('resolution_time_seconds') ?? 0;
 
             return [
                 'total_handoffs' => $total,
@@ -261,13 +265,13 @@ class HandoffService
                 'resolution_rate' => $total > 0 ? ($resolved / $total) * 100 : 0,
                 'timeout_rate' => $total > 0 ? ($timedOut / $total) * 100 : 0,
                 'avg_wait_time_minutes' => round($avgWaitTime / 60, 2),
-                'avg_resolution_time_minutes' => round($avgResolutionTime / 60, 2)
+                'avg_resolution_time_minutes' => round($avgResolutionTime / 60, 2),
             ];
 
         } catch (\Exception $e) {
             Log::error('handoff.metrics_failed', [
                 'tenant_id' => $tenantId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return [
@@ -278,7 +282,7 @@ class HandoffService
                 'resolution_rate' => 0,
                 'timeout_rate' => 0,
                 'avg_wait_time_minutes' => 0,
-                'avg_resolution_time_minutes' => 0
+                'avg_resolution_time_minutes' => 0,
             ];
         }
     }
@@ -288,12 +292,12 @@ class HandoffService
      */
     private function createHandoffSystemMessage(ConversationSession $session, HandoffRequest $handoffRequest): void
     {
-        $content = match($handoffRequest->trigger_type) {
+        $content = match ($handoffRequest->trigger_type) {
             'user_explicit' => "L'utente ha richiesto di parlare con un operatore.",
-            'bot_escalation' => "Il sistema ha rilevato la necessità di supporto umano.",
-            'sentiment_negative' => "È stato rilevato un sentiment negativo. Richiesta assistenza umana.",
+            'bot_escalation' => 'Il sistema ha rilevato la necessità di supporto umano.',
+            'sentiment_negative' => 'È stato rilevato un sentiment negativo. Richiesta assistenza umana.',
             'timeout_frustration' => "Rilevata frustrazione dell'utente. Richiesta intervento operatore.",
-            default => "Richiesta assistenza operatore umano."
+            default => 'Richiesta assistenza operatore umano.'
         };
 
         ConversationMessage::create([
@@ -305,10 +309,10 @@ class HandoffService
             'metadata' => [
                 'handoff_request_id' => $handoffRequest->id,
                 'trigger_type' => $handoffRequest->trigger_type,
-                'priority' => $handoffRequest->priority
+                'priority' => $handoffRequest->priority,
             ],
             'sent_at' => now(),
-            'delivered_at' => now()
+            'delivered_at' => now(),
         ]);
     }
 
@@ -328,7 +332,7 @@ class HandoffService
             'content' => $content,
             'content_type' => 'text',
             'sent_at' => now(),
-            'delivered_at' => now()
+            'delivered_at' => now(),
         ]);
 
         $session->incrementMessageCount('operator');
@@ -339,11 +343,11 @@ class HandoffService
      */
     private function createResolutionSystemMessage(ConversationSession $session, string $outcome): void
     {
-        $content = match($outcome) {
+        $content = match ($outcome) {
             'resolved_by_operator' => "La conversazione è stata risolta dall'operatore.",
-            'user_satisfied' => "Grazie per aver utilizzato il nostro servizio!",
+            'user_satisfied' => 'Grazie per aver utilizzato il nostro servizio!',
             'transferred_back_to_bot' => "Ti rimetto in contatto con l'assistente automatico.",
-            default => "La conversazione è stata completata."
+            default => 'La conversazione è stata completata.'
         };
 
         ConversationMessage::create([
@@ -354,7 +358,7 @@ class HandoffService
             'content_type' => 'system_event',
             'metadata' => ['resolution_outcome' => $outcome],
             'sent_at' => now(),
-            'delivered_at' => now()
+            'delivered_at' => now(),
         ]);
     }
 
@@ -363,7 +367,7 @@ class HandoffService
      */
     private function createEscalationSystemMessage(ConversationSession $session, HandoffRequest $escalatedRequest): void
     {
-        $content = "La tua richiesta è stata inoltrata a un supervisore per un supporto di livello superiore.";
+        $content = 'La tua richiesta è stata inoltrata a un supervisore per un supporto di livello superiore.';
 
         ConversationMessage::create([
             'conversation_session_id' => $session->id,
@@ -373,7 +377,7 @@ class HandoffService
             'content_type' => 'system_event',
             'metadata' => ['escalated_handoff_id' => $escalatedRequest->id],
             'sent_at' => now(),
-            'delivered_at' => now()
+            'delivered_at' => now(),
         ]);
     }
 }

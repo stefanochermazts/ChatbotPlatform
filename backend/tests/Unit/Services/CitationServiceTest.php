@@ -48,7 +48,7 @@ class CitationServiceTest extends TestCase
 
         $this->assertCount(2, $result);
         $this->assertSame($docs[0]->id, $result[0]['source_id']);
-        $this->assertSame("https://example.com/doc-1", $result[0]['page_url']);
+        $this->assertSame('https://example.com/doc-1', $result[0]['page_url']);
     }
 
     public function test_it_enriches_document_titles_from_database(): void
@@ -161,5 +161,3 @@ class CitationServiceTest extends TestCase
         $this->service->getCitations($citations, $tenant->id, 0);
     }
 }
-
-

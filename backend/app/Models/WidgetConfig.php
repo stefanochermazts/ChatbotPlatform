@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class WidgetConfig extends Model
 {
     use HasFactory;
-    
+
     protected $fillable = [
         'tenant_id',
         'enabled',
@@ -49,9 +49,9 @@ class WidgetConfig extends Model
         'custom_js',
         'advanced_config',
         'last_updated_at',
-        'updated_by'
+        'updated_by',
     ];
-    
+
     protected $casts = [
         'enabled' => 'boolean',
         'auto_open' => 'boolean',
@@ -72,87 +72,87 @@ class WidgetConfig extends Model
         'advanced_config' => 'array',
         'last_updated_at' => 'datetime',
         'created_at' => 'datetime',
-        'updated_at' => 'datetime'
+        'updated_at' => 'datetime',
     ];
-    
+
     // =================================================================
     // RELATIONSHIPS
     // =================================================================
-    
+
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
     }
-    
+
     public function updatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
-    
+
     // =================================================================
     // OPERATOR AVAILABILITY METHODS
     // =================================================================
-    
+
     /**
      * Check if operator is currently available based on time and day
      */
     public function isOperatorAvailable(): bool
     {
-        if (!$this->operator_enabled) {
+        if (! $this->operator_enabled) {
             return false;
         }
-        
+
         $availability = $this->operator_availability;
-        
+
         // Se non c'è nessuna configurazione di orari, l'operatore è sempre disponibile
-        if (!$availability || empty($availability)) {
+        if (! $availability || empty($availability)) {
             return true;
         }
-        
+
         $now = now();
         $currentDay = strtolower($now->format('l')); // monday, tuesday, etc.
         $currentTime = $now->format('H:i');
-        
+
         // Check if current day exists in availability
-        if (!isset($availability[$currentDay])) {
-            // Se il giorno non è configurato ma ci sono altri giorni configurati, 
+        if (! isset($availability[$currentDay])) {
+            // Se il giorno non è configurato ma ci sono altri giorni configurati,
             // significa che questo giorno è chiuso
             return false;
         }
-        
+
         $daySchedule = $availability[$currentDay];
-        
+
         // Check if day is enabled
-        if (!isset($daySchedule['enabled']) || !$daySchedule['enabled']) {
+        if (! isset($daySchedule['enabled']) || ! $daySchedule['enabled']) {
             return false;
         }
-        
+
         $slots = $daySchedule['slots'] ?? [];
-        
+
         // Se non ci sono slot per questo giorno, non è disponibile
         if (empty($slots)) {
             return false;
         }
-        
+
         // Check if current time is within any of the available slots
         foreach ($slots as $slot) {
             $startTime = $slot['start_time'] ?? null;
             $endTime = $slot['end_time'] ?? null;
-            
+
             // Skip empty slots
-            if (!$startTime || !$endTime) {
+            if (! $startTime || ! $endTime) {
                 continue;
             }
-            
+
             if ($currentTime >= $startTime && $currentTime <= $endTime) {
                 return true;
             }
         }
-        
+
         // Se siamo arrivati qui, nessuno slot è valido
         return false;
     }
-    
+
     /**
      * Get operator availability message
      */
@@ -161,21 +161,21 @@ class WidgetConfig extends Model
         if ($this->isOperatorAvailable()) {
             return 'Operatore disponibile';
         }
-        
+
         return $this->operator_unavailable_message ?? 'Operatore non disponibile in questo momento';
     }
-    
+
     // =================================================================
     // ACCESSORS & MUTATORS
     // =================================================================
-    
+
     public function getThemeConfigAttribute(): array
     {
         // Get colors based on theme
-        $colors = $this->theme === 'custom' 
+        $colors = $this->theme === 'custom'
             ? ($this->custom_colors ?? [])
             : $this->getPredefinedThemeColors($this->theme);
-            
+
         return [
             'name' => $this->widget_name,
             'theme' => $this->theme,
@@ -184,22 +184,22 @@ class WidgetConfig extends Model
                 'name' => $this->widget_name,
                 'logo' => $this->logo_url,
                 'favicon' => $this->favicon_url,
-                'companyName' => $this->tenant->name ?? 'La tua azienda'
+                'companyName' => $this->tenant->name ?? 'La tua azienda',
             ],
             'typography' => [
                 'fontFamily' => [
-                    'sans' => $this->font_family ?? "'Inter', sans-serif"
-                ]
+                    'sans' => $this->font_family ?? "'Inter', sans-serif",
+                ],
             ],
             'layout' => [
                 'widget' => [
                     'width' => $this->widget_width,
                     'height' => $this->widget_height,
-                    'borderRadius' => $this->border_radius
+                    'borderRadius' => $this->border_radius,
                 ],
                 'button' => [
-                    'size' => $this->button_size
-                ]
+                    'size' => $this->button_size,
+                ],
             ],
             'behavior' => [
                 'autoOpen' => $this->auto_open,
@@ -207,13 +207,13 @@ class WidgetConfig extends Model
                 'showAvatar' => $this->show_avatar,
                 'showCloseButton' => $this->show_close_button,
                 'enableAnimations' => $this->enable_animations,
-                'enableDarkMode' => $this->enable_dark_mode
+                'enableDarkMode' => $this->enable_dark_mode,
             ],
             'customCSS' => $this->custom_css,
-            'advanced' => $this->advanced_config ?? []
+            'advanced' => $this->advanced_config ?? [],
         ];
     }
-    
+
     public function getEmbedConfigAttribute(): array
     {
         return [
@@ -221,112 +221,112 @@ class WidgetConfig extends Model
             'apiKey' => $this->tenant->getWidgetApiKey(),
             'tenantId' => $this->tenant->id,
             'widgetConfigId' => $this->id,
-            
+
             // Theme and appearance from widget config form
             'theme' => $this->theme,
             'position' => $this->position,
             'autoOpen' => $this->auto_open,
-            
+
             // Layout configuration from form
             'layout' => [
                 'widget' => [
                     'width' => $this->widget_width ?? '400px',
                     'height' => $this->widget_height ?? '600px',
-                    'borderRadius' => $this->border_radius ?? '12px'
+                    'borderRadius' => $this->border_radius ?? '12px',
                 ],
                 'button' => [
-                    'size' => $this->button_size ?? '60px'
-                ]
+                    'size' => $this->button_size ?? '60px',
+                ],
             ],
-            
+
             // Behavior settings from form
             'behavior' => [
                 'showHeader' => $this->show_header ?? true,
                 'showAvatar' => $this->show_avatar ?? true,
                 'showCloseButton' => $this->show_close_button ?? true,
                 'enableAnimations' => $this->enable_animations ?? true,
-                'enableDarkMode' => $this->enable_dark_mode ?? false
+                'enableDarkMode' => $this->enable_dark_mode ?? false,
             ],
-            
+
             // Branding from form
             'branding' => [
                 'logoUrl' => $this->logo_url,
                 'faviconUrl' => $this->favicon_url,
                 'fontFamily' => $this->font_family ?? "'Inter', sans-serif",
-                'customColors' => $this->custom_colors
+                'customColors' => $this->custom_colors,
             ],
-            
+
             // API and conversation settings
             'enableConversationContext' => $this->enable_conversation_context,
             'enableAnalytics' => $this->enable_analytics,
             'model' => $this->api_model,
             'temperature' => $this->temperature,
             'maxTokens' => $this->max_tokens,
-            
+
             // 🔄 CONVERSATION PERSISTENCE: Always enabled for better UX
             'enableConversationPersistence' => true,
-            
+
             // Server-dependent features (will be overridden in preview if needed)
             'enableQuickActions' => $this->advanced_config['enableQuickActions'] ?? true,
             'enableThemeAPI' => $this->advanced_config['enableThemeAPI'] ?? true,
-            
+
             // Widget content and messaging
             'welcomeMessage' => $this->welcome_message,
             'widgetName' => $this->widget_name,
-            
+
             // Security settings
             'allowedDomains' => $this->allowed_domains,
             'gdprCompliant' => $this->gdpr_compliant ?? false,
-            
+
             // Custom styling
             'customCSS' => $this->custom_css,
             'customJS' => $this->custom_js,
-            
+
             // Advanced configuration
-            'advanced' => $this->advanced_config ?? []
+            'advanced' => $this->advanced_config ?? [],
         ];
     }
-    
+
     // =================================================================
     // SCOPES
     // =================================================================
-    
+
     public function scopeEnabled($query)
     {
         return $query->where('enabled', true);
     }
-    
+
     public function scopeForTenant($query, $tenantId)
     {
         return $query->where('tenant_id', $tenantId);
     }
-    
+
     // =================================================================
     // METHODS
     // =================================================================
-    
-    public function generateEmbedCode(string $baseUrl = null): string
+
+    public function generateEmbedCode(?string $baseUrl = null): string
     {
         $baseUrl = $baseUrl ?? config('app.url');
         $config = $this->embed_config;
-        
+
         $configJson = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        
-        return "<script>\n" .
-               "  window.chatbotConfig = {$configJson};\n" .
-               "</script>\n" .
+
+        return "<script>\n".
+               "  window.chatbotConfig = {$configJson};\n".
+               "</script>\n".
                "<script src=\"{$baseUrl}/widget/embed/chatbot-embed.js\" async></script>";
     }
-    
+
     public function generateThemeCSS(): string
     {
         $theme = $this->theme_config;
-        
+
         $css = "/* Generated theme CSS for tenant: {$this->tenant->name} */\n";
         $css .= "[data-tenant=\"{$this->tenant->slug}\"] {\n";
-        
+
         // Colors
-        if (!empty($theme['colors'])) {
+        if (! empty($theme['colors'])) {
             foreach ($theme['colors'] as $colorType => $shades) {
                 if (is_array($shades)) {
                     foreach ($shades as $shade => $color) {
@@ -335,38 +335,38 @@ class WidgetConfig extends Model
                 }
             }
         }
-        
+
         // Layout
-        if (!empty($theme['layout']['widget'])) {
+        if (! empty($theme['layout']['widget'])) {
             foreach ($theme['layout']['widget'] as $prop => $value) {
                 $cssProp = $this->camelToKebab($prop);
                 $css .= "  --chatbot-widget-{$cssProp}: {$value};\n";
             }
         }
-        
+
         $css .= "}\n";
-        
+
         // Custom CSS
         if ($this->custom_css) {
             $css .= "\n/* Custom CSS */\n{$this->custom_css}\n";
         }
-        
+
         return $css;
     }
-    
+
     public function updateLastModified($userId = null): void
     {
         $this->update([
             'last_updated_at' => now(),
-            'updated_by' => $userId
+            'updated_by' => $userId,
         ]);
     }
-    
+
     private function camelToKebab(string $string): string
     {
         return strtolower(preg_replace('/([a-z0-9])([A-Z])/', '$1-$2', $string));
     }
-    
+
     /**
      * Get predefined theme colors
      */
@@ -376,7 +376,7 @@ class WidgetConfig extends Model
             'default' => [
                 'primary' => [
                     '50' => '#eff6ff',
-                    '100' => '#dbeafe', 
+                    '100' => '#dbeafe',
                     '200' => '#bfdbfe',
                     '300' => '#93c5fd',
                     '400' => '#60a5fa',
@@ -384,22 +384,22 @@ class WidgetConfig extends Model
                     '600' => '#2563eb',
                     '700' => '#1d4ed8',
                     '800' => '#1e40af',
-                    '900' => '#1e3a8a'
-                ]
+                    '900' => '#1e3a8a',
+                ],
             ],
             'corporate' => [
                 'primary' => [
                     '50' => '#f8fafc',
                     '100' => '#f1f5f9',
-                    '200' => '#e2e8f0', 
+                    '200' => '#e2e8f0',
                     '300' => '#cbd5e1',
                     '400' => '#94a3b8',
                     '500' => '#64748b', // Main gray
                     '600' => '#475569',
                     '700' => '#334155',
                     '800' => '#1e293b',
-                    '900' => '#0f172a'
-                ]
+                    '900' => '#0f172a',
+                ],
             ],
             'friendly' => [
                 'primary' => [
@@ -412,28 +412,28 @@ class WidgetConfig extends Model
                     '600' => '#16a34a',
                     '700' => '#15803d',
                     '800' => '#166534',
-                    '900' => '#14532d'
-                ]
+                    '900' => '#14532d',
+                ],
             ],
             'high-contrast' => [
                 'primary' => [
                     '50' => '#ffffff',
                     '100' => '#f3f4f6',
                     '200' => '#e5e7eb',
-                    '300' => '#d1d5db', 
+                    '300' => '#d1d5db',
                     '400' => '#9ca3af',
                     '500' => '#000000', // Black for high contrast
                     '600' => '#1f2937',
                     '700' => '#374151',
                     '800' => '#4b5563',
-                    '900' => '#6b7280'
-                ]
-            ]
+                    '900' => '#6b7280',
+                ],
+            ],
         ];
-        
+
         return $themes[$theme] ?? $themes['default'];
     }
-    
+
     /**
      * Generate CSS with current design system colors for easy customization
      */
@@ -441,9 +441,9 @@ class WidgetConfig extends Model
     {
         $css = "/* 🎨 Current Widget Colors - Ready for Customization */\n";
         $css .= "/* Copy and paste this into the Custom CSS field to start customizing */\n\n";
-        
+
         $css .= ":root {\n";
-        
+
         // Primary brand colors
         $css .= "  /* Primary Brand Colors */\n";
         $css .= "  --chatbot-primary-50: #eff6ff;\n";
@@ -456,40 +456,40 @@ class WidgetConfig extends Model
         $css .= "  --chatbot-primary-700: #1d4ed8;\n";
         $css .= "  --chatbot-primary-800: #1e40af;\n";
         $css .= "  --chatbot-primary-900: #1e3a8a;\n\n";
-        
+
         // Text colors
         $css .= "  /* Text Colors */\n";
         $css .= "  --chatbot-text-primary: #111827; /* Main text */\n";
         $css .= "  --chatbot-text-secondary: #4b5563; /* Secondary text */\n";
         $css .= "  --chatbot-text-tertiary: #6b7280; /* Muted text */\n";
         $css .= "  --chatbot-text-inverse: #ffffff; /* Text on dark backgrounds */\n\n";
-        
-        // Background colors  
+
+        // Background colors
         $css .= "  /* Background Colors */\n";
         $css .= "  --chatbot-bg-primary: #ffffff; /* Main background */\n";
         $css .= "  --chatbot-bg-secondary: #f9fafb; /* Secondary background */\n";
         $css .= "  --chatbot-bg-tertiary: #f3f4f6; /* Tertiary background */\n\n";
-        
+
         // Message specific colors
         $css .= "  /* Message Bubbles */\n";
         $css .= "  --chatbot-message-user-bg: var(--chatbot-primary-500); /* Your messages */\n";
         $css .= "  --chatbot-message-user-text: var(--chatbot-text-inverse);\n";
         $css .= "  --chatbot-message-bot-bg: #f3f4f6; /* Bot messages */\n";
         $css .= "  --chatbot-message-bot-text: var(--chatbot-text-primary);\n\n";
-        
+
         // Button colors
         $css .= "  /* Buttons */\n";
         $css .= "  --chatbot-button-primary-bg: var(--chatbot-primary-500);\n";
         $css .= "  --chatbot-button-primary-text: var(--chatbot-text-inverse);\n";
         $css .= "  --chatbot-button-primary-hover: var(--chatbot-primary-600);\n\n";
-        
+
         // Border colors
         $css .= "  /* Borders */\n";
         $css .= "  --chatbot-border-primary: #e5e7eb;\n";
         $css .= "  --chatbot-border-secondary: #d1d5db;\n";
-        
+
         $css .= "}\n\n";
-        
+
         $css .= "/* 💡 Quick Customization Examples */\n";
         $css .= "/*\n";
         $css .= "  Red Theme:\n";
@@ -502,14 +502,14 @@ class WidgetConfig extends Model
         $css .= "  --chatbot-primary-500: #8b5cf6;\n";
         $css .= "  --chatbot-primary-600: #7c3aed;\n";
         $css .= "*/\n";
-        
+
         return $css;
     }
-    
+
     // =================================================================
     // STATIC METHODS
     // =================================================================
-    
+
     public static function createDefaultForTenant(Tenant $tenant): self
     {
         return self::create([
@@ -519,7 +519,7 @@ class WidgetConfig extends Model
             'theme' => 'default',
             'position' => 'bottom-right',
             'auto_open' => false,
-            'enabled' => true
+            'enabled' => true,
         ]);
     }
 
@@ -539,10 +539,10 @@ class WidgetConfig extends Model
     public function getActiveConversations()
     {
         return $this->conversationSessions()
-                   ->whereIn('status', ['active', 'assigned'])
-                   ->with(['messages' => function($query) {
-                       $query->latest('sent_at')->limit(1);
-                   }, 'assignedOperator']);
+            ->whereIn('status', ['active', 'assigned'])
+            ->with(['messages' => function ($query) {
+                $query->latest('sent_at')->limit(1);
+            }, 'assignedOperator']);
     }
 
     /**
@@ -558,7 +558,7 @@ class WidgetConfig extends Model
             'total_sessions' => $totalSessions,
             'active_sessions' => $activeSessions,
             'resolved_sessions' => $resolvedSessions,
-            'resolution_rate' => $totalSessions > 0 ? ($resolvedSessions / $totalSessions) * 100 : 0
+            'resolution_rate' => $totalSessions > 0 ? ($resolvedSessions / $totalSessions) * 100 : 0,
         ];
     }
 }

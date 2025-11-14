@@ -33,9 +33,9 @@ class PasswordResetNotification extends Notification implements ShouldQueue
     {
         return (new MailMessage)
             ->subject('Password reimpostata - ChatBot Platform')
-            ->greeting('Ciao ' . $notifiable->name . '!')
+            ->greeting('Ciao '.$notifiable->name.'!')
             ->line('La tua password è stata reimpostata da un amministratore.')
-            ->line('La tua nuova password temporanea è: **' . $this->temporaryPassword . '**')
+            ->line('La tua nuova password temporanea è: **'.$this->temporaryPassword.'**')
             ->line('Ti consigliamo di cambiare questa password al primo accesso.')
             ->action('Accedi alla Piattaforma', route('login'))
             ->line('Se non hai richiesto questa modifica, contatta immediatamente l\'amministratore.')

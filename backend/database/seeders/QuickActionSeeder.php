@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\QuickAction;
 use App\Models\Tenant;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class QuickActionSeeder extends Seeder
@@ -15,14 +14,14 @@ class QuickActionSeeder extends Seeder
     public function run(): void
     {
         $tenants = Tenant::all();
-        
+
         foreach ($tenants as $tenant) {
             $this->createDefaultActionsForTenant($tenant);
         }
-        
-        $this->command->info('Quick actions created for ' . $tenants->count() . ' tenants');
+
+        $this->command->info('Quick actions created for '.$tenants->count().' tenants');
     }
-    
+
     private function createDefaultActionsForTenant(Tenant $tenant): void
     {
         $defaultActions = [
@@ -40,7 +39,7 @@ class QuickActionSeeder extends Seeder
                 'success_message' => 'La tua richiesta è stata inviata con successo!',
                 'success_action' => 'message',
                 'rate_limit_per_user' => 3,
-                'rate_limit_global' => 50
+                'rate_limit_global' => 50,
             ],
             [
                 'tenant_id' => $tenant->id,
@@ -56,7 +55,7 @@ class QuickActionSeeder extends Seeder
                 'success_message' => 'Ti ricontatteremo il prima possibile!',
                 'success_action' => 'message',
                 'rate_limit_per_user' => 2,
-                'rate_limit_global' => 30
+                'rate_limit_global' => 30,
             ],
             [
                 'tenant_id' => $tenant->id,
@@ -71,15 +70,15 @@ class QuickActionSeeder extends Seeder
                 'success_message' => 'Download avviato!',
                 'success_action' => 'download',
                 'rate_limit_per_user' => 5,
-                'rate_limit_global' => 100
-            ]
+                'rate_limit_global' => 100,
+            ],
         ];
-        
+
         foreach ($defaultActions as $actionData) {
             QuickAction::firstOrCreate(
                 [
                     'tenant_id' => $tenant->id,
-                    'action_type' => $actionData['action_type']
+                    'action_type' => $actionData['action_type'],
                 ],
                 $actionData
             );

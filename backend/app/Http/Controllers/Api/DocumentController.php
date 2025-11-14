@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Document;
 use App\Jobs\IngestUploadedDocumentJob;
+use App\Models\Document;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -14,6 +14,7 @@ class DocumentController extends Controller
     {
         $tenantId = (int) $request->attributes->get('tenant_id');
         $docs = Document::query()->where('tenant_id', $tenantId)->latest()->paginate(25);
+
         return response()->json($docs);
     }
 
@@ -103,8 +104,7 @@ class DocumentController extends Controller
         }
 
         $document->delete();
+
         return response()->json(['status' => 'deleted']);
     }
 }
-
-

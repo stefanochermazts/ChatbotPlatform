@@ -12,6 +12,7 @@ class ScraperConfigController extends Controller
     {
         $tenantId = (int) $request->attributes->get('tenant_id');
         $cfg = ScraperConfig::query()->where('tenant_id', $tenantId)->first();
+
         return response()->json($cfg);
     }
 
@@ -40,8 +41,3 @@ class ScraperConfigController extends Controller
         return response()->json($cfg);
     }
 }
-
-
-
-
-

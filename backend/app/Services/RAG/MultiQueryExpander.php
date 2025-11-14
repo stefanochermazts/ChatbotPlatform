@@ -8,7 +8,7 @@ class MultiQueryExpander
 {
     public function __construct(
         private readonly OpenAIChatService $chat,
-        private readonly TenantRagConfigService $tenantConfig = new TenantRagConfigService(),
+        private readonly TenantRagConfigService $tenantConfig = new TenantRagConfigService,
     ) {}
 
     /**
@@ -20,7 +20,7 @@ class MultiQueryExpander
         $cfg = (array) $this->tenantConfig->getMultiQueryConfig($tenantId);
         $enabled = (bool) ($cfg['enabled'] ?? true);
         $num = max(0, (int) ($cfg['num'] ?? 2));
-        if (!$enabled || $num === 0 || trim($query) === '') {
+        if (! $enabled || $num === 0 || trim($query) === '') {
             return [$query];
         }
 
@@ -46,10 +46,7 @@ class MultiQueryExpander
 
         // Deduplica e ritorna (originale + parafrasi)
         $all = array_values(array_unique(array_merge([$query], $paraphrases)));
+
         return $all;
     }
 }
-
-
-
-

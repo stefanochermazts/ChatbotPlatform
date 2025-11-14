@@ -101,9 +101,9 @@ class FormField extends Model
                 break;
             case 'select':
             case 'radio':
-                if (!empty($this->options)) {
+                if (! empty($this->options)) {
                     $validOptions = array_keys($this->options);
-                    $rules[] = 'in:' . implode(',', $validOptions);
+                    $rules[] = 'in:'.implode(',', $validOptions);
                 }
                 break;
         }
@@ -127,13 +127,13 @@ class FormField extends Model
         $placeholder = htmlspecialchars($this->placeholder ?? '');
         $required = $this->required ? 'required' : '';
         $value = htmlspecialchars($value);
-        $hasError = !empty($errors);
+        $hasError = ! empty($errors);
         $errorClass = $hasError ? 'border-red-500' : 'border-gray-300';
 
         $html = "<div class=\"mb-4\">\n";
         $html .= "  <label for=\"{$id}\" class=\"block text-sm font-medium text-gray-700 mb-1\">{$label}";
         if ($this->required) {
-            $html .= " <span class=\"text-red-500\">*</span>";
+            $html .= ' <span class="text-red-500">*</span>';
         }
         $html .= "</label>\n";
 
@@ -187,7 +187,7 @@ class FormField extends Model
 
         // Help text
         if ($this->help_text) {
-            $html .= "  <p class=\"mt-1 text-xs text-gray-500\">" . htmlspecialchars($this->help_text) . "</p>\n";
+            $html .= '  <p class="mt-1 text-xs text-gray-500">'.htmlspecialchars($this->help_text)."</p>\n";
         }
 
         // Error messages

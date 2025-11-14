@@ -4,9 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Auth;
 
 class SuperAdminUtilitiesController extends Controller
 {
@@ -22,15 +21,15 @@ class SuperAdminUtilitiesController extends Controller
     public function index()
     {
         $user = Auth::user();
-        
+
         // Verifica che l'utente sia effettivamente un admin
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             abort(403, 'Accesso riservato ai Super Admin.');
         }
 
         // Raggruppa le utilities per categoria
         $utilities = $this->getUtilitiesData();
-        
+
         return view('admin.utilities.index', compact('utilities'));
     }
 
@@ -40,8 +39,8 @@ class SuperAdminUtilitiesController extends Controller
     public function executeCommand(Request $request)
     {
         $user = Auth::user();
-        
-        if (!$user->isAdmin()) {
+
+        if (! $user->isAdmin()) {
             return response()->json(['error' => 'Accesso negato'], 403);
         }
 
@@ -62,7 +61,7 @@ class SuperAdminUtilitiesController extends Controller
             'config:cache',
         ];
 
-        if (!in_array($command, $allowedCommands)) {
+        if (! in_array($command, $allowedCommands)) {
             return response()->json(['error' => 'Comando non autorizzato'], 400);
         }
 

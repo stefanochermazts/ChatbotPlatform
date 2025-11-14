@@ -6,7 +6,6 @@ use App\Models\Document;
 use App\Models\Tenant;
 use App\Services\RAG\MilvusClient;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class MilvusAuditCommand extends Command
 {
@@ -40,7 +39,7 @@ class MilvusAuditCommand extends Command
         $this->newLine();
 
         // Determina quali tenant verificare
-        $tenants = $tenantId 
+        $tenants = $tenantId
             ? [Tenant::findOrFail($tenantId)]
             : Tenant::all();
 
@@ -50,7 +49,7 @@ class MilvusAuditCommand extends Command
 
         foreach ($tenants as $tenant) {
             $this->info("📊 Tenant {$tenant->id}: {$tenant->name}");
-            
+
             // Conta documenti in PostgreSQL
             $pgCount = Document::where('tenant_id', $tenant->id)->count();
             $this->line("   PostgreSQL: {$pgCount} documenti");
@@ -76,24 +75,24 @@ class MilvusAuditCommand extends Command
             if ($zombieCount > 0) {
                 $this->warn("   ❌ {$zombieCount} documenti zombie in Milvus!");
                 $zombiesByTenant[$tenant->id] = $zombies;
-                
+
                 // Mostra primi 10 zombie
                 $firstZombies = array_slice($zombies, 0, 10);
-                $this->line("   Zombie doc_ids: " . implode(', ', $firstZombies));
+                $this->line('   Zombie doc_ids: '.implode(', ', $firstZombies));
                 if ($zombieCount > 10) {
-                    $this->line("   ... e altri " . ($zombieCount - 10) . " documenti");
+                    $this->line('   ... e altri '.($zombieCount - 10).' documenti');
                 }
 
                 // Fix se richiesto
-                if ($fix && !$dryRun) {
-                    $this->info("   🔧 Rimozione zombie...");
+                if ($fix && ! $dryRun) {
+                    $this->info('   🔧 Rimozione zombie...');
                     $removed = $this->removeZombieDocuments($tenant->id, $zombies);
                     $this->info("   ✅ Rimossi {$removed} chunk zombie da Milvus");
                 } elseif ($dryRun) {
                     $this->comment("   [DRY-RUN] Verrebbero rimossi {$zombieCount} documenti zombie");
                 }
             } else {
-                $this->info("   ✅ Nessun documento zombie");
+                $this->info('   ✅ Nessun documento zombie');
             }
 
             $totalZombies += $zombieCount;
@@ -106,17 +105,17 @@ class MilvusAuditCommand extends Command
         $this->info('📊 SUMMARY');
         $this->info('═══════════════════════════════════════');
         $this->line("✅ Documenti sincronizzati: {$totalSynced}");
-        
+
         if ($totalZombies > 0) {
             $this->warn("❌ Documenti zombie totali: {$totalZombies}");
-            
-            if (!$fix && !$dryRun) {
+
+            if (! $fix && ! $dryRun) {
                 $this->newLine();
                 $this->comment('💡 Suggerimento: Usa --fix per rimuovere automaticamente i zombie');
                 $this->comment('   oppure --dry-run per vedere cosa verrebbe fatto');
             }
         } else {
-            $this->info("✅ Nessun documento zombie trovato");
+            $this->info('✅ Nessun documento zombie trovato');
         }
 
         return $totalZombies > 0 ? Command::FAILURE : Command::SUCCESS;
@@ -134,6 +133,7 @@ class MilvusAuditCommand extends Command
         ]);
 
         $output = shell_exec("python \"{$pythonScript}\" '{$params}'");
+
         return json_decode($output, true) ?? ['count' => 0];
     }
 
@@ -145,7 +145,7 @@ class MilvusAuditCommand extends Command
     {
         // Ottieni sample di risultati da Milvus usando un embedding random
         $milvus = app(MilvusClient::class);
-        
+
         // Query tutti i documenti del tenant da PostgreSQL e controlla se esistono in Milvus
         $allDocs = Document::where('tenant_id', $tenantId)->get();
         $milvusDocIds = [];
@@ -174,6 +174,7 @@ class MilvusAuditCommand extends Command
         ]);
 
         $output = shell_exec("python \"{$pythonScript}\" '{$params}'");
+
         return json_decode($output, true) ?? ['count' => 0];
     }
 

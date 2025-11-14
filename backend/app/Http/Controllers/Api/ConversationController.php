@@ -4,14 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ConversationSession;
-use App\Models\ConversationMessage;
 use App\Models\Tenant;
 use App\Models\WidgetConfig;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Carbon\Carbon;
 
 class ConversationController extends Controller
 {
@@ -29,23 +27,23 @@ class ConversationController extends Controller
                 'user_agent' => 'nullable|string|max:500',
                 'referrer_url' => 'nullable|url|max:500',
                 'browser_info' => 'nullable|array',
-                'metadata' => 'nullable|array'
+                'metadata' => 'nullable|array',
             ]);
 
             // 🔒 Verifica tenant esistente
             $tenant = Tenant::find($validated['tenant_id']);
-            
-            if (!$tenant) {
+
+            if (! $tenant) {
                 return response()->json(['error' => 'Tenant not found'], 404);
             }
 
             // 🔒 Verifica widget config abilitato
             $widgetConfig = WidgetConfig::where('id', $validated['widget_config_id'])
-                                      ->where('tenant_id', $validated['tenant_id'])
-                                      ->where('enabled', true)
-                                      ->first();
-            
-            if (!$widgetConfig) {
+                ->where('tenant_id', $validated['tenant_id'])
+                ->where('enabled', true)
+                ->first();
+
+            if (! $widgetConfig) {
                 return response()->json(['error' => 'Widget configuration not found or disabled'], 404);
             }
 
@@ -66,7 +64,7 @@ class ConversationController extends Controller
                 'handoff_status' => 'bot_only',
                 'started_at' => now(),
                 'last_activity_at' => now(),
-                'metadata' => $validated['metadata'] ?? []
+                'metadata' => $validated['metadata'] ?? [],
             ]);
 
             return response()->json([
@@ -75,14 +73,15 @@ class ConversationController extends Controller
                     'session_id' => $session->session_id,
                     'status' => $session->status,
                     'handoff_status' => $session->handoff_status,
-                    'started_at' => $session->started_at->toISOString()
-                ]
+                    'started_at' => $session->started_at->toISOString(),
+                ],
             ], 201);
 
         } catch (ValidationException $e) {
             return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
         } catch (\Exception $e) {
             \Log::error('conversation.start.failed', ['error' => $e->getMessage()]);
+
             return response()->json(['error' => 'Failed to start conversation'], 500);
         }
     }
@@ -122,9 +121,9 @@ class ConversationController extends Controller
         $components = [
             $request->ip(),
             $request->header('User-Agent'),
-            $request->header('Accept-Language')
+            $request->header('Accept-Language'),
         ];
 
-        return 'guest_' . md5(implode('|', array_filter($components)));
+        return 'guest_'.md5(implode('|', array_filter($components)));
     }
 }

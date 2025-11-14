@@ -26,7 +26,7 @@ class DocumentObserver
 
     /**
      * Handle the Document "deleted" event.
-     * 
+     *
      * Sincronizza la cancellazione con Milvus per evitare documenti zombie.
      */
     public function deleted(Document $document): void
@@ -34,7 +34,7 @@ class DocumentObserver
         try {
             // Conta i chunk prima di cancellarli (potrebbero essere già cancellati da cascadeOnDelete)
             $chunkCount = $document->chunks()->count();
-            
+
             if ($chunkCount === 0) {
                 // Prova a stimare dal document se non ci sono chunk in DB
                 // Usa un numero ragionevole come fallback (es. 10 chunk max)
@@ -45,26 +45,27 @@ class DocumentObserver
                     'fallback_chunks' => $chunkCount,
                 ]);
             }
-            
+
             // Calcola primary IDs dei chunk in Milvus
             // Formula: primary_id = (document_id * 100000) + chunk_index
             $primaryIds = [];
             for ($i = 0; $i < $chunkCount; $i++) {
                 $primaryIds[] = ($document->id * 100000) + $i;
             }
-            
+
             if (empty($primaryIds)) {
                 Log::info('No chunks to delete from Milvus', [
                     'document_id' => $document->id,
                     'tenant_id' => $document->tenant_id,
                 ]);
+
                 return;
             }
-            
+
             // Cancella da Milvus
             $milvus = app(MilvusClient::class);
             $result = $milvus->deleteByPrimaryIds($primaryIds);
-            
+
             if ($result['success'] ?? false) {
                 Log::info('✅ Document chunks deleted from Milvus', [
                     'document_id' => $document->id,
@@ -102,7 +103,7 @@ class DocumentObserver
 
     /**
      * Handle the Document "force deleted" event.
-     * 
+     *
      * Sincronizza anche il force delete con Milvus.
      */
     public function forceDeleted(Document $document): void

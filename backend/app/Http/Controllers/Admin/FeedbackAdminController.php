@@ -15,32 +15,32 @@ class FeedbackAdminController extends Controller
     public function index(Request $request, Tenant $tenant)
     {
         $query = ChatbotFeedback::forTenant($tenant->id);
-        
+
         // 🔍 FILTRI
-        
+
         // Rating filter
         if ($request->filled('rating')) {
             $query->withRating($request->rating);
         }
-        
+
         // Data range filter
         if ($request->filled('date_from')) {
             $query->whereDate('feedback_given_at', '>=', $request->date_from);
         }
-        
+
         if ($request->filled('date_to')) {
             $query->whereDate('feedback_given_at', '<=', $request->date_to);
         }
-        
+
         // Search in question/response
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('user_question', 'ILIKE', '%' . $search . '%')
-                  ->orWhere('bot_response', 'ILIKE', '%' . $search . '%');
+            $query->where(function ($q) use ($search) {
+                $q->where('user_question', 'ILIKE', '%'.$search.'%')
+                    ->orWhere('bot_response', 'ILIKE', '%'.$search.'%');
             });
         }
-        
+
         // 📊 STATISTICHE
         $stats = [
             'total' => ChatbotFeedback::forTenant($tenant->id)->count(),
@@ -48,7 +48,7 @@ class FeedbackAdminController extends Controller
             'neutral' => ChatbotFeedback::forTenant($tenant->id)->withRating('neutral')->count(),
             'negative' => ChatbotFeedback::forTenant($tenant->id)->withRating('negative')->count(),
         ];
-        
+
         // Calcola percentuali
         if ($stats['total'] > 0) {
             $stats['positive_percent'] = round(($stats['positive'] / $stats['total']) * 100, 1);
@@ -57,10 +57,10 @@ class FeedbackAdminController extends Controller
         } else {
             $stats['positive_percent'] = $stats['neutral_percent'] = $stats['negative_percent'] = 0;
         }
-        
+
         // 📄 PAGINAZIONE
         $feedbacks = $query->orderBy('feedback_given_at', 'desc')->paginate(20);
-        
+
         return view('admin.feedback.index', [
             'feedbacks' => $feedbacks,
             'tenant' => $tenant,
@@ -98,7 +98,7 @@ class FeedbackAdminController extends Controller
         $feedback->delete();
 
         return redirect()->route('admin.tenants.feedback.index', $tenant)
-                         ->with('success', 'Feedback eliminato con successo.');
+            ->with('success', 'Feedback eliminato con successo.');
     }
 
     /**
@@ -107,38 +107,38 @@ class FeedbackAdminController extends Controller
     public function export(Request $request, Tenant $tenant)
     {
         $query = ChatbotFeedback::forTenant($tenant->id);
-        
+
         // Applica stessi filtri della index
         if ($request->filled('rating')) {
             $query->withRating($request->rating);
         }
-        
+
         if ($request->filled('date_from')) {
             $query->whereDate('feedback_given_at', '>=', $request->date_from);
         }
-        
+
         if ($request->filled('date_to')) {
             $query->whereDate('feedback_given_at', '<=', $request->date_to);
         }
-        
+
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('user_question', 'ILIKE', '%' . $search . '%')
-                  ->orWhere('bot_response', 'ILIKE', '%' . $search . '%');
+            $query->where(function ($q) use ($search) {
+                $q->where('user_question', 'ILIKE', '%'.$search.'%')
+                    ->orWhere('bot_response', 'ILIKE', '%'.$search.'%');
             });
         }
-        
+
         $feedbacks = $query->orderBy('feedback_given_at', 'desc')->get();
-        
+
         $headers = [
             'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="feedback_' . $tenant->slug . '_' . date('Y-m-d') . '.csv"',
+            'Content-Disposition' => 'attachment; filename="feedback_'.$tenant->slug.'_'.date('Y-m-d').'.csv"',
         ];
-        
-        $callback = function() use ($feedbacks) {
+
+        $callback = function () use ($feedbacks) {
             $file = fopen('php://output', 'w');
-            
+
             // Header CSV
             fputcsv($file, [
                 'ID',
@@ -150,9 +150,9 @@ class FeedbackAdminController extends Controller
                 'Session ID',
                 'Page URL',
                 'IP Address',
-                'User Agent'
+                'User Agent',
             ]);
-            
+
             // Dati
             foreach ($feedbacks as $feedback) {
                 fputcsv($file, [
@@ -165,13 +165,13 @@ class FeedbackAdminController extends Controller
                     $feedback->session_id,
                     $feedback->page_url,
                     $feedback->ip_address,
-                    $feedback->user_agent_data['user_agent'] ?? ''
+                    $feedback->user_agent_data['user_agent'] ?? '',
                 ]);
             }
-            
+
             fclose($file);
         };
-        
+
         return response()->stream($callback, 200, $headers);
     }
 }

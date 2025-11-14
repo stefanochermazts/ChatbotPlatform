@@ -39,6 +39,7 @@ class RagReindexCommand extends Command
 
         if ($documents->isEmpty()) {
             $this->warn('Nessun documento trovato con i criteri specificati.');
+
             return self::SUCCESS;
         }
 
@@ -55,11 +56,13 @@ class RagReindexCommand extends Command
 
         if ($dryRun) {
             $this->info('Dry-run terminato. Nessuna operazione eseguita.');
+
             return self::SUCCESS;
         }
 
         if (! $this->confirmAction($documents->count(), $tenantId, $documentId)) {
             $this->info('Operazione annullata.');
+
             return self::SUCCESS;
         }
 
@@ -104,5 +107,3 @@ class RagReindexCommand extends Command
         return $this->confirm($question, false, self::CONFIRMATION_TIMEOUT);
     }
 }
-
-

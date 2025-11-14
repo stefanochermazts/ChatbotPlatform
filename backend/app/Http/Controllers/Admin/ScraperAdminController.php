@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\Scraper\TitleStrategy;
 use App\Http\Controllers\Controller;
 use App\Jobs\RunWebScrapingJob;
 use App\Models\ScraperConfig;
 use App\Models\Tenant;
 use App\Services\Scraper\WebScraperService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ScraperAdminController extends Controller
 {
@@ -15,6 +17,7 @@ class ScraperAdminController extends Controller
     {
         $configs = ScraperConfig::where('tenant_id', $tenant->id)->orderBy('id')->get();
         $config = $configs->first() ?? new ScraperConfig(['tenant_id' => $tenant->id]);
+
         return view('admin.scraper.edit', compact('tenant', 'config', 'configs'));
     }
 
@@ -33,7 +36,7 @@ class ScraperAdminController extends Controller
                 'render_js' => $request->boolean('render_js'),
                 'respect_robots' => $request->boolean('respect_robots'),
                 'skip_known_urls' => $request->boolean('skip_known_urls'),
-            ]
+            ],
         ]);
 
         $data = $request->validate([
@@ -66,6 +69,10 @@ class ScraperAdminController extends Controller
             'js_content_wait' => ['nullable', 'integer', 'min:5', 'max:120'],
             'js_scroll_delay' => ['nullable', 'integer', 'min:1', 'max:10'],
             'js_final_wait' => ['nullable', 'integer', 'min:3', 'max:60'],
+            'title_strategy' => ['required', 'string', 'max:16', Rule::in(array_map(
+                fn ($strategy) => $strategy->value,
+                TitleStrategy::cases()
+            ))],
         ]);
 
         $payload = [
@@ -78,7 +85,7 @@ class ScraperAdminController extends Controller
             'link_only_patterns' => $this->toArray($data['link_only_patterns'] ?? ''),
             'max_depth' => (int) ($data['max_depth'] ?? 2),
             'render_js' => $request->boolean('render_js'),  // ✅ Fix checkbox
-            'respect_robots' => $request->boolean('respect_robots'),  // ✅ Fix checkbox  
+            'respect_robots' => $request->boolean('respect_robots'),  // ✅ Fix checkbox
             'rate_limit_rps' => (int) ($data['rate_limit_rps'] ?? 1),
             'auth_headers' => $this->parseHeaders($data['auth_headers'] ?? ''),
             'target_knowledge_base_id' => isset($data['target_knowledge_base_id']) && $data['target_knowledge_base_id'] !== ''
@@ -101,15 +108,16 @@ class ScraperAdminController extends Controller
             'js_content_wait' => (int) ($data['js_content_wait'] ?? 15),
             'js_scroll_delay' => (int) ($data['js_scroll_delay'] ?? 2),
             'js_final_wait' => (int) ($data['js_final_wait'] ?? 8),
+            'title_strategy' => $data['title_strategy'],
         ];
 
-        if (!empty($data['id'])) {
+        if (! empty($data['id'])) {
             // UPDATE: Aggiorna configurazione esistente
             $config = ScraperConfig::where('tenant_id', $tenant->id)->findOrFail((int) $data['id']);
             \Log::info('ScraperAdmin: Aggiornamento configurazione esistente', [
                 'tenant_id' => $tenant->id,
                 'config_id' => $data['id'],
-                'config_name' => $payload['name']
+                'config_name' => $payload['name'],
             ]);
             $config->fill($payload + ['tenant_id' => $tenant->id]);
             $config->save();
@@ -118,7 +126,7 @@ class ScraperAdminController extends Controller
             \Log::info('ScraperAdmin: Creazione nuova configurazione', [
                 'tenant_id' => $tenant->id,
                 'config_name' => $payload['name'],
-                'reason' => 'ID non presente nel form'
+                'reason' => 'ID non presente nel form',
             ]);
             $config = new ScraperConfig($payload + ['tenant_id' => $tenant->id]);
             $config->save();
@@ -143,41 +151,42 @@ class ScraperAdminController extends Controller
     public function run(Tenant $tenant)
     {
         $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
-        
-        if (!$config || empty($config->seed_urls)) {
+
+        if (! $config || empty($config->seed_urls)) {
             return back()->with('error', 'Configurazione scraper non trovata o incompleta');
         }
 
         // Avvia scraping in background
         RunWebScrapingJob::dispatch($tenant->id, (int) request('id'));
-        
+
         return back()->with('ok', 'Scraping avviato in background. Controlla i log per il progresso.');
     }
 
     public function runSync(Tenant $tenant, WebScraperService $scraper)
     {
         $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
-        
-        if (!$config || empty($config->seed_urls)) {
+
+        if (! $config || empty($config->seed_urls)) {
             return back()->with('error', 'Configurazione scraper non trovata o incompleta');
         }
 
         try {
             $result = $scraper->scrapeForTenant($tenant->id, (int) request('id'));
-            
+
             if (isset($result['error'])) {
                 return back()->with('error', $result['error']);
             }
-            
+
             $message = "Scraping completato: {$result['urls_visited']} URLs visitati, {$result['documents_saved']} documenti processati";
             if (isset($result['stats'])) {
                 $stats = $result['stats'];
                 $message .= " (Nuovi: {$stats['new']}, Aggiornati: {$stats['updated']}, Invariati: {$stats['skipped']})";
             }
+
             return back()->with('ok', $message);
-            
+
         } catch (\Exception $e) {
-            return back()->with('error', 'Errore durante scraping: ' . $e->getMessage());
+            return back()->with('error', 'Errore durante scraping: '.$e->getMessage());
         }
     }
 
@@ -193,12 +202,13 @@ class ScraperAdminController extends Controller
         $headers = [];
         foreach (preg_split('/\r?\n/', $multiline) ?: [] as $line) {
             $line = trim($line);
-            if ($line === '' || !str_contains($line, ':')) {
+            if ($line === '' || ! str_contains($line, ':')) {
                 continue;
             }
             [$k, $v] = array_map('trim', explode(':', $line, 2));
             $headers[$k] = $v;
         }
+
         return $headers;
     }
 
@@ -211,12 +221,12 @@ class ScraperAdminController extends Controller
             'tenant_id' => ['required', 'integer', 'exists:tenants,id'],
             'url' => ['required', 'url'],
             'force' => ['sometimes', 'boolean'],
-            'knowledge_base_id' => ['nullable', 'integer', 'exists:knowledge_bases,id']
+            'knowledge_base_id' => ['nullable', 'integer', 'exists:knowledge_bases,id'],
         ]);
 
         try {
-            $scraperService = new WebScraperService();
-            
+            $scraperService = new WebScraperService;
+
             $result = $scraperService->scrapeSingleUrl(
                 $data['tenant_id'],
                 $data['url'],
@@ -232,21 +242,21 @@ class ScraperAdminController extends Controller
                         'url' => $result['url'],
                         'saved_count' => $result['saved_count'],
                         'stats' => $result['stats'],
-                        'document' => $result['document'] ?? null
-                    ]
+                        'document' => $result['document'] ?? null,
+                    ],
                 ]);
             } else {
                 return response()->json([
                     'success' => false,
                     'message' => $result['message'],
-                    'existing_document' => $result['existing_document'] ?? null
+                    'existing_document' => $result['existing_document'] ?? null,
                 ], 400);
             }
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Errore durante lo scraping: ' . $e->getMessage()
+                'message' => 'Errore durante lo scraping: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -254,10 +264,10 @@ class ScraperAdminController extends Controller
     public function downloadLinked(Tenant $tenant, WebScraperService $scraper)
     {
         $config = ScraperConfig::where('tenant_id', $tenant->id)->first();
-        if (!$config) {
+        if (! $config) {
             return back()->with('error', 'Configurazione scraper non trovata');
         }
-        if (!$config->download_linked_documents) {
+        if (! $config->download_linked_documents) {
             return back()->with('error', 'Scaricamento documenti collegati disabilitato nella configurazione');
         }
 
@@ -266,13 +276,16 @@ class ScraperAdminController extends Controller
             ->whereNotNull('path')
             ->get();
 
-        $linksCount = 0; $processedDocs = 0;
+        $linksCount = 0;
+        $processedDocs = 0;
         foreach ($docs as $d) {
             try {
                 $text = \Storage::disk('public')->exists($d->path)
                     ? \Storage::disk('public')->get($d->path)
                     : '';
-                if ($text === '') { continue; }
+                if ($text === '') {
+                    continue;
+                }
 
                 preg_match_all('/\[[^\]]+\]\(([^\)]+)\)/', $text, $m);
                 $links = array_map('trim', $m[1] ?? []);
@@ -297,4 +310,3 @@ class ScraperAdminController extends Controller
         $method->invoke($scraper, $links, $tenant, $config, $pageUrl);
     }
 }
-

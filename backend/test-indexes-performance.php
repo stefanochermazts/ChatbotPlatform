@@ -2,7 +2,7 @@
 
 /**
  * Test Performance Database Indexes
- * 
+ *
  * Misura le performance BEFORE e AFTER la migration degli indici
  */
 
@@ -12,9 +12,9 @@ $app = require_once __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
-use Illuminate\Support\Facades\DB;
-use App\Services\RAG\TextSearchService;
 use App\Models\Document;
+use App\Services\RAG\TextSearchService;
+use Illuminate\Support\Facades\DB;
 
 echo "\n";
 echo "========================================\n";
@@ -29,15 +29,15 @@ $kbId = 1;
 echo "Environment: DEV (Tenant ID: $tenantId)\n";
 echo "\n";
 
-//==============================================================================
+// ==============================================================================
 // TEST 1: RAG Query (BM25 Full-Text Search)
-//==============================================================================
+// ==============================================================================
 
 echo "📊 TEST 1: RAG Query (BM25 Search)\n";
-echo str_repeat("-", 50) . "\n";
+echo str_repeat('-', 50)."\n";
 
 DB::enableQueryLog();
-$service = new TextSearchService();
+$service = new TextSearchService;
 
 $start = microtime(true);
 $result = $service->searchTopK($tenantId, 'numeri telefono orari uffici', 50, $kbId);
@@ -46,22 +46,22 @@ $duration = (microtime(true) - $start) * 1000;
 $queries = DB::getQueryLog();
 DB::disableQueryLog();
 
-echo "  Duration: " . round($duration, 2) . " ms\n";
-echo "  Results: " . count($result) . "\n";
-echo "  DB Queries: " . count($queries) . "\n";
+echo '  Duration: '.round($duration, 2)." ms\n";
+echo '  Results: '.count($result)."\n";
+echo '  DB Queries: '.count($queries)."\n";
 
 if (count($queries) > 0) {
-    echo "  Query Time: " . round($queries[0]['time'], 2) . " ms\n";
+    echo '  Query Time: '.round($queries[0]['time'], 2)." ms\n";
 }
 
 echo "\n";
 
-//==============================================================================
+// ==============================================================================
 // TEST 2: Admin Document Filtering
-//==============================================================================
+// ==============================================================================
 
 echo "📊 TEST 2: Admin Document Filtering\n";
-echo str_repeat("-", 50) . "\n";
+echo str_repeat('-', 50)."\n";
 
 DB::enableQueryLog();
 
@@ -75,22 +75,22 @@ $duration = (microtime(true) - $start) * 1000;
 $queries = DB::getQueryLog();
 DB::disableQueryLog();
 
-echo "  Duration: " . round($duration, 2) . " ms\n";
-echo "  Documents: " . $docs->count() . "\n";
-echo "  DB Queries: " . count($queries) . "\n";
+echo '  Duration: '.round($duration, 2)." ms\n";
+echo '  Documents: '.$docs->count()."\n";
+echo '  DB Queries: '.count($queries)."\n";
 
 if (count($queries) > 0) {
-    echo "  Query Time: " . round($queries[0]['time'], 2) . " ms\n";
+    echo '  Query Time: '.round($queries[0]['time'], 2)." ms\n";
 }
 
 echo "\n";
 
-//==============================================================================
+// ==============================================================================
 // TEST 3: Document Chunks Count (for cascade delete)
-//==============================================================================
+// ==============================================================================
 
 echo "📊 TEST 3: Document Chunks Count\n";
-echo str_repeat("-", 50) . "\n";
+echo str_repeat('-', 50)."\n";
 
 DB::enableQueryLog();
 
@@ -105,22 +105,22 @@ $duration = (microtime(true) - $start) * 1000;
 $queries = DB::getQueryLog();
 DB::disableQueryLog();
 
-echo "  Duration: " . round($duration, 2) . " ms\n";
-echo "  Chunks: " . $count . "\n";
-echo "  DB Queries: " . count($queries) . "\n";
+echo '  Duration: '.round($duration, 2)." ms\n";
+echo '  Chunks: '.$count."\n";
+echo '  DB Queries: '.count($queries)."\n";
 
 if (count($queries) > 0) {
-    echo "  Query Time: " . round($queries[0]['time'], 2) . " ms\n";
+    echo '  Query Time: '.round($queries[0]['time'], 2)." ms\n";
 }
 
 echo "\n";
 
-//==============================================================================
+// ==============================================================================
 // TEST 4: Source URL Deduplication Check
-//==============================================================================
+// ==============================================================================
 
 echo "📊 TEST 4: Source URL Deduplication\n";
-echo str_repeat("-", 50) . "\n";
+echo str_repeat('-', 50)."\n";
 
 DB::enableQueryLog();
 
@@ -133,22 +133,22 @@ $duration = (microtime(true) - $start) * 1000;
 $queries = DB::getQueryLog();
 DB::disableQueryLog();
 
-echo "  Duration: " . round($duration, 2) . " ms\n";
-echo "  Found: " . ($doc ? 'Yes' : 'No') . "\n";
-echo "  DB Queries: " . count($queries) . "\n";
+echo '  Duration: '.round($duration, 2)." ms\n";
+echo '  Found: '.($doc ? 'Yes' : 'No')."\n";
+echo '  DB Queries: '.count($queries)."\n";
 
 if (count($queries) > 0) {
-    echo "  Query Time: " . round($queries[0]['time'], 2) . " ms\n";
+    echo '  Query Time: '.round($queries[0]['time'], 2)." ms\n";
 }
 
 echo "\n";
 
-//==============================================================================
+// ==============================================================================
 // CHECK EXISTING INDEXES
-//==============================================================================
+// ==============================================================================
 
 echo "🔍 CURRENT DATABASE INDEXES\n";
-echo str_repeat("-", 50) . "\n";
+echo str_repeat('-', 50)."\n";
 
 $indexes = DB::select("
     SELECT 
@@ -172,9 +172,9 @@ if (empty($indexes)) {
 
 echo "\n";
 
-//==============================================================================
+// ==============================================================================
 // SUMMARY
-//==============================================================================
+// ==============================================================================
 
 echo "========================================\n";
 echo "💡 NOTES\n";
@@ -189,4 +189,3 @@ echo "  - RAG Query: ~5x faster\n";
 echo "  - Admin Filtering: ~5x faster\n";
 echo "  - Chunks Count: ~5x faster\n";
 echo "\n";
-

@@ -37,11 +37,7 @@ class ApiKeyController extends Controller
     {
         $apiKey = ApiKey::query()->where('tenant_id', $tenant->id)->findOrFail($keyId);
         $apiKey->update(['revoked_at' => now()]);
+
         return response()->json(['status' => 'revoked']);
     }
 }
-
-
-
-
-

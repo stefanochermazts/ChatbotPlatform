@@ -12,8 +12,11 @@ use RuntimeException;
 class ProgressStateService
 {
     public const STATUS_RUNNING = 'running';
+
     public const STATUS_COMPLETED = 'completed';
+
     public const STATUS_FAILED = 'failed';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     private const TARGET_STATUS_DISPATCHED = 'dispatched';
@@ -32,9 +35,7 @@ class ProgressStateService
         self::STATUS_CANCELLED => [],
     ];
 
-    public function __construct(private readonly DatabaseManager $db)
-    {
-    }
+    public function __construct(private readonly DatabaseManager $db) {}
 
     public function transitionToDispatched(int $tenantId, int $progressId): bool
     {
@@ -46,7 +47,7 @@ class ProgressStateService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                if (!$this->isValidTransition($progress->status, self::TARGET_STATUS_DISPATCHED)) {
+                if (! $this->isValidTransition($progress->status, self::TARGET_STATUS_DISPATCHED)) {
                     Log::warning('Scraper progress invalid transition attempt', [
                         'progress_id' => $progressId,
                         'tenant_id' => $tenantId,
@@ -84,7 +85,7 @@ class ProgressStateService
 
     public function isValidTransition(string $from, string $to): bool
     {
-        if (!$this->isAllowedStatus($from) || !$this->isAllowedStatus($to)) {
+        if (! $this->isAllowedStatus($from) || ! $this->isAllowedStatus($to)) {
             return false;
         }
 
@@ -100,4 +101,3 @@ class ProgressStateService
         return array_key_exists($status, $this->allowedTransitions);
     }
 }
-

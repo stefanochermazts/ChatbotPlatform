@@ -16,11 +16,11 @@ return new class extends Migration
             $table->string('thread_id')->nullable()->after('form_submission_id');
             $table->boolean('is_thread_starter')->default(false)->after('thread_id');
             $table->foreignId('parent_response_id')->nullable()->constrained('form_responses')->after('is_thread_starter');
-            
+
             // Email threading per client email (Message-ID, References)
             $table->string('email_message_id')->nullable()->after('email_error');
             $table->text('email_references')->nullable()->after('email_message_id');
-            
+
             // Notifiche e read status
             $table->boolean('admin_notified')->default(false)->after('email_references');
             $table->timestamp('admin_notified_at')->nullable()->after('admin_notified');
@@ -28,11 +28,11 @@ return new class extends Migration
             $table->timestamp('user_notified_at')->nullable()->after('user_notified');
             $table->boolean('user_read')->default(false)->after('user_notified_at');
             $table->timestamp('user_read_at')->nullable()->after('user_read');
-            
+
             // Priorità e tag per gestione avanzata
             $table->enum('priority', ['low', 'normal', 'high', 'urgent'])->default('normal')->after('user_read_at');
             $table->json('tags')->nullable()->after('priority');
-            
+
             // Indexes per performance
             $table->index(['thread_id', 'created_at']);
             $table->index(['form_submission_id', 'is_thread_starter']);
@@ -50,7 +50,7 @@ return new class extends Migration
             $table->dropIndex(['thread_id', 'created_at']);
             $table->dropIndex(['form_submission_id', 'is_thread_starter']);
             $table->dropIndex(['priority', 'admin_notified']);
-            
+
             $table->dropColumn([
                 'thread_id',
                 'is_thread_starter',
@@ -64,7 +64,7 @@ return new class extends Migration
                 'user_read',
                 'user_read_at',
                 'priority',
-                'tags'
+                'tags',
             ]);
         });
     }

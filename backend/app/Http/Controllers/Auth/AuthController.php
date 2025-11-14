@@ -33,25 +33,25 @@ class AuthController extends Controller
         ]);
 
         $credentials = $request->only('email', 'password');
-        
+
         // Trova l'utente
         $user = User::where('email', $credentials['email'])->first();
-        
-        if (!$user) {
+
+        if (! $user) {
             return back()->withErrors([
                 'email' => 'Le credenziali fornite non corrispondono ai nostri record.',
             ])->onlyInput('email');
         }
 
         // Verifica se l'utente è attivo
-        if (!$user->is_active) {
+        if (! $user->is_active) {
             return back()->withErrors([
                 'email' => 'Il tuo account è stato disattivato.',
             ])->onlyInput('email');
         }
 
         // Verifica se l'email è verificata
-        if (!$user->hasVerifiedEmail()) {
+        if (! $user->hasVerifiedEmail()) {
             return back()->withErrors([
                 'email' => 'Devi verificare la tua email prima di accedere.',
             ])->onlyInput('email');
@@ -60,7 +60,7 @@ class AuthController extends Controller
         // Tenta il login
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
-            
+
             // Aggiorna ultimo login
             $user->update(['last_login_at' => now()]);
 
@@ -73,7 +73,7 @@ class AuthController extends Controller
                 if ($firstTenant) {
                     return redirect()->intended(route('tenant.dashboard', $firstTenant->id));
                 }
-                
+
                 return redirect()->intended(route('dashboard'));
             }
         }
@@ -161,7 +161,7 @@ class AuthController extends Controller
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
                 $user->forceFill([
-                    'password' => Hash::make($password)
+                    'password' => Hash::make($password),
                 ])->save();
             }
         );
@@ -178,7 +178,7 @@ class AuthController extends Controller
     {
         $user = User::findOrFail($id);
 
-        if (!hash_equals($hash, sha1($user->getEmailForVerification()))) {
+        if (! hash_equals($hash, sha1($user->getEmailForVerification()))) {
             abort(403);
         }
 

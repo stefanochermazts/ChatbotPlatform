@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('tenants', function (Blueprint $table) {
-            if (!Schema::hasColumn('tenants', 'whatsapp_config')) {
+            if (! Schema::hasColumn('tenants', 'whatsapp_config')) {
                 $table->json('whatsapp_config')->nullable()->after('widget_config');
             }
         });
@@ -26,4 +26,4 @@ return new class extends Migration
             }
         });
     }
-    };
+};

@@ -13,7 +13,7 @@ class AuthenticateApiKey
     public function handle(Request $request, Closure $next): Response
     {
         $header = $request->header('Authorization', '');
-        if (!str_starts_with($header, 'Bearer ')) {
+        if (! str_starts_with($header, 'Bearer ')) {
             return response()->json(['message' => 'Missing Bearer token'], 401);
         }
 
@@ -39,6 +39,3 @@ class AuthenticateApiKey
         return $next($request);
     }
 }
-
-
-

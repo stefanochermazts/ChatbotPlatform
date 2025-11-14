@@ -33,12 +33,14 @@ class ScrapingHealthCheck extends Command
         if ($this->option('cleanup')) {
             $cleaned = $monitor->cleanupOldCounters();
             $this->info("Cleanup completato. Rimossi {$cleaned} contatori obsoleti.");
+
             return;
         }
 
         if ($tenantId = $this->option('reset-errors')) {
             $monitor->resetErrorCounters((int) $tenantId);
             $this->info("Contatori errori azzerati per tenant {$tenantId}");
+
             return;
         }
 
@@ -49,6 +51,7 @@ class ScrapingHealthCheck extends Command
             } else {
                 $this->warn("Scraping non era disabilitato per tenant {$tenantId}");
             }
+
             return;
         }
 
@@ -69,20 +72,22 @@ class ScrapingHealthCheck extends Command
         if ($stats['is_disabled']) {
             $this->error("❌ Scraping DISABILITATO fino a: {$stats['disabled_until']}");
         } else {
-            $this->info("✅ Scraping ATTIVO");
+            $this->info('✅ Scraping ATTIVO');
         }
 
         $this->line('');
-        $this->info("Errori per categoria:");
-        
+        $this->info('Errori per categoria:');
+
         $headers = ['Tipo', 'Conteggio'];
         $rows = [];
-        
+
         foreach ($stats as $type => $count) {
-            if (in_array($type, ['is_disabled', 'disabled_until'])) continue;
-            
+            if (in_array($type, ['is_disabled', 'disabled_until'])) {
+                continue;
+            }
+
             $emoji = $this->getErrorEmoji($type, $count);
-            $rows[] = [$emoji . ' ' . ucfirst(str_replace('_', ' ', $type)), $count];
+            $rows[] = [$emoji.' '.ucfirst(str_replace('_', ' ', $type)), $count];
         }
 
         $this->table($headers, $rows);
@@ -94,13 +99,13 @@ class ScrapingHealthCheck extends Command
 
     protected function showOverallHealth(ScrapingHealthMonitor $monitor)
     {
-        $this->info("🔍 Report completo stato scraping");
+        $this->info('🔍 Report completo stato scraping');
         $this->line('');
 
         $report = $monitor->getHealthReport();
 
         // Statistiche code
-        $this->info("📋 Statistiche Code:");
+        $this->info('📋 Statistiche Code:');
         $queueData = [
             ['Coda', 'Job in attesa'],
             ['Scraping', $report['queue_stats']['scraping_pending']],
@@ -113,23 +118,23 @@ class ScrapingHealthCheck extends Command
         $this->line('');
 
         // Errori recenti
-        if (!empty($report['failed_jobs']['recent_failures'])) {
-            $this->warn("❌ Job falliti recenti:");
+        if (! empty($report['failed_jobs']['recent_failures'])) {
+            $this->warn('❌ Job falliti recenti:');
             foreach (array_slice($report['failed_jobs']['recent_failures'], 0, 3) as $failure) {
                 $this->line("• {$failure['job']} - {$failure['failed_at']}");
                 $this->line("  {$failure['error_preview']}");
             }
         } else {
-            $this->info("✅ Nessun job fallito recente");
+            $this->info('✅ Nessun job fallito recente');
         }
 
         $this->line('');
 
         // Categorie errori
-        if (!empty($report['failed_jobs']['error_categories'])) {
-            $this->info("📊 Categorie errori:");
+        if (! empty($report['failed_jobs']['error_categories'])) {
+            $this->info('📊 Categorie errori:');
             foreach ($report['failed_jobs']['error_categories'] as $category => $count) {
-                $this->line("• " . ucfirst($category) . ": {$count}");
+                $this->line('• '.ucfirst($category).": {$count}");
             }
         }
 
@@ -139,9 +144,16 @@ class ScrapingHealthCheck extends Command
 
     protected function getErrorEmoji(string $type, int $count): string
     {
-        if ($count == 0) return '✅';
-        if ($count >= 5) return '🔴';
-        if ($count >= 3) return '🟡';
+        if ($count == 0) {
+            return '✅';
+        }
+        if ($count >= 5) {
+            return '🔴';
+        }
+        if ($count >= 3) {
+            return '🟡';
+        }
+
         return '🟠';
     }
 }

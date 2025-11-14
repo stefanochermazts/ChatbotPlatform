@@ -2,10 +2,9 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Carbon\Carbon;
 
 class HandoffRequest extends Model
 {
@@ -38,7 +37,7 @@ class HandoffRequest extends Model
         'metadata',
         'tags',
         'is_escalated',
-        'escalated_to_request_id'
+        'escalated_to_request_id',
     ];
 
     protected $casts = [
@@ -55,14 +54,14 @@ class HandoffRequest extends Model
         'requested_at' => 'datetime',
         'assigned_at' => 'datetime',
         'first_response_at' => 'datetime',
-        'resolved_at' => 'datetime'
+        'resolved_at' => 'datetime',
     ];
 
     protected $dates = [
         'requested_at',
         'assigned_at',
         'first_response_at',
-        'resolved_at'
+        'resolved_at',
     ];
 
     // 🏢 Relationships
@@ -135,7 +134,7 @@ class HandoffRequest extends Model
     public function scopeOverdue($query, int $minutes = 60)
     {
         return $query->where('status', 'pending')
-                    ->where('requested_at', '<=', now()->subMinutes($minutes));
+            ->where('requested_at', '<=', now()->subMinutes($minutes));
     }
 
     public function scopeOrderedByPriority($query)
@@ -158,7 +157,7 @@ class HandoffRequest extends Model
 
     public function isAssigned(): bool
     {
-        return $this->status === 'assigned' && !is_null($this->assigned_operator_id);
+        return $this->status === 'assigned' && ! is_null($this->assigned_operator_id);
     }
 
     public function isInProgress(): bool
@@ -183,20 +182,24 @@ class HandoffRequest extends Model
 
     public function hasBeenAssigned(): bool
     {
-        return !is_null($this->assigned_operator_id) && !is_null($this->assigned_at);
+        return ! is_null($this->assigned_operator_id) && ! is_null($this->assigned_at);
     }
 
     public function getWaitTimeInMinutes(): ?int
     {
-        if (!$this->assigned_at || !$this->requested_at) return null;
-        
+        if (! $this->assigned_at || ! $this->requested_at) {
+            return null;
+        }
+
         return $this->requested_at->diffInMinutes($this->assigned_at);
     }
 
     public function getResolutionTimeInMinutes(): ?int
     {
-        if (!$this->resolved_at || !$this->requested_at) return null;
-        
+        if (! $this->resolved_at || ! $this->requested_at) {
+            return null;
+        }
+
         return $this->requested_at->diffInMinutes($this->resolved_at);
     }
 
@@ -217,18 +220,18 @@ class HandoffRequest extends Model
             'status' => 'assigned',
             'assigned_operator_id' => $operatorId,
             'assigned_at' => now(),
-            'wait_time_seconds' => (int) $this->requested_at->diffInSeconds(now())  // ✅ Cast to int
+            'wait_time_seconds' => (int) $this->requested_at->diffInSeconds(now()),  // ✅ Cast to int
         ]);
 
         if ($success) {
             $this->increment('assignment_attempts');
-            
+
             // Update session status
             $this->conversationSession->update([
                 'status' => 'assigned',
                 'handoff_status' => 'handoff_active',
                 'assigned_operator_id' => $operatorId,
-                'assigned_at' => now()
+                'assigned_at' => now(),
             ]);
         }
 
@@ -240,7 +243,7 @@ class HandoffRequest extends Model
         return $this->update(['status' => 'in_progress']);
     }
 
-    public function resolve(string $outcome, string $notes = null, float $satisfaction = null): bool
+    public function resolve(string $outcome, ?string $notes = null, ?float $satisfaction = null): bool
     {
         $success = $this->update([
             'status' => 'resolved',
@@ -248,7 +251,7 @@ class HandoffRequest extends Model
             'resolution_outcome' => $outcome,
             'resolution_notes' => $notes,
             'user_satisfaction' => $satisfaction,
-            'resolution_time_seconds' => (int) $this->requested_at->diffInSeconds(now())  // ✅ Cast to int
+            'resolution_time_seconds' => (int) $this->requested_at->diffInSeconds(now()),  // ✅ Cast to int
         ]);
 
         if ($success) {
@@ -257,7 +260,7 @@ class HandoffRequest extends Model
                 'status' => 'resolved',
                 'handoff_status' => 'handoff_completed',
                 'ended_at' => now(),
-                'resolution_type' => 'operator_resolved'
+                'resolution_type' => 'operator_resolved',
             ]);
         }
 
@@ -270,7 +273,7 @@ class HandoffRequest extends Model
             'conversation_session_id' => $this->conversation_session_id,
             'tenant_id' => $this->tenant_id,
             'trigger_type' => 'manual_operator',
-            'reason' => 'Escalation from request #' . $this->id,
+            'reason' => 'Escalation from request #'.$this->id,
             'priority' => 'high', // Escalation sempre high priority
             'status' => 'pending',
             'requested_at' => now(),
@@ -278,33 +281,33 @@ class HandoffRequest extends Model
             'metadata' => [
                 'escalated_from' => $this->id,
                 'original_trigger' => $this->trigger_type,
-                'escalation_reason' => $escalationData['reason'] ?? 'Standard escalation'
-            ]
+                'escalation_reason' => $escalationData['reason'] ?? 'Standard escalation',
+            ],
         ]);
 
         if ($escalatedRequest) {
             $this->update([
                 'status' => 'escalated',
                 'is_escalated' => true,
-                'escalated_to_request_id' => $escalatedRequest->id
+                'escalated_to_request_id' => $escalatedRequest->id,
             ]);
         }
 
         return $escalatedRequest;
     }
 
-    public function cancel(string $reason = null): bool
+    public function cancel(?string $reason = null): bool
     {
         return $this->update([
             'status' => 'cancelled',
-            'resolution_notes' => $reason
+            'resolution_notes' => $reason,
         ]);
     }
 
     // 🎨 Display Helpers
     public function getPriorityColor(): string
     {
-        return match($this->priority) {
+        return match ($this->priority) {
             'urgent' => 'red',
             'high' => 'orange',
             'normal' => 'blue',
@@ -315,7 +318,7 @@ class HandoffRequest extends Model
 
     public function getStatusColor(): string
     {
-        return match($this->status) {
+        return match ($this->status) {
             'pending' => 'yellow',
             'assigned' => 'blue',
             'in_progress' => 'green',
@@ -330,7 +333,7 @@ class HandoffRequest extends Model
 
     public function getTriggerTypeLabel(): string
     {
-        return match($this->trigger_type) {
+        return match ($this->trigger_type) {
             'user_explicit' => 'Richiesta utente',
             'bot_escalation' => 'Escalation automatica',
             'intent_complex' => 'Query complessa',

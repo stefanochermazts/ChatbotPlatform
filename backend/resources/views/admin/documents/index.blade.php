@@ -162,7 +162,8 @@
     <thead>
       <tr class="bg-gray-100 text-left">
         <th class="p-2">ID</th>
-        <th class="p-2">Titolo</th>
+        <th class="p-2">Titolo archivio</th>
+        <th class="p-2">Titolo originale</th>
         <th class="p-2">KB</th>
         <th class="p-2">Stato</th>
         <th class="p-2">Progress</th>
@@ -179,7 +180,21 @@
       @forelse($docs as $d)
       <tr class="border-t align-top">
         <td class="p-2">{{ $d->id }}</td>
-        <td class="p-2">{{ $d->title }}</td>
+        <td class="p-2">
+          <div class="font-medium text-slate-900">{{ $d->title }}</div>
+          @if($d->last_scraped_at)
+            <div class="text-xs text-gray-400 mt-1">
+              Aggiornato {{ $d->last_scraped_at->diffForHumans() }}
+            </div>
+          @endif
+        </td>
+        <td class="p-2 align-top">
+          @if($d->source_page_title)
+            <div class="text-sm text-slate-900">{{ \Illuminate\Support\Str::limit($d->source_page_title, 90) }}</div>
+          @else
+            <span class="text-gray-400 text-xs">N/A</span>
+          @endif
+        </td>
         <td class="p-2">{{ optional($d->knowledgeBase)->name ?? '-' }}</td>
         <td class="p-2">{{ $d->ingestion_status }}</td>
         <td class="p-2">

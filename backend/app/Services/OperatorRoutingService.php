@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\HandoffRequest;
-use App\Models\User;
 use App\Models\Tenant;
+use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -22,14 +22,15 @@ class OperatorRoutingService
             if ($availableOperators->isEmpty()) {
                 Log::warning('routing.no_operators_available', [
                     'tenant_id' => $tenant->id,
-                    'handoff_id' => $handoffRequest->id
+                    'handoff_id' => $handoffRequest->id,
                 ]);
+
                 return null;
             }
 
             // 🎯 Applica criteri di routing
             $scoredOperators = $this->scoreOperators($availableOperators, $handoffRequest);
-            
+
             // 📊 Seleziona il migliore
             $bestOperator = $scoredOperators->sortByDesc('score')->first();
 
@@ -38,7 +39,7 @@ class OperatorRoutingService
                 'handoff_id' => $handoffRequest->id,
                 'operator_id' => $bestOperator['operator']->id,
                 'score' => $bestOperator['score'],
-                'criteria' => $bestOperator['criteria']
+                'criteria' => $bestOperator['criteria'],
             ]);
 
             return $bestOperator['operator'];
@@ -46,8 +47,9 @@ class OperatorRoutingService
         } catch (\Exception $e) {
             Log::error('routing.selection_failed', [
                 'handoff_id' => $handoffRequest->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -60,21 +62,24 @@ class OperatorRoutingService
         try {
             $operator = $this->findBestOperator($handoffRequest);
 
-            if (!$operator) {
+            if (! $operator) {
                 // 📦 Metti in coda se nessun operatore disponibile
                 $this->queueHandoffRequest($handoffRequest);
+
                 return false;
             }
 
             // 🔄 Usa HandoffService per assegnazione
             $handoffService = app(HandoffService::class);
+
             return $handoffService->assignToOperator($handoffRequest, $operator);
 
         } catch (\Exception $e) {
             Log::error('routing.auto_assign_failed', [
                 'handoff_id' => $handoffRequest->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -85,15 +90,15 @@ class OperatorRoutingService
     public function getAvailableOperators(Tenant $tenant): Collection
     {
         return User::operators()
-                  ->availableOperators()
-                  ->where(function($query) use ($tenant) {
-                      // 🔍 Operatori del tenant o globali
-                      $query->whereHas('tenants', function($q) use ($tenant) {
-                          $q->where('tenant_id', $tenant->id);
-                      })->orWhere('user_type', 'admin'); // Admin globali disponibili ovunque
-                  })
-                  ->where('current_conversations', '<', \DB::raw('max_concurrent_conversations'))
-                  ->get();
+            ->availableOperators()
+            ->where(function ($query) use ($tenant) {
+                // 🔍 Operatori del tenant o globali
+                $query->whereHas('tenants', function ($q) use ($tenant) {
+                    $q->where('tenant_id', $tenant->id);
+                })->orWhere('user_type', 'admin'); // Admin globali disponibili ovunque
+            })
+            ->where('current_conversations', '<', \DB::raw('max_concurrent_conversations'))
+            ->get();
     }
 
     /**
@@ -101,7 +106,7 @@ class OperatorRoutingService
      */
     private function scoreOperators(Collection $operators, HandoffRequest $handoffRequest): Collection
     {
-        return $operators->map(function($operator) use ($handoffRequest) {
+        return $operators->map(function ($operator) use ($handoffRequest) {
             $score = 0;
             $criteria = [];
 
@@ -133,7 +138,7 @@ class OperatorRoutingService
             return [
                 'operator' => $operator,
                 'score' => $score,
-                'criteria' => $criteria
+                'criteria' => $criteria,
             ];
         });
     }
@@ -154,7 +159,7 @@ class OperatorRoutingService
         $score = 0;
 
         // ✅ Skills richieste (20 punti se tutte presenti)
-        if (!empty($requiredSkills)) {
+        if (! empty($requiredSkills)) {
             $matchedRequired = count(array_intersect($operatorSkills, $requiredSkills));
             $score += ($matchedRequired / count($requiredSkills)) * 20;
         } else {
@@ -162,7 +167,7 @@ class OperatorRoutingService
         }
 
         // ⭐ Skills preferite (10 punti bonus)
-        if (!empty($preferredSkills)) {
+        if (! empty($preferredSkills)) {
             $matchedPreferred = count(array_intersect($operatorSkills, $preferredSkills));
             $score += ($matchedPreferred / count($preferredSkills)) * 10;
         }
@@ -175,8 +180,8 @@ class OperatorRoutingService
      */
     private function calculateWorkloadScore(User $operator): float
     {
-        $utilizationRate = $operator->max_concurrent_conversations > 0 
-            ? ($operator->current_conversations / $operator->max_concurrent_conversations) 
+        $utilizationRate = $operator->max_concurrent_conversations > 0
+            ? ($operator->current_conversations / $operator->max_concurrent_conversations)
             : 0;
 
         // 📈 Più basso il carico, più alto il punteggio
@@ -189,7 +194,7 @@ class OperatorRoutingService
     private function calculateResponseTimeScore(User $operator): float
     {
         $avgResponseTime = $operator->average_response_time_minutes ?? 5;
-        
+
         // 🚀 Meno di 2 minuti = massimo score
         // 📈 Score decresce linearmente fino a 10 minuti
         if ($avgResponseTime <= 2) {
@@ -207,7 +212,7 @@ class OperatorRoutingService
     private function calculateSatisfactionScore(User $operator): float
     {
         $avgSatisfaction = $operator->customer_satisfaction_avg ?? 3.5;
-        
+
         // 🌟 5.0 = 15 punti, 4.0 = 10 punti, 3.0 = 5 punti, <3.0 = 0 punti
         if ($avgSatisfaction >= 4.5) {
             return 15;
@@ -229,9 +234,9 @@ class OperatorRoutingService
     {
         // 🚨 Operatori esperti get bonus per urgent requests
         $operatorExperience = $operator->total_conversations_handled ?? 0;
-        
+
         $bonus = 0;
-        
+
         if ($handoffRequest->priority === 'urgent' && $operatorExperience > 50) {
             $bonus += 10;
         } elseif ($handoffRequest->priority === 'high' && $operatorExperience > 20) {
@@ -250,14 +255,14 @@ class OperatorRoutingService
             'status' => 'pending',
             'metadata' => array_merge($handoffRequest->metadata ?? [], [
                 'queued_at' => now()->toISOString(),
-                'queue_reason' => 'no_operators_available'
-            ])
+                'queue_reason' => 'no_operators_available',
+            ]),
         ]);
 
         Log::info('routing.handoff_queued', [
             'handoff_id' => $handoffRequest->id,
             'tenant_id' => $handoffRequest->tenant_id,
-            'priority' => $handoffRequest->priority
+            'priority' => $handoffRequest->priority,
         ]);
     }
 
@@ -269,37 +274,37 @@ class OperatorRoutingService
         $assignedCount = 0;
 
         try {
-            if (!$operator->canTakeNewConversation()) {
+            if (! $operator->canTakeNewConversation()) {
                 return 0;
             }
 
             // 🔍 Trova handoff in coda per tenant dell'operatore
             $operatorTenants = $operator->tenants->pluck('id');
-            
+
             $queuedHandoffs = HandoffRequest::where('status', 'pending')
-                                          ->whereIn('tenant_id', $operatorTenants)
-                                          ->orderBy('priority')
-                                          ->orderBy('requested_at')
-                                          ->limit(5) // Processa max 5 alla volta
-                                          ->get();
+                ->whereIn('tenant_id', $operatorTenants)
+                ->orderBy('priority')
+                ->orderBy('requested_at')
+                ->limit(5) // Processa max 5 alla volta
+                ->get();
 
             foreach ($queuedHandoffs as $handoffRequest) {
-                if (!$operator->canTakeNewConversation()) {
+                if (! $operator->canTakeNewConversation()) {
                     break; // Operatore ha raggiunto limite
                 }
 
                 // 🎯 Verifica se operatore è adatto per questo handoff
                 $scoredOperator = $this->scoreOperators(collect([$operator]), $handoffRequest)->first();
-                
+
                 if ($scoredOperator['score'] >= 30) { // Soglia minima
                     $handoffService = app(HandoffService::class);
                     $success = $handoffService->assignToOperator($handoffRequest, $operator);
-                    
+
                     if ($success) {
                         $assignedCount++;
                         Log::info('routing.queue_processed', [
                             'handoff_id' => $handoffRequest->id,
-                            'operator_id' => $operator->id
+                            'operator_id' => $operator->id,
                         ]);
                     }
                 }
@@ -308,7 +313,7 @@ class OperatorRoutingService
         } catch (\Exception $e) {
             Log::error('routing.queue_processing_failed', [
                 'operator_id' => $operator->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
 
@@ -329,31 +334,31 @@ class OperatorRoutingService
 
             $totalHandoffs = $query->count();
             $autoAssigned = $query->whereNotNull('assigned_operator_id')
-                                 ->whereColumn('assigned_at', '<=', \DB::raw('requested_at + INTERVAL 5 MINUTE'))
-                                 ->count();
+                ->whereColumn('assigned_at', '<=', \DB::raw('requested_at + INTERVAL 5 MINUTE'))
+                ->count();
 
             $avgAssignmentTime = $query->whereNotNull('wait_time_seconds')
-                                     ->avg('wait_time_seconds') ?? 0;
+                ->avg('wait_time_seconds') ?? 0;
 
             $operatorUtilization = User::operators()
-                                     ->whereHas('tenants', function($q) use ($tenantId) {
-                                         $q->where('tenant_id', $tenantId);
-                                     })
-                                     ->selectRaw('AVG(current_conversations / max_concurrent_conversations * 100) as avg_utilization')
-                                     ->value('avg_utilization') ?? 0;
+                ->whereHas('tenants', function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId);
+                })
+                ->selectRaw('AVG(current_conversations / max_concurrent_conversations * 100) as avg_utilization')
+                ->value('avg_utilization') ?? 0;
 
             return [
                 'total_handoffs' => $totalHandoffs,
                 'auto_assigned_count' => $autoAssigned,
                 'auto_assignment_rate' => $totalHandoffs > 0 ? ($autoAssigned / $totalHandoffs) * 100 : 0,
                 'avg_assignment_time_minutes' => round($avgAssignmentTime / 60, 2),
-                'operator_utilization_percent' => round($operatorUtilization, 2)
+                'operator_utilization_percent' => round($operatorUtilization, 2),
             ];
 
         } catch (\Exception $e) {
             Log::error('routing.stats_failed', [
                 'tenant_id' => $tenantId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return [
@@ -361,7 +366,7 @@ class OperatorRoutingService
                 'auto_assigned_count' => 0,
                 'auto_assignment_rate' => 0,
                 'avg_assignment_time_minutes' => 0,
-                'operator_utilization_percent' => 0
+                'operator_utilization_percent' => 0,
             ];
         }
     }

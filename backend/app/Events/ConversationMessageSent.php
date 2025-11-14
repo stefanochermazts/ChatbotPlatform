@@ -5,7 +5,6 @@ namespace App\Events;
 use App\Models\ConversationMessage;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -28,9 +27,9 @@ class ConversationMessageSent implements ShouldBroadcast
     {
         return [
             // 🎯 Channel pubblico per testing (temporary)
-            new Channel('conversation.' . $this->message->conversationSession->session_id),
+            new Channel('conversation.'.$this->message->conversationSession->session_id),
             // 👨‍💼 Channel per operatori del tenant
-            new PrivateChannel('tenant.' . $this->message->tenant_id . '.operators'),
+            new PrivateChannel('tenant.'.$this->message->tenant_id.'.operators'),
         ];
     }
 
@@ -48,13 +47,13 @@ class ConversationMessageSent implements ShouldBroadcast
                 'sender_name' => $this->message->getDisplayName(),
                 'citations' => $this->message->citations,
                 'sent_at' => $this->message->sent_at->toISOString(),
-                'is_helpful' => $this->message->is_helpful
+                'is_helpful' => $this->message->is_helpful,
             ],
             'session' => [
                 'session_id' => $this->message->conversationSession->session_id,
                 'status' => $this->message->conversationSession->status,
-                'handoff_status' => $this->message->conversationSession->handoff_status
-            ]
+                'handoff_status' => $this->message->conversationSession->handoff_status,
+            ],
         ];
     }
 

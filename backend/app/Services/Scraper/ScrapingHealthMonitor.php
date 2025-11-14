@@ -19,20 +19,20 @@ class ScrapingHealthMonitor
     {
         $errorTypes = ['max_attempts', 'network_timeout', 'http_error', 'robots_blocked', 'memory_limit', 'unknown'];
         $stats = [];
-        
+
         foreach ($errorTypes as $type) {
             $cacheKey = "scraping_errors_{$tenantId}_{$type}";
             $stats[$type] = Cache::get($cacheKey, 0);
         }
-        
+
         $stats['total'] = Cache::get("scraping_errors_{$tenantId}_total", 0);
         $stats['is_disabled'] = $this->isScrapingDisabled($tenantId);
-        
+
         if ($stats['is_disabled']) {
             $disableKey = "scraping_disabled_{$tenantId}";
             $stats['disabled_until'] = Cache::get($disableKey);
         }
-        
+
         return $stats;
     }
 
@@ -42,6 +42,7 @@ class ScrapingHealthMonitor
     public function isScrapingDisabled(int $tenantId): bool
     {
         $disableKey = "scraping_disabled_{$tenantId}";
+
         return Cache::has($disableKey);
     }
 
@@ -51,18 +52,18 @@ class ScrapingHealthMonitor
     public function enableScraping(int $tenantId): bool
     {
         $disableKey = "scraping_disabled_{$tenantId}";
-        
+
         if (Cache::has($disableKey)) {
             Cache::forget($disableKey);
-            
-            Log::info("Scraping riabilitato manualmente", [
+
+            Log::info('Scraping riabilitato manualmente', [
                 'tenant_id' => $tenantId,
-                'enabled_at' => now()->toISOString()
+                'enabled_at' => now()->toISOString(),
             ]);
-            
+
             return true;
         }
-        
+
         return false;
     }
 
@@ -72,15 +73,15 @@ class ScrapingHealthMonitor
     public function resetErrorCounters(int $tenantId): void
     {
         $errorTypes = ['max_attempts', 'network_timeout', 'http_error', 'robots_blocked', 'memory_limit', 'unknown', 'total'];
-        
+
         foreach ($errorTypes as $type) {
             $cacheKey = "scraping_errors_{$tenantId}_{$type}";
             Cache::forget($cacheKey);
         }
-        
-        Log::info("Contatori errori azzerati", [
+
+        Log::info('Contatori errori azzerati', [
             'tenant_id' => $tenantId,
-            'reset_at' => now()->toISOString()
+            'reset_at' => now()->toISOString(),
         ]);
     }
 
@@ -95,7 +96,7 @@ class ScrapingHealthMonitor
             'failed_jobs' => $this->getFailedJobsStats(),
             'tenants_with_errors' => $this->getTenantsWithErrors(),
         ];
-        
+
         return $report;
     }
 
@@ -125,22 +126,22 @@ class ScrapingHealthMonitor
             ->latest('failed_at')
             ->limit(10)
             ->get();
-            
+
         $stats = [
             'recent_failures' => [],
-            'error_categories' => []
+            'error_categories' => [],
         ];
-        
+
         foreach ($failedJobs as $job) {
             $payload = json_decode($job->payload, true);
             $jobClass = $payload['displayName'] ?? 'Unknown';
-            
+
             $stats['recent_failures'][] = [
                 'job' => $jobClass,
                 'failed_at' => $job->failed_at,
-                'error_preview' => substr($job->exception, 0, 200) . '...'
+                'error_preview' => substr($job->exception, 0, 200).'...',
             ];
-            
+
             // Categorizza errori
             if (str_contains($job->exception, 'MaxAttemptsExceeded')) {
                 $stats['error_categories']['max_attempts'] = ($stats['error_categories']['max_attempts'] ?? 0) + 1;
@@ -150,7 +151,7 @@ class ScrapingHealthMonitor
                 $stats['error_categories']['other'] = ($stats['error_categories']['other'] ?? 0) + 1;
             }
         }
-        
+
         return $stats;
     }
 
@@ -162,11 +163,11 @@ class ScrapingHealthMonitor
         // Questa è una implementazione semplice, idealmente dovresti
         // tenere traccia dei tenant che hanno errori attivi
         $tenantsWithErrors = [];
-        
+
         // Per ora restituiamo solo un placeholder
         // In una implementazione completa, potresti mantenere una lista
         // dei tenant con errori in cache o database
-        
+
         return $tenantsWithErrors;
     }
 
@@ -177,11 +178,11 @@ class ScrapingHealthMonitor
     {
         // Laravel Cache non ha un modo diretto per listare tutte le chiavi
         // che iniziano con un pattern, quindi questa è una implementazione semplificata
-        
-        Log::info("Cleanup contatori errori completato", [
-            'cleaned_at' => now()->toISOString()
+
+        Log::info('Cleanup contatori errori completato', [
+            'cleaned_at' => now()->toISOString(),
         ]);
-        
+
         return 0; // Placeholder
     }
 }

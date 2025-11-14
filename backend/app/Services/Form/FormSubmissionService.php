@@ -2,11 +2,11 @@
 
 namespace App\Services\Form;
 
-use App\Models\TenantForm;
-use App\Models\FormSubmission;
-use App\Models\FormResponse;
-use App\Jobs\SendFormConfirmationEmail;
 use App\Jobs\SendFormAdminNotification;
+use App\Jobs\SendFormConfirmationEmail;
+use App\Models\FormResponse;
+use App\Models\FormSubmission;
+use App\Models\TenantForm;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -29,7 +29,7 @@ class FormSubmissionService
             'form_id' => $form->id,
             'form_name' => $form->name,
             'session_id' => $sessionId,
-            'trigger_type' => $triggerType
+            'trigger_type' => $triggerType,
         ]);
 
         // Controlla se l'utente ha già una sottomissione pending
@@ -65,7 +65,7 @@ class FormSubmissionService
             Log::info('[FormSubmission] Submission created successfully', [
                 'submission_id' => $submission->id,
                 'form_id' => $form->id,
-                'tenant_id' => $form->tenant_id
+                'tenant_id' => $form->tenant_id,
             ]);
 
             // Invia email di conferma se l'utente ha fornito l'email
@@ -83,7 +83,7 @@ class FormSubmissionService
             // Auto-risposta se abilitata (crea come primo messaggio del thread)
             if ($form->auto_response_enabled && $form->auto_response_message) {
                 $autoResponse = $this->createAutoResponse($submission, $form->auto_response_message);
-                
+
                 // Aggiorna statistiche submission per auto-risposta
                 if ($autoResponse) {
                     $submission->updateResponseStats($autoResponse);
@@ -100,7 +100,7 @@ class FormSubmissionService
             Log::error('[FormSubmission] Failed to create submission', [
                 'form_id' => $form->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             throw $e;
@@ -132,26 +132,26 @@ class FormSubmissionService
         if ($validator->fails()) {
             Log::error('[FormSubmission] Validation failed', [
                 'errors' => $validator->errors()->toArray(),
-                'data' => $data
+                'data' => $data,
             ]);
 
             return [
                 'success' => false,
                 'errors' => $validator->errors()->toArray(),
-                'message' => 'Dati non validi'
+                'message' => 'Dati non validi',
             ];
         }
 
         // Ottieni il form
         $form = TenantForm::with('fields')->find($data['form_id']);
-        if (!$form || !$form->active) {
+        if (! $form || ! $form->active) {
             Log::error('[FormSubmission] Form not found or inactive', [
-                'form_id' => $data['form_id']
+                'form_id' => $data['form_id'],
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Form non trovato o non attivo'
+                'message' => 'Form non trovato o non attivo',
             ];
         }
 
@@ -164,27 +164,27 @@ class FormSubmissionService
         if ($existingSubmission) {
             Log::warning('[FormSubmission] User already has pending submission', [
                 'session_id' => $data['session_id'],
-                'existing_submission_id' => $existingSubmission->id
+                'existing_submission_id' => $existingSubmission->id,
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Hai già una richiesta in corso. Attendi la risposta prima di inviarne una nuova.'
+                'message' => 'Hai già una richiesta in corso. Attendi la risposta prima di inviarne una nuova.',
             ];
         }
 
         // Valida i dati del form usando i campi definiti
         $formValidationResult = $this->validateFormData($form, $data['form_data']);
-        if (!$formValidationResult['valid']) {
+        if (! $formValidationResult['valid']) {
             Log::error('[FormSubmission] Form data validation failed', [
                 'form_id' => $form->id,
-                'errors' => $formValidationResult['errors']
+                'errors' => $formValidationResult['errors'],
             ]);
 
             return [
                 'success' => false,
                 'errors' => $formValidationResult['errors'],
-                'message' => 'Alcuni campi non sono validi'
+                'message' => 'Alcuni campi non sono validi',
             ];
         }
 
@@ -209,7 +209,7 @@ class FormSubmissionService
             Log::info('[FormSubmission] Submission created successfully', [
                 'submission_id' => $submission->id,
                 'form_id' => $form->id,
-                'tenant_id' => $form->tenant_id
+                'tenant_id' => $form->tenant_id,
             ]);
 
             // Invia email di conferma se l'utente ha fornito l'email
@@ -231,19 +231,19 @@ class FormSubmissionService
                 'success' => true,
                 'submission_id' => $submission->id,
                 'message' => 'Richiesta inviata con successo! Ti risponderemo al più presto.',
-                'confirmation_email_sent' => !empty($submission->user_email),
+                'confirmation_email_sent' => ! empty($submission->user_email),
             ];
 
         } catch (\Exception $e) {
             Log::error('[FormSubmission] Failed to create submission', [
                 'form_id' => $form->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Errore interno. Riprova più tardi.'
+                'message' => 'Errore interno. Riprova più tardi.',
             ];
         }
     }
@@ -269,7 +269,7 @@ class FormSubmissionService
         if ($validator->fails()) {
             return [
                 'valid' => false,
-                'errors' => $validator->errors()->toArray()
+                'errors' => $validator->errors()->toArray(),
             ];
         }
 
@@ -283,7 +283,7 @@ class FormSubmissionService
     {
         // Cerca campi che potrebbero contenere l'email (case-insensitive)
         $emailFields = ['email', 'mail', 'e_mail', 'user_email', 'email_address', 'Email', 'Mail', 'E_mail'];
-        
+
         foreach ($emailFields as $field) {
             if (isset($formData[$field]) && filter_var($formData[$field], FILTER_VALIDATE_EMAIL)) {
                 return $formData[$field];
@@ -307,9 +307,9 @@ class FormSubmissionService
     {
         // Cerca campi che potrebbero contenere il nome (case-insensitive)
         $nameFields = ['name', 'nome', 'full_name', 'user_name', 'first_name', 'cognome', 'nome_cognome', 'Name', 'Nome', 'Full_name'];
-        
+
         foreach ($nameFields as $field) {
-            if (isset($formData[$field]) && !empty(trim($formData[$field]))) {
+            if (isset($formData[$field]) && ! empty(trim($formData[$field]))) {
                 return trim($formData[$field]);
             }
         }
@@ -317,14 +317,14 @@ class FormSubmissionService
         // Prova a combinare nome e cognome se separati (varie combinazioni case-insensitive)
         $firstName = $formData['first_name'] ?? $formData['nome'] ?? $formData['Nome'] ?? $formData['First_name'] ?? null;
         $lastName = $formData['last_name'] ?? $formData['cognome'] ?? $formData['Cognome'] ?? $formData['Last_name'] ?? null;
-        
+
         if ($firstName && $lastName) {
-            return trim($firstName . ' ' . $lastName);
+            return trim($firstName.' '.$lastName);
         }
 
         // Fallback: cerca qualsiasi campo che contenga "nome" o "name" nel nome
         foreach ($formData as $key => $value) {
-            if ((stripos($key, 'nome') !== false || stripos($key, 'name') !== false) && !empty(trim($value))) {
+            if ((stripos($key, 'nome') !== false || stripos($key, 'name') !== false) && ! empty(trim($value))) {
                 return trim($value);
             }
         }
@@ -339,15 +339,15 @@ class FormSubmissionService
     {
         try {
             SendFormConfirmationEmail::dispatch($submission);
-            
+
             Log::info('[FormSubmission] Confirmation email queued', [
                 'submission_id' => $submission->id,
-                'user_email' => $submission->user_email
+                'user_email' => $submission->user_email,
             ]);
         } catch (\Exception $e) {
             Log::error('[FormSubmission] Failed to queue confirmation email', [
                 'submission_id' => $submission->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -359,15 +359,15 @@ class FormSubmissionService
     {
         try {
             SendFormAdminNotification::dispatch($submission);
-            
+
             Log::info('[FormSubmission] Admin notification queued', [
                 'submission_id' => $submission->id,
-                'admin_email' => $submission->tenantForm->admin_notification_email
+                'admin_email' => $submission->tenantForm->admin_notification_email,
             ]);
         } catch (\Exception $e) {
             Log::error('[FormSubmission] Failed to queue admin notification', [
                 'submission_id' => $submission->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -379,7 +379,7 @@ class FormSubmissionService
     {
         try {
             $threadId = FormResponse::generateThreadId();
-            
+
             $response = FormResponse::create([
                 'form_submission_id' => $submission->id,
                 'admin_user_id' => null, // Sistema automatico
@@ -394,15 +394,16 @@ class FormSubmissionService
             Log::info('[FormSubmission] Auto-response created', [
                 'submission_id' => $submission->id,
                 'response_id' => $response->id,
-                'thread_id' => $threadId
+                'thread_id' => $threadId,
             ]);
-            
+
             return $response;
         } catch (\Exception $e) {
             Log::error('[FormSubmission] Failed to create auto-response', [
                 'submission_id' => $submission->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -415,27 +416,27 @@ class FormSubmissionService
         // Parole chiave urgenti
         $urgentKeywords = ['urgente', 'immediato', 'emergenza', 'subito', 'blocco'];
         $highKeywords = ['problema', 'errore', 'non funziona', 'aiuto'];
-        
+
         // Controlla contenuto per keyword di priorità
         $text = strtolower(json_encode($formData));
-        
+
         foreach ($urgentKeywords as $keyword) {
             if (strpos($text, $keyword) !== false) {
                 return 'urgent';
             }
         }
-        
+
         foreach ($highKeywords as $keyword) {
             if (strpos($text, $keyword) !== false) {
                 return 'high';
             }
         }
-        
+
         // Trigger automatico dopo molti messaggi = priorità alta
         if ($triggerType === 'auto') {
             return 'high';
         }
-        
+
         return 'normal';
     }
 
@@ -468,13 +469,13 @@ class FormSubmissionService
             $search = $filters['search'];
             $query->where(function ($q) use ($search) {
                 $q->where('user_email', 'ILIKE', "%{$search}%")
-                  ->orWhere('user_name', 'ILIKE', "%{$search}%")
-                  ->orWhereJsonContains('form_data', $search);
+                    ->orWhere('user_name', 'ILIKE', "%{$search}%")
+                    ->orWhereJsonContains('form_data', $search);
             });
         }
 
         return $query->orderBy('submitted_at', 'desc')
-                    ->paginate($filters['per_page'] ?? 15);
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     /**
@@ -492,11 +493,11 @@ class FormSubmissionService
             'today' => $submissions->whereDate('submitted_at', today())->count(),
             'this_week' => $submissions->whereBetween('submitted_at', [
                 now()->startOfWeek(),
-                now()->endOfWeek()
+                now()->endOfWeek(),
             ])->count(),
             'this_month' => $submissions->whereMonth('submitted_at', now()->month)
-                                     ->whereYear('submitted_at', now()->year)
-                                     ->count(),
+                ->whereYear('submitted_at', now()->year)
+                ->count(),
         ];
     }
 }

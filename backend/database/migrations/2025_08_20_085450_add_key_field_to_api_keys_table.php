@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasColumn('api_keys', 'key')) {
+        if (! Schema::hasColumn('api_keys', 'key')) {
             Schema::table('api_keys', function (Blueprint $table) {
                 $table->string('key')->nullable()->after('name')->comment('Plain text API key for widget usage');
             });

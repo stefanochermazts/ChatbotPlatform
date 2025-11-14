@@ -26,8 +26,9 @@ class MonitorQueueLag extends Command
      */
     public function handle(JobRepository $jobs, MetricsRepository $metrics): int
     {
-        if (!class_exists(\Laravel\Horizon\Horizon::class)) {
+        if (! class_exists(\Laravel\Horizon\Horizon::class)) {
             $this->error('Laravel Horizon is not installed');
+
             return self::FAILURE;
         }
 
@@ -91,7 +92,7 @@ class MonitorQueueLag extends Command
 
         } catch (\Exception $e) {
             $this->error("Failed to calculate lag for queue '{$queueName}': {$e->getMessage()}");
-            
+
             return [
                 'pending_count' => 0,
                 'oldest_job_age' => 0,
@@ -151,8 +152,7 @@ class MonitorQueueLag extends Command
 
         $minutes = floor($seconds / 60);
         $remainingSeconds = $seconds % 60;
-        
+
         return "{$minutes}m {$remainingSeconds}s";
     }
 }
-

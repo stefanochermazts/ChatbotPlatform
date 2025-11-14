@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\Scraper\TitleStrategy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 class ScraperConfig extends Model
 {
@@ -42,6 +44,7 @@ class ScraperConfig extends Model
         'js_content_wait',
         'js_scroll_delay',
         'js_final_wait',
+        'title_strategy',
     ];
 
     protected $casts = [
@@ -74,13 +77,38 @@ class ScraperConfig extends Model
         'js_content_wait' => 'integer',
         'js_scroll_delay' => 'integer',
         'js_final_wait' => 'integer',
+        'title_strategy' => TitleStrategy::class,
+    ];
+
+    protected $attributes = [
+        'title_strategy' => 'title',
     ];
 
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
     }
+
+    public function setTitleStrategyAttribute(mixed $value): void
+    {
+        $strategy = TitleStrategy::tryFrom((string) $value);
+
+        if (! $strategy) {
+            Log::warning('scraper_config.title_strategy.invalid', [
+                'provided' => $value,
+                'tenant_id' => $this->attributes['tenant_id'] ?? null,
+            ]);
+
+            $strategy = TitleStrategy::default();
+        }
+
+        $this->attributes['title_strategy'] = $strategy->value;
+    }
+
+    public function titleStrategy(): TitleStrategy
+    {
+        $raw = $this->attributes['title_strategy'] ?? null;
+
+        return TitleStrategy::tryFrom((string) $raw) ?? TitleStrategy::default();
+    }
 }
-
-
-

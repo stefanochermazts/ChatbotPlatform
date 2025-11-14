@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 class SettingService
 {
     private const CACHE_PREFIX = 'tenant_setting_';
+
     private const DEFAULT_MAX_CITATION_SOURCES = 5;
 
     public function get(int $tenantId, string $key, mixed $default = null): mixed
@@ -79,7 +80,7 @@ class SettingService
 
     private function cacheKey(int $tenantId, string $key): string
     {
-        return self::CACHE_PREFIX . $tenantId . '_' . $key;
+        return self::CACHE_PREFIX.$tenantId.'_'.$key;
     }
 
     private function defaultMaxCitationSources(): int
@@ -87,5 +88,3 @@ class SettingService
         return (int) config('chat.citation_default_limit', self::DEFAULT_MAX_CITATION_SOURCES);
     }
 }
-
-

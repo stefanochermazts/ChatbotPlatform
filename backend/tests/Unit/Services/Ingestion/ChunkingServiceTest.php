@@ -8,21 +8,22 @@ use Tests\TestCase;
 
 /**
  * Unit tests for ChunkingService
- * 
+ *
  * Tests the most critical Service in the ingestion pipeline.
  * ChunkingService is responsible for semantic chunking with multiple strategies.
- * 
+ *
  * ✅ UPDATED: Now tests tenant-aware chunking (Step 5/9)
  */
 class ChunkingServiceTest extends TestCase
 {
     private ChunkingService $service;
+
     private int $testTenantId = 999; // Test tenant ID
-    
+
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // ✅ FIXED: Mock TenantRagConfigService for isolated unit tests
         $mockConfig = $this->createMock(TenantRagConfigService::class);
         $mockConfig->method('getChunkingConfig')
@@ -30,172 +31,172 @@ class ChunkingServiceTest extends TestCase
                 'max_chars' => 2200,
                 'overlap_chars' => 250,
             ]);
-        
+
         $this->service = new ChunkingService($mockConfig);
     }
-    
+
     /** @test */
     public function it_chunks_short_text_without_splitting()
     {
-        $text = "This is a short text that should not be split.";
-        
+        $text = 'This is a short text that should not be split.';
+
         // ✅ FIXED: Pass $tenantId (Step 5/9)
         $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 2200,
-            'overlap_chars' => 250
+            'overlap_chars' => 250,
         ]);
-        
+
         $this->assertCount(1, $result);
         $this->assertEquals($text, $result[0]['text']);
         $this->assertEquals('standard', $result[0]['type']);
     }
-    
+
     /** @test */
     public function it_chunks_long_text_by_paragraphs()
     {
-        $paragraph1 = str_repeat("First paragraph. ", 50); // ~850 chars
-        $paragraph2 = str_repeat("Second paragraph. ", 50); // ~900 chars
-        $paragraph3 = str_repeat("Third paragraph. ", 50); // ~850 chars
-        
-        $text = $paragraph1 . "\n\n" . $paragraph2 . "\n\n" . $paragraph3;
-        
+        $paragraph1 = str_repeat('First paragraph. ', 50); // ~850 chars
+        $paragraph2 = str_repeat('Second paragraph. ', 50); // ~900 chars
+        $paragraph3 = str_repeat('Third paragraph. ', 50); // ~850 chars
+
+        $text = $paragraph1."\n\n".$paragraph2."\n\n".$paragraph3;
+
         // ✅ FIXED: Pass $tenantId (Step 5/9)
         $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 1500,
-            'overlap_chars' => 200
+            'overlap_chars' => 200,
         ]);
-        
+
         $this->assertGreaterThan(1, count($result));
-        
+
         // Each chunk should not exceed max_chars significantly
         foreach ($result as $chunk) {
-            $this->assertLessThanOrEqual(1700, strlen($chunk['text']), 
-                "Chunk exceeded max_chars by too much");
+            $this->assertLessThanOrEqual(1700, strlen($chunk['text']),
+                'Chunk exceeded max_chars by too much');
         }
     }
-    
+
     /** @test */
     public function it_respects_max_chars_limit()
     {
-        $text = str_repeat("Lorem ipsum dolor sit amet. ", 500); // ~14,000 chars
-        
+        $text = str_repeat('Lorem ipsum dolor sit amet. ', 500); // ~14,000 chars
+
         // ✅ FIXED: Pass $tenantId (Step 5/9)
         $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 2200,
-            'overlap_chars' => 250
+            'overlap_chars' => 250,
         ]);
-        
+
         foreach ($result as $chunk) {
             // Allow 10% tolerance for overlap and sentence boundaries
             $this->assertLessThanOrEqual(2420, strlen($chunk['text']),
                 "Chunk size {$chunk['position']} exceeded tolerance");
         }
     }
-    
+
     /** @test */
     public function it_chunks_markdown_tables_into_rows()
     {
         $table = [
-            'content' => "| Nome | Telefono | Email |\n" .
-                        "|------|----------|-------|\n" .
-                        "| Mario Rossi | 123-456-7890 | mario@example.com |\n" .
-                        "| Luigi Verdi | 098-765-4321 | luigi@example.com |",
+            'content' => "| Nome | Telefono | Email |\n".
+                        "|------|----------|-------|\n".
+                        "| Mario Rossi | 123-456-7890 | mario@example.com |\n".
+                        '| Luigi Verdi | 098-765-4321 | luigi@example.com |',
             'context_before' => 'Elenco contatti:',
             'context_after' => 'Fine elenco.',
             'rows' => 3,
-            'cols' => 3
+            'cols' => 3,
         ];
-        
+
         $result = $this->service->chunkTables([$table]);
-        
-        $this->assertCount(1, $result, "Small tables should be preserved as a single chunk");
+
+        $this->assertCount(1, $result, 'Small tables should be preserved as a single chunk');
         $this->assertEquals('table', $result[0]['type']);
         $this->assertStringContainsString('Elenco contatti', $result[0]['text']);
         $this->assertStringContainsString('Mario Rossi', $result[0]['text']);
         $this->assertStringContainsString('luigi@example.com', $result[0]['text']);
     }
-    
+
     /** @test */
     public function it_extracts_directory_entries_with_phone_numbers()
     {
-        $text = "Ufficio Anagrafe\n" .
-                "Telefono: 06-12345678\n" .
-                "Via Roma 123\n\n" .
-                "Ufficio Tributi\n" .
-                "Telefono: 06-87654321\n" .
-                "Piazza Centrale 1";
-        
+        $text = "Ufficio Anagrafe\n".
+                "Telefono: 06-12345678\n".
+                "Via Roma 123\n\n".
+                "Ufficio Tributi\n".
+                "Telefono: 06-87654321\n".
+                'Piazza Centrale 1';
+
         $result = $this->service->extractDirectoryEntries($text);
-        
-        $this->assertGreaterThanOrEqual(2, count($result), 
-            "Should extract at least 2 directory entries");
-        
+
+        $this->assertGreaterThanOrEqual(2, count($result),
+            'Should extract at least 2 directory entries');
+
         foreach ($result as $chunk) {
             $this->assertEquals('directory_entry', $chunk['type']);
             $this->assertStringContainsString('Telefono:', $chunk['text']);
         }
     }
-    
+
     /** @test */
     public function it_returns_empty_for_directory_with_too_few_entries()
     {
-        $text = "Ufficio Unico\n" .
-                "Telefono: 06-12345678";
-        
+        $text = "Ufficio Unico\n".
+                'Telefono: 06-12345678';
+
         $result = $this->service->extractDirectoryEntries($text);
-        
+
         // Should return empty because only 1 entry (minimum is 2)
         $this->assertEmpty($result);
     }
-    
+
     /** @test */
     public function it_calculates_optimal_chunk_size()
     {
         // Short text
-        $shortText = str_repeat("Short. ", 50);
+        $shortText = str_repeat('Short. ', 50);
         $optimalShort = $this->service->calculateOptimalChunkSize($shortText);
         $this->assertLessThan(1000, $optimalShort);
-        
+
         // Medium text
-        $mediumText = str_repeat("Medium text. ", 500);
+        $mediumText = str_repeat('Medium text. ', 500);
         $optimalMedium = $this->service->calculateOptimalChunkSize($mediumText);
         $this->assertEquals(2200, $optimalMedium); // Default
-        
+
         // Long text
-        $longText = str_repeat("Very long text. ", 2000);
+        $longText = str_repeat('Very long text. ', 2000);
         $optimalLong = $this->service->calculateOptimalChunkSize($longText);
         $this->assertGreaterThan(2200, $optimalLong);
         $this->assertLessThanOrEqual(3000, $optimalLong);
     }
-    
+
     /** @test */
     public function it_handles_empty_text_gracefully()
     {
         // ✅ FIXED: Pass $tenantId (Step 5/9)
         $result = $this->service->chunk('', $this->testTenantId, [
             'max_chars' => 2200,
-            'overlap_chars' => 250
+            'overlap_chars' => 250,
         ]);
-        
+
         $this->assertEmpty($result);
     }
-    
+
     /** @test */
     public function it_preserves_paragraph_boundaries()
     {
-        $text = "First paragraph with important content.\n\n" .
-                "Second paragraph with different topic.\n\n" .
-                "Third paragraph continues the discussion.";
-        
+        $text = "First paragraph with important content.\n\n".
+                "Second paragraph with different topic.\n\n".
+                'Third paragraph continues the discussion.';
+
         // ✅ FIXED: Pass $tenantId (Step 5/9)
         $result = $this->service->chunk($text, $this->testTenantId, [
             'max_chars' => 100, // Force splitting
-            'overlap_chars' => 20
+            'overlap_chars' => 20,
         ]);
-        
+
         // Should create separate chunks for paragraphs
         $this->assertGreaterThan(1, count($result));
-        
+
         // Chunks should not break mid-paragraph if possible
         foreach ($result as $chunk) {
             $trimmed = trim($chunk['text']);
@@ -203,4 +204,3 @@ class ChunkingServiceTest extends TestCase
         }
     }
 }
-

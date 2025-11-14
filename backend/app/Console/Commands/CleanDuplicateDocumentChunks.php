@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 class CleanDuplicateDocumentChunks extends Command
 {
     protected $signature = 'chunks:clean-duplicates {--tenant= : Tenant ID to clean (optional)} {--dry-run : Only show what would be cleaned}';
+
     protected $description = 'Clean duplicate document chunks caused by race conditions';
 
     public function handle()
@@ -17,7 +18,7 @@ class CleanDuplicateDocumentChunks extends Command
         $dryRun = $this->option('dry-run');
 
         $this->info('🧹 Cleaning duplicate document chunks...');
-        
+
         if ($dryRun) {
             $this->warn('🔍 DRY RUN MODE - No changes will be made');
         }
@@ -37,6 +38,7 @@ class CleanDuplicateDocumentChunks extends Command
 
         if ($duplicates->isEmpty()) {
             $this->info('✅ No duplicate chunks found!');
+
             return 0;
         }
 
@@ -67,7 +69,8 @@ class CleanDuplicateDocumentChunks extends Command
             $chunks = $chunksQuery->get();
 
             if ($chunks->count() <= 1) {
-                $this->comment("  ℹ️  No duplicates found for this chunk (already cleaned?)");
+                $this->comment('  ℹ️  No duplicates found for this chunk (already cleaned?)');
+
                 continue;
             }
 
@@ -76,11 +79,11 @@ class CleanDuplicateDocumentChunks extends Command
             $deleteChunks = $chunks->slice(1);
 
             $this->comment("  ✅ Keeping chunk ID {$keepChunk->id} (created: {$keepChunk->created_at})");
-            
+
             foreach ($deleteChunks as $deleteChunk) {
                 $this->comment("  🗑️  Deleting chunk ID {$deleteChunk->id} (created: {$deleteChunk->created_at})");
-                
-                if (!$dryRun) {
+
+                if (! $dryRun) {
                     DB::table('document_chunks')->where('id', $deleteChunk->id)->delete();
                     $totalCleaned++;
                 }
@@ -97,12 +100,12 @@ class CleanDuplicateDocumentChunks extends Command
             $this->info("🔍 DRY RUN COMPLETE - Would have cleaned {$wouldClean} duplicate chunks");
         } else {
             $this->info("✅ CLEANUP COMPLETE - Cleaned {$totalCleaned} duplicate chunks");
-            
+
             Log::info('chunks.cleanup_completed', [
                 'tenant_id' => $tenantId,
                 'duplicates_found' => $duplicates->count(),
                 'chunks_cleaned' => $totalCleaned,
-                'dry_run' => $dryRun
+                'dry_run' => $dryRun,
             ]);
         }
 

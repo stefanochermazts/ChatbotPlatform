@@ -2,15 +2,15 @@
 
 namespace App\Jobs;
 
-use App\Models\FormSubmission;
 use App\Mail\FormConfirmationMail;
+use App\Models\FormSubmission;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * 📧 SendFormConfirmationEmail Job
@@ -21,7 +21,9 @@ class SendFormConfirmationEmail implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 3;
+
     public $timeout = 60;
+
     public $backoff = [10, 30, 60]; // Retry delays in seconds
 
     /**
@@ -42,14 +44,15 @@ class SendFormConfirmationEmail implements ShouldQueue
             Log::info('📧 Sending form confirmation email', [
                 'submission_id' => $this->submission->id,
                 'user_email' => $this->submission->user_email,
-                'form_name' => $this->submission->tenantForm->name
+                'form_name' => $this->submission->tenantForm->name,
             ]);
 
             // Verifica che ci sia un'email valida
-            if (!$this->submission->user_email) {
+            if (! $this->submission->user_email) {
                 Log::warning('📧 No user email found for submission', [
-                    'submission_id' => $this->submission->id
+                    'submission_id' => $this->submission->id,
                 ]);
+
                 return;
             }
 
@@ -65,7 +68,7 @@ class SendFormConfirmationEmail implements ShouldQueue
 
             Log::info('📧 Form confirmation email sent successfully', [
                 'submission_id' => $this->submission->id,
-                'user_email' => $this->submission->user_email
+                'user_email' => $this->submission->user_email,
             ]);
 
         } catch (\Exception $e) {
@@ -73,7 +76,7 @@ class SendFormConfirmationEmail implements ShouldQueue
                 'submission_id' => $this->submission->id,
                 'user_email' => $this->submission->user_email,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             // Rilancia l'eccezione per retry automatico
@@ -90,7 +93,7 @@ class SendFormConfirmationEmail implements ShouldQueue
             'submission_id' => $this->submission->id,
             'user_email' => $this->submission->user_email,
             'error' => $exception->getMessage(),
-            'attempts' => $this->attempts()
+            'attempts' => $this->attempts(),
         ]);
 
         // Opzionalmente, puoi aggiornare lo stato dell'email nel database
@@ -113,57 +116,3 @@ class SendFormConfirmationEmail implements ShouldQueue
         return now()->addMinutes(10);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

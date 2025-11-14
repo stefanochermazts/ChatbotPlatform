@@ -1,4 +1,5 @@
 <?php
+
 require __DIR__.'/vendor/autoload.php';
 $app = require_once __DIR__.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -33,12 +34,12 @@ foreach ($result['citations'] as $idx => $cit) {
 if (empty($doc4351Chunks)) {
     echo "❌ NO chunks from doc 4351 in final citations!\n";
 } else {
-    echo "✅ Found " . count($doc4351Chunks) . " chunks from doc 4351:\n\n";
+    echo '✅ Found '.count($doc4351Chunks)." chunks from doc 4351:\n\n";
     foreach ($doc4351Chunks as $chunk) {
-        echo "  Position #{$chunk['position']} - Chunk {$chunk['chunk_index']} - Score: " . round($chunk['score'], 4) . "\n";
-        echo "    Has 'orari apertura al pubblico comando': " . ($chunk['has_orario_comando'] ? '✅' : '❌') . "\n";
-        echo "    Has 'polizia locale': " . ($chunk['has_polizia_locale'] ? '✅' : '❌') . "\n";
-        echo "    Preview: " . $chunk['text_preview'] . "...\n\n";
+        echo "  Position #{$chunk['position']} - Chunk {$chunk['chunk_index']} - Score: ".round($chunk['score'], 4)."\n";
+        echo "    Has 'orari apertura al pubblico comando': ".($chunk['has_orario_comando'] ? '✅' : '❌')."\n";
+        echo "    Has 'polizia locale': ".($chunk['has_polizia_locale'] ? '✅' : '❌')."\n";
+        echo '    Preview: '.$chunk['text_preview']."...\n\n";
     }
 }
 
@@ -47,16 +48,15 @@ echo "🎯 Looking for 'COMANDO POLIZIA LOCALE' with orario table...\n";
 $found = false;
 foreach ($result['citations'] as $cit) {
     $text = strtolower($cit['chunk_text'] ?? '');
-    if (str_contains($text, 'comando') && 
-        str_contains($text, 'polizia locale') && 
+    if (str_contains($text, 'comando') &&
+        str_contains($text, 'polizia locale') &&
         str_contains($text, '9:00')) {
         $found = true;
         echo "✅ FOUND in Doc {$cit['id']}, chunk {$cit['chunk_index']}\n";
-        echo "Text:\n" . substr($cit['chunk_text'], 0, 500) . "\n";
+        echo "Text:\n".substr($cit['chunk_text'], 0, 500)."\n";
         break;
     }
 }
-if (!$found) {
+if (! $found) {
     echo "❌ NOT FOUND in any citation\n";
 }
-

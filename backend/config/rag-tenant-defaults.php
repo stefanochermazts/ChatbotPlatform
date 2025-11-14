@@ -10,7 +10,7 @@ return [
     // Parametri Hybrid Search (⚡ Optimized for Performance)
     'hybrid' => [
         'vector_top_k' => 25,      // ⚡ Ridotto da 40 per performance
-        'bm25_top_k' => 40,        // ⚡ Ridotto da 80 per performance  
+        'bm25_top_k' => 40,        // ⚡ Ridotto da 80 per performance
         'rrf_k' => 60,             // Parametro fusion RRF
         'mmr_lambda' => 0.25,      // Balance rilevanza/diversità (0-1)
         'mmr_take' => 8,           // ⚡ Ridotto da 10 per MMR performance
@@ -103,7 +103,7 @@ return [
             'advanced.llm_reranker.enabled' => true,
         ],
     ],
-    
+
     // Configurazione Widget/API Performance
     'widget' => [
         'max_tokens' => 800,           // Limite tokens LLM

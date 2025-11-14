@@ -19,12 +19,12 @@ class VonageMessage extends Model
         'channel', // 'whatsapp', 'messenger', 'sms'
         'status',
         'status_updated_at',
-        'metadata'
+        'metadata',
     ];
 
     protected $casts = [
         'metadata' => 'array',
-        'status_updated_at' => 'datetime'
+        'status_updated_at' => 'datetime',
     ];
 
     /**

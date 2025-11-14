@@ -15,7 +15,7 @@ class WidgetThemeController extends Controller
     public function publicTheme(Tenant $tenant): JsonResponse
     {
         $config = $tenant->widgetConfig ?? null;
-        if (!$config) {
+        if (! $config) {
             // Crea default on-the-fly se manca
             $config = \App\Models\WidgetConfig::createDefaultForTenant($tenant);
         }
@@ -28,20 +28,20 @@ class WidgetThemeController extends Controller
 
         // Aggiungi configurazione operatore
         $availability = $config->operator_availability ?? [];
-        
+
         // Converti enabled da stringa/int a boolean per ogni giorno
         foreach ($availability as $day => $schedule) {
             if (isset($schedule['enabled'])) {
                 $availability[$day]['enabled'] = (bool) $schedule['enabled'];
             }
         }
-        
+
         $theme['operator'] = [
             'enabled' => (bool) ($config->operator_enabled ?? false),
             'button_text' => $config->operator_button_text ?? 'Operatore',
             'button_icon' => $config->operator_button_icon ?? 'headphones',
             'availability' => $availability,
-            'unavailable_message' => $config->operator_unavailable_message ?? 'Operatore non disponibile in questo momento'
+            'unavailable_message' => $config->operator_unavailable_message ?? 'Operatore non disponibile in questo momento',
         ];
 
         // Includi solo layout/widget e button, colori/brand/typography

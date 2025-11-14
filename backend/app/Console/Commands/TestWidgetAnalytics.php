@@ -4,13 +4,13 @@ namespace App\Console\Commands;
 
 use App\Models\Tenant;
 use App\Models\WidgetEvent;
-use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
 class TestWidgetAnalytics extends Command
 {
     protected $signature = 'widget:test-analytics {tenant_id} {--events=20 : Number of test events to create} {--days=7 : Spread events over N days}';
+
     protected $description = 'Generate test analytics data for widget dashboard testing';
 
     public function handle()
@@ -21,8 +21,9 @@ class TestWidgetAnalytics extends Command
 
         // Verify tenant exists
         $tenant = Tenant::find($tenantId);
-        if (!$tenant) {
+        if (! $tenant) {
             $this->error("Tenant with ID {$tenantId} not found.");
+
             return Command::FAILURE;
         }
 
@@ -32,8 +33,8 @@ class TestWidgetAnalytics extends Command
         // Generate test sessions
         $sessions = $this->generateTestSessions($tenantId, $eventsCount, $daysSpread);
 
-        $this->info("✅ Created " . count($sessions) . " test sessions with analytics events");
-        
+        $this->info('✅ Created '.count($sessions).' test sessions with analytics events');
+
         // Show summary
         $this->showAnalyticsSummary($tenantId);
 
@@ -45,7 +46,7 @@ class TestWidgetAnalytics extends Command
         $sessions = [];
         $eventTypes = [
             'widget_loaded' => 0.15,
-            'chatbot_opened' => 0.25, 
+            'chatbot_opened' => 0.25,
             'message_sent' => 0.35,
             'message_received' => 0.20,
             'chatbot_closed' => 0.04,
@@ -91,7 +92,7 @@ class TestWidgetAnalytics extends Command
 
         while ($eventsCreated < $totalEvents) {
             // Generate random session
-            $sessionId = 'session_' . time() . '_' . Str::random(8);
+            $sessionId = 'session_'.time().'_'.Str::random(8);
             $sessionStart = now()->subDays(random_int(0, $daysSpread - 1))
                 ->addHours(random_int(8, 22))
                 ->addMinutes(random_int(0, 59));
@@ -132,7 +133,7 @@ class TestWidgetAnalytics extends Command
 
         $bar->finish();
         $this->line('');
-        
+
         return $sessions;
     }
 
@@ -196,7 +197,7 @@ class TestWidgetAnalytics extends Command
                 $confidence = round(random_int(70, 95) / 100, 2);
                 $tokens = random_int(50, 300);
                 $citations = random_int(0, 3);
-                
+
                 $data = [
                     'response' => $responses[array_rand($responses)],
                     'response_length' => random_int(50, 500),
@@ -240,7 +241,7 @@ class TestWidgetAnalytics extends Command
     {
         $this->line('');
         $this->info('📊 Analytics Summary:');
-        
+
         $totalEvents = WidgetEvent::forTenant($tenantId)->count();
         $uniqueSessions = WidgetEvent::forTenant($tenantId)->distinct('session_id')->count();
         $totalMessages = WidgetEvent::forTenant($tenantId)->where('event_type', 'message_sent')->count();
@@ -248,7 +249,7 @@ class TestWidgetAnalytics extends Command
         $avgResponseTime = WidgetEvent::forTenant($tenantId)
             ->where('event_type', 'message_received')
             ->avg('response_time_ms');
-        
+
         $this->table(
             ['Metric', 'Value'],
             [
@@ -256,11 +257,11 @@ class TestWidgetAnalytics extends Command
                 ['Unique Sessions', number_format($uniqueSessions)],
                 ['Messages Sent', number_format($totalMessages)],
                 ['Responses Generated', number_format($totalResponses)],
-                ['Avg Response Time', $avgResponseTime ? number_format($avgResponseTime) . 'ms' : 'N/A'],
+                ['Avg Response Time', $avgResponseTime ? number_format($avgResponseTime).'ms' : 'N/A'],
             ]
         );
 
         $this->line('');
-        $this->info('🔗 View analytics at: /admin/widget-analytics?tenant_id=' . $tenantId);
+        $this->info('🔗 View analytics at: /admin/widget-analytics?tenant_id='.$tenantId);
     }
 }

@@ -30,6 +30,3 @@ class ApiKey extends Model
         return $this->belongsTo(Tenant::class);
     }
 }
-
-
-

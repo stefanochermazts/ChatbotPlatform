@@ -28,7 +28,7 @@ class ConversationMessageSentEventTest extends TestCase
             'started_at' => now(),
             'last_activity_at' => now(),
             'status' => 'active',
-            'handoff_status' => 'bot_only'
+            'handoff_status' => 'bot_only',
         ]);
 
         $message = ConversationMessage::create([
@@ -38,7 +38,7 @@ class ConversationMessageSentEventTest extends TestCase
             'content' => '🤖 Sono tornato!',
             'content_type' => 'text',
             'sent_at' => now(),
-            'delivered_at' => now()
+            'delivered_at' => now(),
         ]);
 
         $event = new ConversationMessageSent($message);
@@ -52,21 +52,3 @@ class ConversationMessageSentEventTest extends TestCase
         $this->assertSame($session->session_id, $payload['session']['session_id']);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

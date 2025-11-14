@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 class RunDueScrapers extends Command
 {
     protected $signature = 'scraper:run-due {--tenant=} {--id=} {--dry-run}';
+
     protected $description = 'Esegue in coda gli scraper abilitati che risultano dovuti in base a interval_minutes';
 
     public function handle(): int
@@ -38,7 +39,7 @@ class RunDueScrapers extends Command
 
             // Verifica se dovuto (prima del claim):
             $isDue = $cfg->last_run_at === null || $cfg->last_run_at <= $threshold;
-            if (!$isDue) {
+            if (! $isDue) {
                 continue;
             }
 
@@ -57,15 +58,14 @@ class RunDueScrapers extends Command
 
             $this->info("Dispatch scraper #{$cfg->id} (tenant {$cfg->tenant_id}) - '{$cfg->name}'");
 
-            if (!$dry) {
+            if (! $dry) {
                 RunWebScrapingJob::dispatch($cfg->tenant_id, $cfg->id);
             }
             $count++;
         }
 
         $this->info("Totale dispatch: {$count}");
+
         return self::SUCCESS;
     }
 }
-
-

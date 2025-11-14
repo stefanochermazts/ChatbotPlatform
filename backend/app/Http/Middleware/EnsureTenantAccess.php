@@ -16,15 +16,15 @@ class EnsureTenantAccess
     public function handle(Request $request, Closure $next): Response
     {
         $user = Auth::user();
-        
-        if (!$user) {
+
+        if (! $user) {
             abort(401, 'Utente non autenticato.');
         }
 
         // Ottieni il tenant dalla route
         $tenant = $request->route('tenant');
-        
-        if (!$tenant) {
+
+        if (! $tenant) {
             abort(404, 'Tenant non trovato.');
         }
 
@@ -40,7 +40,7 @@ class EnsureTenantAccess
         }
 
         // Verifica che l'utente abbia accesso al tenant
-        if (!$user->tenants()->where('tenant_id', $tenant->id)->exists()) {
+        if (! $user->tenants()->where('tenant_id', $tenant->id)->exists()) {
             abort(403, 'Non hai accesso a questo tenant.');
         }
 

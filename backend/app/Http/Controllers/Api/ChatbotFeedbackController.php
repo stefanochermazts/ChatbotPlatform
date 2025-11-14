@@ -17,7 +17,7 @@ class ChatbotFeedbackController extends Controller
     public function store(Request $request): JsonResponse
     {
         $tenantId = (int) $request->attributes->get('tenant_id');
-        
+
         // Validazione input
         $validator = Validator::make($request->all(), [
             'user_question' => 'required|string|max:2000',
@@ -35,17 +35,17 @@ class ChatbotFeedbackController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Dati non validi',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         try {
             // Verifica che il tenant esista
             $tenant = Tenant::find($tenantId);
-            if (!$tenant) {
+            if (! $tenant) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Tenant non trovato'
+                    'message' => 'Tenant non trovato',
                 ], 404);
             }
 
@@ -80,19 +80,19 @@ class ChatbotFeedbackController extends Controller
                     'feedback_id' => $feedback->id,
                     'rating' => $feedback->rating,
                     'rating_emoji' => $feedback->rating_emoji,
-                ]
+                ],
             ], 201);
 
         } catch (\Exception $e) {
             \Log::error('Errore nel salvare il feedback del chatbot', [
                 'tenant_id' => $tenantId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Errore interno del server'
+                'message' => 'Errore interno del server',
             ], 500);
         }
     }
@@ -120,18 +120,18 @@ class ChatbotFeedbackController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $result
+                'data' => $result,
             ]);
 
         } catch (\Exception $e) {
             \Log::error('Errore nel recuperare le statistiche feedback', [
                 'tenant_id' => $tenantId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Errore interno del server'
+                'message' => 'Errore interno del server',
             ], 500);
         }
     }

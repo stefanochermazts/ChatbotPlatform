@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\TenantForm;
 use App\Models\FormField;
 use App\Models\Tenant;
-use Illuminate\Http\Request;
+use App\Models\TenantForm;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class TenantFormController extends Controller
@@ -18,7 +18,7 @@ class TenantFormController extends Controller
     public function index(Request $request): View
     {
         $user = auth()->user();
-        
+
         $query = TenantForm::with(['tenant', 'fields'])
             ->withCount(['submissions as pending_count' => function ($query) {
                 $query->where('status', 'pending');
@@ -26,7 +26,7 @@ class TenantFormController extends Controller
             ->withCount('submissions as total_count');
 
         // Auto-scoping per clienti
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id');
             $query->whereIn('tenant_id', $userTenantIds);
         } else {
@@ -44,7 +44,7 @@ class TenantFormController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ILIKE', "%{$search}%")
-                  ->orWhere('description', 'ILIKE', "%{$search}%");
+                    ->orWhere('description', 'ILIKE', "%{$search}%");
             });
         }
 
@@ -75,7 +75,7 @@ class TenantFormController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'active' => 'boolean',
-            
+
             // Trigger settings - accetta anche textarea
             'trigger_keywords' => 'nullable|array',
             'trigger_keywords.*' => 'string|max:255',
@@ -84,14 +84,14 @@ class TenantFormController extends Controller
             'trigger_after_questions' => 'nullable|array',
             'trigger_after_questions.*' => 'string|max:500',
             'trigger_questions_text' => 'nullable|string',
-            
+
             // Email settings
             'user_confirmation_email_subject' => 'required|string|max:255',
             'user_confirmation_email_body' => 'nullable|string',
             'admin_notification_email' => 'nullable|email|max:255',
             'auto_response_enabled' => 'boolean',
             'auto_response_message' => 'nullable|string',
-            
+
             // Form fields
             'fields' => 'required|array|min:1',
             'fields.*.name' => 'required|string|max:100',
@@ -105,15 +105,15 @@ class TenantFormController extends Controller
         ]);
 
         // Converti textarea in array se presenti
-        if (!empty($validated['trigger_keywords_text'])) {
+        if (! empty($validated['trigger_keywords_text'])) {
             $validated['trigger_keywords'] = array_filter(
                 array_map('trim', explode("\n", $validated['trigger_keywords_text']))
             );
         } else {
             $validated['trigger_keywords'] = array_filter($validated['trigger_keywords'] ?? []);
         }
-        
-        if (!empty($validated['trigger_questions_text'])) {
+
+        if (! empty($validated['trigger_questions_text'])) {
             $validated['trigger_after_questions'] = array_filter(
                 array_map('trim', explode("\n", $validated['trigger_questions_text']))
             );
@@ -131,7 +131,7 @@ class TenantFormController extends Controller
             $fieldData['tenant_form_id'] = $form->id;
             $fieldData['order'] = $index;
             $fieldData['active'] = true;
-            
+
             // Pulisci opzioni vuote
             if (isset($fieldData['options'])) {
                 $fieldData['options'] = array_filter($fieldData['options']);
@@ -160,7 +160,7 @@ class TenantFormController extends Controller
             },
             'submissions' => function ($query) {
                 $query->with('responses')->latest()->limit(10);
-            }
+            },
         ]);
 
         $stats = [
@@ -195,7 +195,7 @@ class TenantFormController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'active' => 'boolean',
-            
+
             // Trigger settings - accetta anche textarea
             'trigger_keywords' => 'nullable|array',
             'trigger_keywords.*' => 'string|max:255',
@@ -204,14 +204,14 @@ class TenantFormController extends Controller
             'trigger_after_questions' => 'nullable|array',
             'trigger_after_questions.*' => 'string|max:500',
             'trigger_questions_text' => 'nullable|string',
-            
+
             // Email settings
             'user_confirmation_email_subject' => 'required|string|max:255',
             'user_confirmation_email_body' => 'nullable|string',
             'admin_notification_email' => 'nullable|email|max:255',
             'auto_response_enabled' => 'boolean',
             'auto_response_message' => 'nullable|string',
-            
+
             // Form fields
             'fields' => 'required|array|min:1',
             'fields.*.id' => 'nullable|exists:form_fields,id',
@@ -226,25 +226,25 @@ class TenantFormController extends Controller
         ]);
 
         // Converti textarea in array se presenti (UPDATE)
-        if (!empty($validated['trigger_keywords_text'])) {
+        if (! empty($validated['trigger_keywords_text'])) {
             $validated['trigger_keywords'] = array_filter(
                 array_map('trim', explode("\n", $validated['trigger_keywords_text']))
             );
             \Log::info('[FormUpdate] Keywords converted from textarea', [
                 'raw' => $validated['trigger_keywords_text'],
-                'parsed' => $validated['trigger_keywords']
+                'parsed' => $validated['trigger_keywords'],
             ]);
         } else {
             $validated['trigger_keywords'] = array_filter($validated['trigger_keywords'] ?? []);
         }
-        
-        if (!empty($validated['trigger_questions_text'])) {
+
+        if (! empty($validated['trigger_questions_text'])) {
             $validated['trigger_after_questions'] = array_filter(
                 array_map('trim', explode("\n", $validated['trigger_questions_text']))
             );
             \Log::info('[FormUpdate] Questions converted from textarea', [
                 'raw' => $validated['trigger_questions_text'],
-                'parsed' => $validated['trigger_after_questions']
+                'parsed' => $validated['trigger_after_questions'],
             ]);
         } else {
             $validated['trigger_after_questions'] = array_filter($validated['trigger_after_questions'] ?? []);
@@ -269,7 +269,7 @@ class TenantFormController extends Controller
             $fieldData['tenant_form_id'] = $form->id;
             $fieldData['order'] = $index;
             $fieldData['active'] = true;
-            
+
             // Pulisci opzioni vuote
             if (isset($fieldData['options'])) {
                 $fieldData['options'] = array_filter($fieldData['options']);
@@ -303,7 +303,7 @@ class TenantFormController extends Controller
     public function destroy(TenantForm $form): RedirectResponse
     {
         $submissionsCount = $form->submissions()->count();
-        
+
         if ($submissionsCount > 0) {
             return redirect()
                 ->route('admin.forms.show', $form)
@@ -322,10 +322,10 @@ class TenantFormController extends Controller
      */
     public function toggleActive(TenantForm $form): RedirectResponse
     {
-        $form->update(['active' => !$form->active]);
+        $form->update(['active' => ! $form->active]);
 
         $status = $form->active ? 'attivato' : 'disattivato';
-        
+
         return redirect()
             ->back()
             ->with('success', "Form {$status} con successo!");
@@ -337,7 +337,7 @@ class TenantFormController extends Controller
     public function preview(TenantForm $form): View
     {
         $form->load('fields');
-        
+
         return view('admin.forms.preview', compact('form'));
     }
 

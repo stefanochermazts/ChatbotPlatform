@@ -64,9 +64,10 @@ class Tenant extends Model
     {
         // Prefer the stored (encrypted) key if available; fallback to null
         $apiKey = $this->apiKeys()->whereNull('revoked_at')->latest()->first();
-        if (!$apiKey) {
+        if (! $apiKey) {
             return null;
         }
+
         return $apiKey->key ?? null;
     }
 
@@ -109,7 +110,7 @@ class Tenant extends Model
      */
     public function hasWhatsAppConfig(): bool
     {
-        return !empty($this->whatsapp_config['phone_number']) && 
+        return ! empty($this->whatsapp_config['phone_number']) &&
                ($this->whatsapp_config['is_active'] ?? false);
     }
 
@@ -139,12 +140,12 @@ class Tenant extends Model
                 'thursday' => ['start' => '09:00', 'end' => '18:00'],
                 'friday' => ['start' => '09:00', 'end' => '18:00'],
                 'saturday' => ['start' => '09:00', 'end' => '13:00'],
-                'sunday' => ['closed' => true]
+                'sunday' => ['closed' => true],
             ],
             'auto_response' => [
                 'enabled' => true,
-                'response_delay' => 1 // secondi
-            ]
+                'response_delay' => 1, // secondi
+            ],
         ];
     }
 
@@ -182,10 +183,10 @@ class Tenant extends Model
     public function getActiveConversations()
     {
         return $this->conversationSessions()
-                   ->whereIn('status', ['active', 'assigned'])
-                   ->with(['messages' => function($query) {
-                       $query->latest('sent_at')->limit(1);
-                   }, 'assignedOperator']);
+            ->whereIn('status', ['active', 'assigned'])
+            ->with(['messages' => function ($query) {
+                $query->latest('sent_at')->limit(1);
+            }, 'assignedOperator']);
     }
 
     /**
@@ -194,9 +195,9 @@ class Tenant extends Model
     public function getPendingHandoffRequests()
     {
         return $this->handoffRequests()
-                   ->where('status', 'pending')
-                   ->orderBy('priority')
-                   ->orderBy('requested_at');
+            ->where('status', 'pending')
+            ->orderBy('priority')
+            ->orderBy('requested_at');
     }
 
     /**
@@ -215,10 +216,7 @@ class Tenant extends Model
             'resolved_sessions' => $resolvedSessions,
             'pending_handoffs' => $pendingHandoffs,
             'resolution_rate' => $totalSessions > 0 ? ($resolvedSessions / $totalSessions) * 100 : 0,
-            'handoff_rate' => $totalSessions > 0 ? ($this->handoffRequests()->count() / $totalSessions) * 100 : 0
+            'handoff_rate' => $totalSessions > 0 ? ($this->handoffRequests()->count() / $totalSessions) * 100 : 0,
         ];
     }
 }
-
-
-

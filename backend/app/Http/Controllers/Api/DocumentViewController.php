@@ -32,7 +32,7 @@ class DocumentViewController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid request parameters',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 400);
         }
 
@@ -44,10 +44,10 @@ class DocumentViewController extends Controller
             ->where('tenant_id', $tenantId)
             ->first();
 
-        if (!$document) {
+        if (! $document) {
             return response()->json([
                 'success' => false,
-                'message' => 'Document not found or access denied'
+                'message' => 'Document not found or access denied',
             ], 404);
         }
 
@@ -67,7 +67,7 @@ class DocumentViewController extends Controller
                     'title' => $document->title,
                     'type' => $document->file_type,
                     'size' => $document->file_size,
-                ]
+                ],
             ]);
 
         } catch (\Throwable $e) {
@@ -79,7 +79,7 @@ class DocumentViewController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to generate view token'
+                'message' => 'Failed to generate view token',
             ], 500);
         }
     }
@@ -92,18 +92,18 @@ class DocumentViewController extends Controller
         try {
             $tokenData = $this->validateAndDecodeToken($token);
 
-            if (!$tokenData) {
+            if (! $tokenData) {
                 return $this->errorResponse('Invalid or expired token', 403);
             }
 
             $document = Document::find($tokenData['document_id']);
 
-            if (!$document) {
+            if (! $document) {
                 return $this->errorResponse('Document not found', 404);
             }
 
             // Check if file exists in storage
-            if (!Storage::exists($document->storage_path)) {
+            if (! Storage::exists($document->storage_path)) {
                 return $this->errorResponse('Document file not found', 404);
             }
 
@@ -122,7 +122,7 @@ class DocumentViewController extends Controller
             $mimeType = $this->getMimeType($document->file_type);
 
             // For text-based documents, apply highlighting if requested
-            if ($this->isTextDocument($document->file_type) && !empty($tokenData['highlight_text'])) {
+            if ($this->isTextDocument($document->file_type) && ! empty($tokenData['highlight_text'])) {
                 $content = $this->highlightText($content, $tokenData['highlight_text']);
                 $mimeType = 'text/html'; // Convert to HTML for highlighting
             }
@@ -130,7 +130,7 @@ class DocumentViewController extends Controller
             // Set appropriate headers
             $headers = [
                 'Content-Type' => $mimeType,
-                'Content-Disposition' => 'inline; filename="' . $document->title . '"',
+                'Content-Disposition' => 'inline; filename="'.$document->title.'"',
                 'X-Content-Type-Options' => 'nosniff',
                 'X-Frame-Options' => 'SAMEORIGIN',
                 'Cache-Control' => 'private, no-cache, no-store, must-revalidate',
@@ -165,7 +165,7 @@ class DocumentViewController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid document IDs',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 400);
         }
 
@@ -210,7 +210,7 @@ class DocumentViewController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch document information'
+                'message' => 'Failed to fetch document information',
             ], 500);
         }
     }
@@ -246,13 +246,14 @@ class DocumentViewController extends Controller
         $cacheKey = "document_view_token:{$token}";
         $tokenData = Cache::get($cacheKey);
 
-        if (!$tokenData) {
+        if (! $tokenData) {
             return null; // Token not found or expired
         }
 
         // Verify token hasn't expired (double check)
         if ($tokenData['expires_at'] < time()) {
             Cache::forget($cacheKey);
+
             return null;
         }
 
@@ -352,12 +353,14 @@ class DocumentViewController extends Controller
      */
     private function formatFileSize(?int $bytes): string
     {
-        if (!$bytes) return 'N/A';
+        if (! $bytes) {
+            return 'N/A';
+        }
 
         $units = ['B', 'KB', 'MB', 'GB'];
         $factor = floor((strlen($bytes) - 1) / 3);
 
-        return sprintf("%.1f %s", $bytes / pow(1024, $factor), $units[$factor]);
+        return sprintf('%.1f %s', $bytes / pow(1024, $factor), $units[$factor]);
     }
 
     /**

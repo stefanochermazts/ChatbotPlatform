@@ -5,11 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ConversationSession;
 use App\Models\HandoffRequest;
-use App\Models\User;
 use App\Services\HandoffService;
 use App\Services\OperatorRoutingService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class HandoffController extends Controller
@@ -31,27 +30,27 @@ class HandoffController extends Controller
                 'reason' => 'nullable|string|max:500',
                 'priority' => 'string|in:low,normal,high,urgent',
                 'routing_criteria' => 'nullable|array',
-                'context_data' => 'nullable|array'
+                'context_data' => 'nullable|array',
             ]);
 
             // Find conversation session
             $session = ConversationSession::where('session_id', $validated['session_id'])->first();
-            if (!$session) {
+            if (! $session) {
                 return response()->json(['error' => 'Session not found'], 404);
             }
 
             // Check if handoff already exists and is pending
             $existingHandoff = HandoffRequest::where('conversation_session_id', $session->id)
-                                           ->where('status', 'pending')
-                                           ->first();
+                ->where('status', 'pending')
+                ->first();
             if ($existingHandoff) {
                 return response()->json([
                     'success' => true,
                     'handoff_request' => [
                         'id' => $existingHandoff->id,
                         'status' => $existingHandoff->status,
-                        'message' => 'Handoff request already exists'
-                    ]
+                        'message' => 'Handoff request already exists',
+                    ],
                 ]);
             }
 
@@ -69,14 +68,14 @@ class HandoffController extends Controller
                 // The handoff will remain in "pending" status and operators will see it via polling/toast
                 // $isAssigned = $this->routingService->autoAssignHandoff($handoffRequest);
                 // $assignedOperator = $isAssigned ? $handoffRequest->fresh()->assignedOperator : null;
-                
+
                 \Log::info('handoff.created_pending', [
                     'handoff_id' => $handoffRequest->id,
                     'status' => $handoffRequest->status,
                     'tenant_id' => $handoffRequest->tenant_id,
-                    'priority' => $handoffRequest->priority
+                    'priority' => $handoffRequest->priority,
                 ]);
-                
+
                 return response()->json([
                     'success' => true,
                     'handoff_request' => [
@@ -84,8 +83,8 @@ class HandoffController extends Controller
                         'status' => $handoffRequest->status,
                         'priority' => $handoffRequest->priority,
                         'requested_at' => $handoffRequest->requested_at->toISOString(),
-                        'assigned_operator' => null  // ✅ Always null - operators must take manually
-                    ]
+                        'assigned_operator' => null,  // ✅ Always null - operators must take manually
+                    ],
                 ], 201);
             } else {
                 return response()->json(['error' => 'Failed to create handoff request'], 500);
@@ -95,12 +94,13 @@ class HandoffController extends Controller
             return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
         } catch (\Exception $e) {
             \Log::error('handoff.request.failed', ['error' => $e->getMessage()]);
+
             return response()->json(['error' => 'Failed to process handoff request'], 500);
         }
     }
 
     /**
-     * 👨‍💼 Assegna handoff a operatore specifico  
+     * 👨‍💼 Assegna handoff a operatore specifico
      */
     public function assign(Request $request, int $handoffId): JsonResponse
     {
@@ -137,11 +137,11 @@ class HandoffController extends Controller
                 'status' => 'string|in:pending,assigned,resolved,cancelled',
                 'priority' => 'string|in:low,normal,high,urgent',
                 'limit' => 'integer|min:1|max:100',
-                'offset' => 'integer|min:0'
+                'offset' => 'integer|min:0',
             ]);
 
             $query = HandoffRequest::with(['conversationSession', 'assignedOperator'])
-                                  ->where('tenant_id', $validated['tenant_id']);
+                ->where('tenant_id', $validated['tenant_id']);
 
             // Apply filters
             if (isset($validated['status'])) {
@@ -161,7 +161,7 @@ class HandoffController extends Controller
                 WHEN priority = 'normal' THEN 3 
                 WHEN priority = 'low' THEN 4 
                 END")
-                  ->orderBy('requested_at', 'asc');
+                ->orderBy('requested_at', 'asc');
 
             $limit = $validated['limit'] ?? 20;
             $offset = $validated['offset'] ?? 0;
@@ -183,27 +183,28 @@ class HandoffController extends Controller
                         'age_minutes' => $handoff->getAgeInMinutes(),
                         'assigned_operator' => $handoff->assignedOperator ? [
                             'id' => $handoff->assignedOperator->id,
-                            'name' => $handoff->assignedOperator->name
+                            'name' => $handoff->assignedOperator->name,
                         ] : null,
                         'session_info' => [
                             'user_identifier' => $handoff->conversationSession->user_identifier,
                             'channel' => $handoff->conversationSession->channel,
-                            'message_count' => $handoff->conversationSession->message_count_total ?? 0
-                        ]
+                            'message_count' => $handoff->conversationSession->message_count_total ?? 0,
+                        ],
                     ];
                 }),
                 'pagination' => [
                     'total' => $total,
                     'limit' => $limit,
                     'offset' => $offset,
-                    'has_more' => ($offset + $limit) < $total
-                ]
+                    'has_more' => ($offset + $limit) < $total,
+                ],
             ]);
 
         } catch (ValidationException $e) {
             return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
         } catch (\Exception $e) {
             \Log::error('handoff.pending.failed', ['error' => $e->getMessage()]);
+
             return response()->json(['error' => 'Failed to retrieve pending handoffs'], 500);
         }
     }

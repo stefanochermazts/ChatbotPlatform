@@ -87,5 +87,3 @@ class SettingServiceTest extends TestCase
         $this->assertSame(6, $result);
     }
 }
-
-

@@ -224,4 +224,3 @@ class SynonymExpansionService
         Cache::flush(); // Note: In production, use tag-based cache for more granular control
     }
 }
-

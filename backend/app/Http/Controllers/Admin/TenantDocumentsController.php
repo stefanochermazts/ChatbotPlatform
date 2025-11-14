@@ -72,5 +72,3 @@ class TenantDocumentsController extends Controller
         ]);
     }
 }
-
-

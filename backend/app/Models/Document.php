@@ -52,6 +52,3 @@ class Document extends Model
         return $this->hasMany(DocumentChunk::class);
     }
 }
-
-
-

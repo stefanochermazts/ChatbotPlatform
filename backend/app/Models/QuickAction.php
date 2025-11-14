@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class QuickAction extends Model
 {
     use HasFactory;
-    
+
     protected $fillable = [
         'tenant_id', 'action_type', 'label', 'icon', 'description',
         'action_method', 'action_url', 'action_payload', 'required_fields',
@@ -18,9 +18,9 @@ class QuickAction extends Model
         'rate_limit_per_user', 'rate_limit_global',
         'success_message', 'success_action', 'success_url', 'error_message',
         'requires_jwt', 'jwt_expiry_minutes', 'requires_hmac',
-        'custom_config', 'last_used_at', 'total_executions'
+        'custom_config', 'last_used_at', 'total_executions',
     ];
-    
+
     protected $casts = [
         'action_payload' => 'array',
         'required_fields' => 'array',
@@ -29,66 +29,66 @@ class QuickAction extends Model
         'requires_auth' => 'boolean',
         'requires_jwt' => 'boolean',
         'requires_hmac' => 'boolean',
-        'last_used_at' => 'datetime'
+        'last_used_at' => 'datetime',
     ];
-    
+
     // Relationships
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
     }
-    
+
     public function executions(): HasMany
     {
         return $this->hasMany(QuickActionExecution::class);
     }
-    
+
     // Scopes
     public function scopeEnabled($query)
     {
         return $query->where('is_enabled', true);
     }
-    
+
     public function scopeForTenant($query, $tenantId)
     {
         return $query->where('tenant_id', $tenantId);
     }
-    
+
     public function scopeOrdered($query)
     {
         return $query->orderBy('display_order')->orderBy('label');
     }
-    
+
     // Helper Methods
     public function canExecute(): bool
     {
         return $this->is_enabled;
     }
-    
+
     public function incrementExecutions(): void
     {
         $this->increment('total_executions');
         $this->update(['last_used_at' => now()]);
     }
-    
+
     public function getResolvedActionUrl(): ?string
     {
-        if (!$this->action_url) {
+        if (! $this->action_url) {
             return null;
         }
-        
+
         // If it's a relative URL, prepend the tenant's base URL
         if (str_starts_with($this->action_url, '/')) {
             return url($this->action_url);
         }
-        
+
         return $this->action_url;
     }
-    
+
     public function getRequiredFieldsForDisplay(): array
     {
         $fields = $this->required_fields ?? [];
-        
+
         // Map field names to display labels
         $fieldLabels = [
             'email' => 'Email',
@@ -96,18 +96,18 @@ class QuickAction extends Model
             'name' => 'Nome',
             'company' => 'Azienda',
             'message' => 'Messaggio',
-            'subject' => 'Oggetto'
+            'subject' => 'Oggetto',
         ];
-        
-        return array_map(function($field) use ($fieldLabels) {
+
+        return array_map(function ($field) use ($fieldLabels) {
             return [
                 'name' => $field,
                 'label' => $fieldLabels[$field] ?? ucfirst($field),
-                'required' => true
+                'required' => true,
             ];
         }, $fields);
     }
-    
+
     // Static methods for default actions
     public static function getDefaultActionsForTenant(int $tenantId): array
     {
@@ -125,7 +125,7 @@ class QuickAction extends Model
                 'button_style' => 'primary',
                 'confirmation_message' => 'Vuoi inviare una richiesta di supporto?',
                 'success_message' => 'La tua richiesta è stata inviata con successo!',
-                'success_action' => 'message'
+                'success_action' => 'message',
             ],
             [
                 'tenant_id' => $tenantId,
@@ -140,7 +140,7 @@ class QuickAction extends Model
                 'button_style' => 'secondary',
                 'confirmation_message' => 'Vuoi richiedere una richiamata?',
                 'success_message' => 'Ti ricontatteremo il prima possibile!',
-                'success_action' => 'message'
+                'success_action' => 'message',
             ],
             [
                 'tenant_id' => $tenantId,
@@ -154,8 +154,8 @@ class QuickAction extends Model
                 'display_order' => 3,
                 'button_style' => 'outline',
                 'success_message' => 'Download avviato!',
-                'success_action' => 'download'
-            ]
+                'success_action' => 'download',
+            ],
         ];
     }
 }

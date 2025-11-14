@@ -22,6 +22,7 @@ class OpenAIChatService
         if ($apiKey === '') {
             // Fallback mock: restituisce risposta deterministica utile in dev
             $content = $this->buildEchoContent($payload);
+
             return [
                 'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
                 'object' => 'chat.completion',
@@ -55,30 +56,31 @@ class OpenAIChatService
         ]);
 
         $data = json_decode((string) $response->getBody(), true);
+
         return $this->normalizeResponse($data);
     }
 
     /**
      * Stream chat completions using Server-Sent Events (SSE)
-     * 
-     * @param array $payload OpenAI chat completion payload
-     * @param callable $onChunk Callback for each chunk: function(string $delta, array $chunkData)
+     *
+     * @param  array  $payload  OpenAI chat completion payload
+     * @param  callable  $onChunk  Callback for each chunk: function(string $delta, array $chunkData)
      * @return array Final completion data with accumulated content
      */
     public function chatCompletionsStream(array $payload, callable $onChunk): array
     {
         $apiKey = (string) config('openai.api_key');
-        
+
         // Mock mode: simulate streaming
         if ($apiKey === '') {
             $content = $this->buildEchoContent($payload);
             $words = explode(' ', $content);
             $accumulated = '';
-            
+
             foreach ($words as $i => $word) {
-                $delta = ($i > 0 ? ' ' : '') . $word;
+                $delta = ($i > 0 ? ' ' : '').$word;
                 $accumulated .= $delta;
-                
+
                 $chunkData = [
                     'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
                     'object' => 'chat.completion.chunk',
@@ -90,11 +92,11 @@ class OpenAIChatService
                         'finish_reason' => null,
                     ]],
                 ];
-                
+
                 $onChunk($delta, $chunkData);
                 usleep(50000); // 50ms delay for realistic simulation
             }
-            
+
             // Final chunk
             $finalChunk = [
                 'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
@@ -108,7 +110,7 @@ class OpenAIChatService
                 ]],
             ];
             $onChunk('', $finalChunk);
-            
+
             return [
                 'id' => 'mock-chatcmpl-'.substr(md5(json_encode($payload)), 0, 12),
                 'object' => 'chat.completion',
@@ -147,27 +149,27 @@ class OpenAIChatService
         $accumulated = '';
         $lastChunkData = null;
 
-        while (!$body->eof()) {
+        while (! $body->eof()) {
             $line = $this->readLine($body);
-            
-            if (trim($line) === '' || !str_starts_with($line, 'data: ')) {
+
+            if (trim($line) === '' || ! str_starts_with($line, 'data: ')) {
                 continue;
             }
 
             $data = trim(substr($line, 6));
-            
+
             if ($data === '[DONE]') {
                 break;
             }
 
             $chunkData = json_decode($data, true);
-            if (!$chunkData) {
+            if (! $chunkData) {
                 continue;
             }
 
             $lastChunkData = $chunkData;
             $delta = $chunkData['choices'][0]['delta']['content'] ?? '';
-            
+
             if ($delta !== '') {
                 $accumulated .= $delta;
                 $onChunk($delta, $chunkData);
@@ -202,13 +204,14 @@ class OpenAIChatService
     private function readLine($stream): string
     {
         $line = '';
-        while (!$stream->eof()) {
+        while (! $stream->eof()) {
             $char = $stream->read(1);
             if ($char === "\n") {
                 break;
             }
             $line .= $char;
         }
+
         return $line;
     }
 
@@ -231,7 +234,7 @@ class OpenAIChatService
                 foreach ($payload['messages'] as $i => $msg) {
                     if (isset($msg['content']) && is_string($msg['content'])) {
                         $payload['messages'][$i]['content'] = [
-                            ['type' => 'text', 'text' => $msg['content']]
+                            ['type' => 'text', 'text' => $msg['content']],
                         ];
                     }
                 }
@@ -256,12 +259,13 @@ class OpenAIChatService
             }
         }
         $answer = 'Risposta di mock: '.$lastUser;
-        if (!empty($payload['__citations'])) {
+        if (! empty($payload['__citations'])) {
             $answer .= "\n\nCitazioni:";
             foreach ($payload['__citations'] as $c) {
                 $answer .= "\n- {$c['title']} ({$c['url']})";
             }
         }
+
         return $answer;
     }
 
@@ -272,7 +276,7 @@ class OpenAIChatService
     private function normalizeResponse(array $data): array
     {
         // Responses API compatibility
-        if (!isset($data['choices']) && isset($data['output_text'])) {
+        if (! isset($data['choices']) && isset($data['output_text'])) {
             $text = is_array($data['output_text']) ? implode("\n", $data['output_text']) : (string) $data['output_text'];
             $data['choices'] = [[
                 'index' => 0,
@@ -280,10 +284,14 @@ class OpenAIChatService
                 'finish_reason' => $data['finish_reason'] ?? 'stop',
             ]];
         }
-        if (!isset($data['choices']) || !is_array($data['choices'])) { return $data; }
+        if (! isset($data['choices']) || ! is_array($data['choices'])) {
+            return $data;
+        }
         foreach ($data['choices'] as $i => $choice) {
             $message = $choice['message'] ?? null;
-            if (!is_array($message)) { continue; }
+            if (! is_array($message)) {
+                continue;
+            }
             $content = $message['content'] ?? '';
             if (is_array($content)) {
                 // OpenAI a volte restituisce un array di parti; concatena i testi
@@ -304,16 +312,12 @@ class OpenAIChatService
                     }
                 }
                 $data['choices'][$i]['message']['content'] = $text;
-            } elseif (!is_string($content)) {
+            } elseif (! is_string($content)) {
                 // Fallback robusto
                 $data['choices'][$i]['message']['content'] = (string) json_encode($content);
             }
         }
+
         return $data;
     }
 }
-
-
-
-
-

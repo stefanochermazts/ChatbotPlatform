@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules;
 
 class UserManagementController extends Controller
 {
@@ -31,16 +30,16 @@ class UserManagementController extends Controller
         // Filtro per nome/email
         if ($request->filled('search')) {
             $search = $request->get('search');
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
         // Filtro per ruolo
         if ($request->filled('role')) {
             $role = $request->get('role');
-            $query->whereHas('tenants', function($q) use ($role) {
+            $query->whereHas('tenants', function ($q) use ($role) {
                 $q->wherePivot('role', $role);
             });
         }
@@ -48,7 +47,7 @@ class UserManagementController extends Controller
         // Filtro per tenant
         if ($request->filled('tenant_id')) {
             $tenantId = $request->get('tenant_id');
-            $query->whereHas('tenants', function($q) use ($tenantId) {
+            $query->whereHas('tenants', function ($q) use ($tenantId) {
                 $q->where('tenant_id', $tenantId);
             });
         }
@@ -80,6 +79,7 @@ class UserManagementController extends Controller
     {
         $this->authorize('create', User::class);
         $tenants = Tenant::orderBy('name')->get();
+
         return view('admin.users.create', compact('tenants'));
     }
 
@@ -95,7 +95,7 @@ class UserManagementController extends Controller
             'tenant_ids' => ['required', 'array', 'min:1'],
             'tenant_ids.*' => ['exists:tenants,id'],
             'roles' => ['required', 'array'],
-            'roles.*' => ['in:' . implode(',', array_keys(User::ROLES))],
+            'roles.*' => ['in:'.implode(',', array_keys(User::ROLES))],
             'send_invitation' => ['boolean'],
         ]);
 
@@ -104,7 +104,7 @@ class UserManagementController extends Controller
         // Verifica che ci sia un ruolo per ogni tenant
         $tenantIds = $request->get('tenant_ids');
         $roles = $request->get('roles');
-        
+
         if (count($tenantIds) !== count($roles)) {
             return back()->withErrors(['roles' => 'Devi specificare un ruolo per ogni tenant.']);
         }
@@ -116,7 +116,7 @@ class UserManagementController extends Controller
 
         // Crea l'utente con password temporanea
         $temporaryPassword = Str::random(32);
-        
+
         $user = User::create([
             'name' => $request->get('name'),
             'email' => $request->get('email'),
@@ -138,7 +138,7 @@ class UserManagementController extends Controller
 
         return redirect()
             ->route('admin.users.show', $user)
-            ->with('success', 'Utente creato con successo.' . ($request->boolean('send_invitation') ? ' Email di invito inviata.' : ''));
+            ->with('success', 'Utente creato con successo.'.($request->boolean('send_invitation') ? ' Email di invito inviata.' : ''));
     }
 
     /**
@@ -148,6 +148,7 @@ class UserManagementController extends Controller
     {
         $this->authorize('view', $user);
         $user->load('tenants');
+
         return view('admin.users.show', compact('user'));
     }
 
@@ -159,6 +160,7 @@ class UserManagementController extends Controller
         $this->authorize('update', $user);
         $user->load('tenants');
         $tenants = Tenant::orderBy('name')->get();
+
         return view('admin.users.edit', compact('user', 'tenants'));
     }
 
@@ -175,7 +177,7 @@ class UserManagementController extends Controller
             'tenant_ids' => ['array'],
             'tenant_ids.*' => ['exists:tenants,id'],
             'roles' => ['array'],
-            'roles.*' => ['in:' . implode(',', array_keys(User::ROLES))],
+            'roles.*' => ['in:'.implode(',', array_keys(User::ROLES))],
         ]);
 
         // Aggiorna dati base
@@ -189,7 +191,7 @@ class UserManagementController extends Controller
         if ($request->user()->can('manageTenantAssociations', $user)) {
             $tenantIds = $request->get('tenant_ids', []);
             $roles = $request->get('roles', []);
-            
+
             if (count($tenantIds) === count($roles) && count($tenantIds) > 0) {
                 // Verifica che non ci siano tenant duplicati
                 if (count($tenantIds) !== count(array_unique($tenantIds))) {
@@ -197,22 +199,22 @@ class UserManagementController extends Controller
                 }
 
                 $tenantData = [];
-                
+
                 // Se l'utente sta modificando se stesso, mantieni i ruoli esistenti
                 $isEditingSelf = $request->user()->id === $user->id;
                 $existingRoles = [];
-                
+
                 if ($isEditingSelf) {
                     $existingRoles = $user->tenants->pluck('pivot.role', 'id')->toArray();
                 }
-                
+
                 foreach ($tenantIds as $index => $tenantId) {
-                    if (!empty($tenantId)) {
+                    if (! empty($tenantId)) {
                         // Se modifica se stesso, mantieni il ruolo esistente o usa quello fornito per nuovi tenant
-                        $role = $isEditingSelf && isset($existingRoles[$tenantId]) 
-                            ? $existingRoles[$tenantId] 
+                        $role = $isEditingSelf && isset($existingRoles[$tenantId])
+                            ? $existingRoles[$tenantId]
                             : $roles[$index];
-                            
+
                         $tenantData[$tenantId] = ['role' => $role];
                     }
                 }
@@ -247,10 +249,10 @@ class UserManagementController extends Controller
     {
         $this->authorize('update', $user);
 
-        $user->update(['is_active' => !$user->is_active]);
+        $user->update(['is_active' => ! $user->is_active]);
 
         $status = $user->is_active ? 'attivato' : 'disattivato';
-        
+
         return back()->with('success', "Utente {$status} con successo.");
     }
 

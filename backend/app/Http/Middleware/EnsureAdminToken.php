@@ -26,6 +26,3 @@ class EnsureAdminToken
         return redirect()->route('admin.login');
     }
 }
-
-
-

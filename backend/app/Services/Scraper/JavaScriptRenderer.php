@@ -8,14 +8,14 @@ class JavaScriptRenderer
     {
         try {
             $timeoutMs = $timeout * 1000;
-            
+
             // 🔧 Estrai timeout configurabili da jsConfig
             $navigationTimeout = ($jsConfig['js_navigation_timeout'] ?? 30) * 1000;
             $contentWait = ($jsConfig['js_content_wait'] ?? 15) * 1000;
             $scrollDelay = ($jsConfig['js_scroll_delay'] ?? 2) * 1000;
             $finalWait = ($jsConfig['js_final_wait'] ?? 8) * 1000;
-            
-            \Log::info("🌐 [JS-RENDER] Starting JavaScript rendering", [
+
+            \Log::info('🌐 [JS-RENDER] Starting JavaScript rendering', [
                 'url' => $url,
                 'timeout_seconds' => $timeout,
                 'timeout_ms' => $timeoutMs,
@@ -23,29 +23,29 @@ class JavaScriptRenderer
                 'content_wait_ms' => $contentWait,
                 'scroll_delay_ms' => $scrollDelay,
                 'final_wait_ms' => $finalWait,
-                'environment' => app()->environment()
+                'environment' => app()->environment(),
             ]);
-            
+
             // Path temporaneo per script Node.js
             $tempDir = storage_path('app/temp');
-            $scriptPath = $tempDir . '/puppeteer_' . uniqid() . '.cjs';
-            $outputPath = $tempDir . '/output_' . uniqid() . '.html';
-            $errorPath = $tempDir . '/error_' . uniqid() . '.log';
-            
+            $scriptPath = $tempDir.'/puppeteer_'.uniqid().'.cjs';
+            $outputPath = $tempDir.'/output_'.uniqid().'.html';
+            $errorPath = $tempDir.'/error_'.uniqid().'.log';
+
             // Crea directory se non esiste
-            if (!file_exists($tempDir)) {
+            if (! file_exists($tempDir)) {
                 mkdir($tempDir, 0755, true);
             }
-            
+
             // Genera script Puppeteer con timeout configurabili
             $script = $this->generatePuppeteerScript($url, $timeoutMs, $outputPath, $errorPath, [
                 'navigationTimeout' => $navigationTimeout,
                 'contentWait' => $contentWait,
                 'scrollDelay' => $scrollDelay,
-                'finalWait' => $finalWait
+                'finalWait' => $finalWait,
             ]);
             file_put_contents($scriptPath, $script);
-            
+
             // Esegui Puppeteer dalla directory corrente (backend)
             $backendDir = base_path(); // Già punta a /backend
             $absoluteScriptPath = $scriptPath;
@@ -56,17 +56,17 @@ class JavaScriptRenderer
             if ($envNodePath) {
                 $candidateNodes[] = $envNodePath;
             }
-            
+
             // Aggiungi path comuni (Windows specifici per primi, poi Linux)
             $candidateNodes = array_merge($candidateNodes, [
                 'C:\\nvm4w2\\nodejs\\node.exe',              // NVM for Windows (comune)
                 'C:\\Program Files\\nodejs\\node.exe',       // Installazione standard Windows
                 'C:\\Program Files (x86)\\nodejs\\node.exe', // Installazione 32-bit
                 'C:\\laragon\\bin\\nodejs\\node.exe',        // Laragon Node
-                'C:\\Program Files\\Git\\usr\\bin\\node.exe',// Git Bash Node
+                'C:\\Program Files\\Git\\usr\\bin\\node.exe', // Git Bash Node
                 '/usr/bin/node',                              // Linux standard
                 '/usr/local/bin/node',                        // Linux alternative
-                'node'                                        // Fallback a PATH (potrebbe non funzionare in PHP)
+                'node',                                        // Fallback a PATH (potrebbe non funzionare in PHP)
             ]);
 
             $nodeBinary = null;
@@ -91,122 +91,123 @@ class JavaScriptRenderer
                     }
                 }
             }
-            
-            if (!$nodeBinary) {
-                throw new \RuntimeException("Node.js binary not found. Please install Node.js or set NODE_BINARY_PATH in .env");
+
+            if (! $nodeBinary) {
+                throw new \RuntimeException('Node.js binary not found. Please install Node.js or set NODE_BINARY_PATH in .env');
             }
 
             // Cambia working directory prima di eseguire (evita problemi con cd && su Windows)
             $originalDir = getcwd();
             chdir($backendDir);
-            
+
             // Quota il path di Node.js se contiene spazi
             $quotedNodeBinary = (strpos($nodeBinary, ' ') !== false) ? "\"$nodeBinary\"" : $nodeBinary;
-            
+
             // Comando semplificato senza cd (già nella directory corretta)
             $nodeCmd = "$quotedNodeBinary \"$absoluteScriptPath\"";
-            
+
             // Debug: log del comando
-            \Log::debug("Executing Node.js command", [
+            \Log::debug('Executing Node.js command', [
                 'node_binary' => $nodeBinary,
                 'command' => $nodeCmd,
                 'backend_dir' => $backendDir,
                 'script_path' => $absoluteScriptPath,
-                'current_dir' => getcwd()
+                'current_dir' => getcwd(),
             ]);
             $exitCode = 0;
             $output = [];
-            
-            exec($nodeCmd . " 2>&1", $output, $exitCode);
-            
+
+            exec($nodeCmd.' 2>&1', $output, $exitCode);
+
             // Ripristina directory originale
             chdir($originalDir);
-            
+
             if ($exitCode !== 0) {
                 $errorMsg = implode("\n", $output);
                 if (file_exists($errorPath)) {
-                    $errorMsg .= "\n" . file_get_contents($errorPath);
+                    $errorMsg .= "\n".file_get_contents($errorPath);
                 }
-                \Log::error("❌ [JS-RENDER] Puppeteer failed", [
+                \Log::error('❌ [JS-RENDER] Puppeteer failed', [
                     'url' => $url,
                     'exit_code' => $exitCode,
                     'error' => $errorMsg,
                     'command' => $nodeCmd,
-                    'output' => $output
+                    'output' => $output,
                 ]);
-                
+
                 // Cleanup
                 @unlink($scriptPath);
                 @unlink($outputPath);
                 @unlink($errorPath);
-                
+
                 return null;
             }
-            
+
             // Leggi contenuto renderizzato
-            if (!file_exists($outputPath)) {
-                \Log::error("❌ [JS-RENDER] Output file not found", ['url' => $url]);
-                
+            if (! file_exists($outputPath)) {
+                \Log::error('❌ [JS-RENDER] Output file not found', ['url' => $url]);
+
                 // Cleanup
                 @unlink($scriptPath);
                 @unlink($errorPath);
-                
+
                 return null;
             }
-            
+
             $content = file_get_contents($outputPath);
-            
+
             // Analisi contenuto per debug
             $contentLength = strlen($content);
             $textContent = strip_tags($content);
             $textLength = strlen($textContent);
             $hasJsWarning = strpos($content, 'Please enable JavaScript') !== false;
             $hasPedibus = stripos($textContent, 'pedibus') !== false;
-            
-            \Log::info("🌐 [JS-RENDER] Content analysis", [
+
+            \Log::info('🌐 [JS-RENDER] Content analysis', [
                 'url' => $url,
                 'content_length' => $contentLength,
                 'text_length' => $textLength,
                 'has_js_warning' => $hasJsWarning,
                 'has_pedibus' => $hasPedibus,
-                'text_preview' => substr(trim(preg_replace('/\s+/', ' ', $textContent)), 0, 200)
+                'text_preview' => substr(trim(preg_replace('/\s+/', ' ', $textContent)), 0, 200),
             ]);
-            
+
             // Cleanup file temporanei
             @unlink($scriptPath);
             @unlink($outputPath);
             @unlink($errorPath);
-            
-            \Log::info("✅ [JS-RENDER] Content extracted successfully", [
+
+            \Log::info('✅ [JS-RENDER] Content extracted successfully', [
                 'url' => $url,
-                'content_length' => strlen($content)
+                'content_length' => strlen($content),
             ]);
-            
+
             return $content;
-            
+
         } catch (\Exception $e) {
-            \Log::error("💥 [JS-RENDER] Exception during JavaScript rendering", [
+            \Log::error('💥 [JS-RENDER] Exception during JavaScript rendering', [
                 'url' => $url,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
-    
+
     private function generatePuppeteerScript(string $url, int $timeout, string $outputPath, string $errorPath, array $timeouts = []): string
     {
         $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        
+
         // Fix path per Windows - converte backslash in forward slash per JavaScript
         $outputPath = str_replace('\\', '/', $outputPath);
         $errorPath = str_replace('\\', '/', $errorPath);
-        
+
         // 🔧 Estrai timeout configurabili con fallback ai valori di default
         $navigationTimeout = $timeouts['navigationTimeout'] ?? $timeout;
         $contentWait = $timeouts['contentWait'] ?? 15000;
         $scrollDelay = $timeouts['scrollDelay'] ?? 2000;
         $finalWait = $timeouts['finalWait'] ?? 8000;
-        
+
         return <<<JS
 const puppeteer = require('puppeteer');
 const fs = require('fs');

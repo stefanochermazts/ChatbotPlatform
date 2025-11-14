@@ -27,24 +27,26 @@ class VerifyUserEmail extends Command
     public function handle(): int
     {
         $email = $this->argument('email');
-        
+
         $user = User::where('email', $email)->first();
-        
-        if (!$user) {
+
+        if (! $user) {
             $this->error("User with email '{$email}' not found.");
+
             return 1;
         }
-        
+
         if ($user->hasVerifiedEmail()) {
             $this->info("User '{$user->name}' ({$email}) already has verified email.");
+
             return 0;
         }
-        
+
         $user->email_verified_at = now();
         $user->save();
-        
+
         $this->info("✅ Email verified successfully for user '{$user->name}' ({$email})");
-        
+
         return 0;
     }
 }

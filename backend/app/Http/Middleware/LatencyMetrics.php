@@ -4,8 +4,8 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -29,13 +29,13 @@ class LatencyMetrics
     public function handle(Request $request, Closure $next): Response
     {
         // Feature flag check
-        if (!$this->isEnabled()) {
+        if (! $this->isEnabled()) {
             return $next($request);
         }
 
         $startTime = microtime(true);
         $correlationId = $request->header('X-Request-ID') ?? (string) Str::uuid();
-        
+
         // Store correlation ID in request for downstream use
         $request->attributes->set('correlation_id', $correlationId);
 
@@ -112,6 +112,7 @@ class LatencyMetrics
         // Try from route parameter
         if ($request->route('tenant')) {
             $tenant = $request->route('tenant');
+
             return is_object($tenant) ? $tenant->id : (int) $tenant;
         }
 
@@ -138,12 +139,12 @@ class LatencyMetrics
 
         try {
             $content = $response->getContent();
-            if (!$content) {
+            if (! $content) {
                 return $tokens;
             }
 
             $data = json_decode($content, true);
-            if (!$data || !isset($data['usage'])) {
+            if (! $data || ! isset($data['usage'])) {
                 return $tokens;
             }
 
@@ -164,18 +165,18 @@ class LatencyMetrics
      */
     private function calculateCost(array $tokens): float
     {
-        if (!$tokens['model'] || $tokens['total_tokens'] === 0) {
+        if (! $tokens['model'] || $tokens['total_tokens'] === 0) {
             return 0.0;
         }
 
         $model = $tokens['model'];
-        if (!isset(self::PRICING[$model])) {
+        if (! isset(self::PRICING[$model])) {
             // Unknown model, can't calculate cost
             return 0.0;
         }
 
         $pricing = self::PRICING[$model];
-        
+
         // Cost = (input_tokens * input_price + output_tokens * output_price) / 1M
         $inputCost = ($tokens['prompt_tokens'] * $pricing['input']) / 1_000_000;
         $outputCost = ($tokens['completion_tokens'] * $pricing['output']) / 1_000_000;
@@ -189,12 +190,12 @@ class LatencyMetrics
     private function emitToRedis(array $metrics): void
     {
         try {
-            if (!$metrics['tenant_id']) {
+            if (! $metrics['tenant_id']) {
                 return;
             }
 
             $key = "latency:chat:{$metrics['tenant_id']}";
-            
+
             // Store last 100 requests per tenant with 1 hour TTL
             Redis::lpush($key, json_encode($metrics));
             Redis::ltrim($key, 0, 99);
@@ -205,11 +206,11 @@ class LatencyMetrics
             Redis::hincrby($statsKey, 'total_requests', 1);
             Redis::hincrbyfloat($statsKey, 'total_latency_ms', $metrics['latency_ms']);
             Redis::hincrbyfloat($statsKey, 'total_cost_usd', $metrics['cost_usd']);
-            
+
             if ($metrics['is_error']) {
                 Redis::hincrby($statsKey, 'error_count', 1);
             }
-            
+
             Redis::expire($statsKey, 86400); // 24 hours
 
         } catch (\Exception $e) {
@@ -243,24 +244,23 @@ class LatencyMetrics
         // 1. Use promphp/prometheus_client_php with push gateway
         // 2. Use StatsD exporter (statsd_exporter)
         // 3. Use custom /metrics endpoint
-        
+
         // For now, we'll implement a simple counter approach
         // The actual implementation will be completed in a follow-up
-        
+
         try {
             // Example: increment request counter
             // Prometheus::counter('http_requests_total')
             //     ->labels(['tenant' => $metrics['tenant_id'], 'endpoint' => $metrics['endpoint'], 'status' => $metrics['status']])
             //     ->increment();
-            
+
             // Example: observe latency histogram
             // Prometheus::histogram('http_request_duration_ms')
             //     ->labels(['tenant' => $metrics['tenant_id'], 'endpoint' => $metrics['endpoint']])
             //     ->observe($metrics['latency_ms']);
-            
+
         } catch (\Exception $e) {
             // Silently fail - Prometheus integration is optional
         }
     }
 }
-

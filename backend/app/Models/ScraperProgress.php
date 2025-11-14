@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ScraperProgress extends Model
 {
     protected $table = 'scraper_progress';
-    
+
     protected $fillable = [
         'tenant_id',
         'scraper_config_id',
@@ -63,9 +63,12 @@ class ScraperProgress extends Model
      */
     public function getProgressPercentage(): float
     {
-        if ($this->pages_found <= 0) return 0;
-        
+        if ($this->pages_found <= 0) {
+            return 0;
+        }
+
         $processed = $this->pages_scraped + $this->pages_skipped + $this->pages_failed;
+
         return min(100, ($processed / $this->pages_found) * 100);
     }
 
@@ -75,9 +78,12 @@ class ScraperProgress extends Model
     public function getIngestionPercentage(): float
     {
         $total = $this->documents_created + $this->documents_updated;
-        if ($total <= 0) return 0;
-        
+        if ($total <= 0) {
+            return 0;
+        }
+
         $completed = $this->ingestion_completed + $this->ingestion_failed;
+
         return min(100, ($completed / $total) * 100);
     }
 
@@ -118,46 +124,7 @@ class ScraperProgress extends Model
                 'url' => $this->current_url,
                 'depth' => $this->current_depth,
                 'error' => $this->last_error,
-            ]
+            ],
         ];
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

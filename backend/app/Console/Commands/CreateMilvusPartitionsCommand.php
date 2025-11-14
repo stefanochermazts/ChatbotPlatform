@@ -30,19 +30,22 @@ class CreateMilvusPartitionsCommand extends Command
         $all = $this->option('all');
         $missingOnly = $this->option('missing-only');
 
-        if (!$tenantId && !$all) {
+        if (! $tenantId && ! $all) {
             $this->error('Devi specificare --tenant-id=X o --all');
+
             return 1;
         }
 
         if ($tenantId) {
             $tenant = Tenant::find($tenantId);
-            if (!$tenant) {
+            if (! $tenant) {
                 $this->error("Tenant con ID {$tenantId} non trovato");
+
                 return 1;
             }
-            
+
             $this->createPartitionForTenant($tenant);
+
             return 0;
         }
 
@@ -55,6 +58,7 @@ class CreateMilvusPartitionsCommand extends Command
             }
 
             $this->info('Completato! Verifica i log per eventuali errori.');
+
             return 0;
         }
 
@@ -64,14 +68,14 @@ class CreateMilvusPartitionsCommand extends Command
     private function createPartitionForTenant(Tenant $tenant): void
     {
         $partitionName = "tenant_{$tenant->id}";
-        
+
         $this->info("Creando partizione '{$partitionName}' per tenant '{$tenant->name}' (ID: {$tenant->id})");
-        
+
         try {
             CreateMilvusPartitionJob::dispatch($tenant->id);
             $this->info("✓ Job accodato per tenant {$tenant->id}");
         } catch (\Throwable $e) {
-            $this->error("✗ Errore per tenant {$tenant->id}: " . $e->getMessage());
+            $this->error("✗ Errore per tenant {$tenant->id}: ".$e->getMessage());
         }
     }
 }

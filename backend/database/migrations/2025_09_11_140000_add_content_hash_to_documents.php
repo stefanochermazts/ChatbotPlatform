@@ -13,7 +13,7 @@ return new class extends Migration
             $table->string('content_hash', 64)->nullable()->after('source_url');
             $table->timestamp('last_scraped_at')->nullable()->after('content_hash');
             $table->unsignedInteger('scrape_version')->default(1)->after('last_scraped_at');
-            
+
             // Indice per performance su ricerche per URL e hash
             $table->index(['tenant_id', 'source_url']);
             $table->index(['tenant_id', 'content_hash']);
@@ -29,4 +29,3 @@ return new class extends Migration
         });
     }
 };
-

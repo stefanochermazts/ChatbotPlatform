@@ -30,11 +30,11 @@ class DeleteVectorsJobFixed implements ShouldQueue
         $this->onQueue('indexing');
         $this->primaryIds = array_values(array_unique(array_map('intval', $primaryIds)));
         $this->documentIds = array_values(array_unique(array_map('intval', $documentIds)));
-        
+
         // 🐛 DEBUG: Log se chiamato senza parametri per tracciare la source
         if (empty($primaryIds) && empty($documentIds)) {
             Log::warning('DeleteVectorsJobFixed chiamato senza parametri!', [
-                'stack_trace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 10)
+                'stack_trace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 10),
             ]);
         }
     }
@@ -46,7 +46,7 @@ class DeleteVectorsJobFixed implements ShouldQueue
     public static function fromDocumentIds(array $documentIds): self
     {
         $documentIds = array_values(array_unique(array_map('intval', $documentIds)));
-        
+
         if (empty($documentIds)) {
             return new self([], []);
         }
@@ -77,6 +77,7 @@ class DeleteVectorsJobFixed implements ShouldQueue
             Log::warning('DeleteVectorsJobFixed.no_primary_ids', [
                 'document_ids' => $this->documentIds,
             ]);
+
             return;
         }
 
@@ -100,7 +101,7 @@ class DeleteVectorsJobFixed implements ShouldQueue
                 'primary_ids' => $this->primaryIds,
                 'error' => $e->getMessage(),
             ]);
-            
+
             // Re-throw per permettere retry del job se configurato
             throw $e;
         }

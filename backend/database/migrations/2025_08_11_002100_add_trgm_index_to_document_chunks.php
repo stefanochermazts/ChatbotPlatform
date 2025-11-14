@@ -3,7 +3,8 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-return new class extends Migration {
+return new class extends Migration
+{
     // Evita transazione per CREATE EXTENSION in alcuni ambienti
     public $withinTransaction = false;
 
@@ -19,5 +20,3 @@ return new class extends Migration {
         DB::statement('DROP INDEX IF EXISTS idx_document_chunks_trgm');
     }
 };
-
-

@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -18,7 +17,9 @@ class User extends Authenticatable implements MustVerifyEmail
      * Ruoli disponibili
      */
     public const ROLE_ADMIN = 'admin';
+
     public const ROLE_CUSTOMER = 'customer';
+
     public const ROLE_AGENT = 'agent';
 
     public const ROLES = [
@@ -57,7 +58,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'customer_satisfaction_avg',
         'console_preferences',
         'notification_settings',
-        'operator_metadata'
+        'operator_metadata',
     ];
 
     /**
@@ -97,7 +98,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'customer_satisfaction_avg' => 'decimal:2',
             'console_preferences' => 'array',
             'notification_settings' => 'array',
-            'operator_metadata' => 'array'
+            'operator_metadata' => 'array',
         ];
     }
 
@@ -170,6 +171,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getRoleForTenant(int $tenantId): ?string
     {
         $tenant = $this->tenants()->where('tenant_id', $tenantId)->first();
+
         return $tenant?->pivot?->role;
     }
 
@@ -205,7 +207,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function operatorMessages()
     {
         return $this->hasMany(ConversationMessage::class, 'sender_id')
-                   ->where('sender_type', 'operator');
+            ->where('sender_type', 'operator');
     }
 
     /**
@@ -232,7 +234,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function scopeAvailableOperators($query)
     {
         return $query->where('is_operator', true)
-                    ->where('operator_status', 'available');
+            ->where('operator_status', 'available');
     }
 
     /**
@@ -241,8 +243,8 @@ class User extends Authenticatable implements MustVerifyEmail
     public function scopeOnlineOperators($query)
     {
         return $query->where('is_operator', true)
-                    ->whereIn('operator_status', ['available', 'busy'])
-                    ->where('last_seen_at', '>=', now()->subMinutes(5));
+            ->whereIn('operator_status', ['available', 'busy'])
+            ->where('last_seen_at', '>=', now()->subMinutes(5));
     }
 
     // 🔧 Operator Helper Methods
@@ -268,9 +270,9 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isOnline(): bool
     {
-        return $this->isOperator() && 
+        return $this->isOperator() &&
                in_array($this->operator_status, ['available', 'busy']) &&
-               $this->last_seen_at && 
+               $this->last_seen_at &&
                $this->last_seen_at->diffInMinutes(now()) <= 5;
     }
 
@@ -279,7 +281,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function canTakeNewConversation(): bool
     {
-        return $this->isAvailable() && 
+        return $this->isAvailable() &&
                $this->current_conversations < $this->max_concurrent_conversations;
     }
 
@@ -288,12 +290,14 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function updateOperatorStatus(string $status): bool
     {
-        if (!$this->isOperator()) return false;
+        if (! $this->isOperator()) {
+            return false;
+        }
 
         return $this->update([
             'operator_status' => $status,
             'status_updated_at' => now(),
-            'last_seen_at' => now()
+            'last_seen_at' => now(),
         ]);
     }
 
@@ -329,10 +333,10 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getActiveConversations()
     {
         return $this->assignedConversations()
-                   ->whereIn('status', ['active', 'assigned'])
-                   ->with(['messages' => function($query) {
-                       $query->latest('sent_at')->limit(1);
-                   }]);
+            ->whereIn('status', ['active', 'assigned'])
+            ->with(['messages' => function ($query) {
+                $query->latest('sent_at')->limit(1);
+            }]);
     }
 
     /**
@@ -341,9 +345,9 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getPendingHandoffRequests()
     {
         return $this->assignedHandoffRequests()
-                   ->whereIn('status', ['assigned', 'in_progress'])
-                   ->orderBy('priority')
-                   ->orderBy('requested_at');
+            ->whereIn('status', ['assigned', 'in_progress'])
+            ->orderBy('priority')
+            ->orderBy('requested_at');
     }
 
     /**
@@ -374,9 +378,9 @@ class User extends Authenticatable implements MustVerifyEmail
             'avg_response_time' => $this->average_response_time_minutes,
             'avg_resolution_time' => $this->average_resolution_time_minutes,
             'customer_satisfaction' => $this->customer_satisfaction_avg,
-            'utilization_rate' => $this->max_concurrent_conversations > 0 
-                ? ($this->current_conversations / $this->max_concurrent_conversations) * 100 
-                : 0
+            'utilization_rate' => $this->max_concurrent_conversations > 0
+                ? ($this->current_conversations / $this->max_concurrent_conversations) * 100
+                : 0,
         ];
     }
 }

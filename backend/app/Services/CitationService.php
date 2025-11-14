@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Document;
-use App\Services\SettingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -113,5 +112,3 @@ class CitationService
         return $clean !== '' ? $clean : null;
     }
 }
-
-

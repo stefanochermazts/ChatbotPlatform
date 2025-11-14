@@ -3,8 +3,8 @@
 namespace App\Jobs\Concerns;
 
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Trait per gestire i fallimenti dei job in modo elegante
@@ -29,10 +29,10 @@ trait HandlesFailureGracefully
     {
         $errorType = $this->categorizeError($exception);
         $tenantId = $this->getTenantId();
-        
+
         // 🔑 Gestisci UUID duplicato per failed_jobs
         try {
-            Log::warning("Job fallito ma continuando elaborazione", [
+            Log::warning('Job fallito ma continuando elaborazione', [
                 'job_class' => static::class,
                 'tenant_id' => $tenantId,
                 'error_type' => $errorType,
@@ -51,27 +51,27 @@ trait HandlesFailureGracefully
 
         // Incrementa contatore errori per questo tenant
         $errorCount = $this->incrementErrorCount($tenantId, $errorType);
-        
+
         // Se superiamo la soglia, logghiamo un warning critico
         if ($errorCount >= $this->maxFailedJobsThreshold) {
-            Log::critical("Soglia errori superata per tenant", [
+            Log::critical('Soglia errori superata per tenant', [
                 'tenant_id' => $tenantId,
                 'error_count' => $errorCount,
                 'threshold' => $this->maxFailedJobsThreshold,
                 'error_type' => $errorType,
-                'recommendation' => 'Verificare configurazione scraper e connettività'
+                'recommendation' => 'Verificare configurazione scraper e connettività',
             ]);
-            
+
             // Opzionalmente, possiamo disabilitare temporaneamente lo scraping
             $this->temporarilyDisableScraping($tenantId);
         }
 
         // Log dettagliato solo se necessario (per debug)
         if ($errorCount <= 2) {
-            Log::debug("Dettaglio errore job", [
+            Log::debug('Dettaglio errore job', [
                 'job_class' => static::class,
                 'tenant_id' => $tenantId,
-                'error_trace' => $exception->getTraceAsString()
+                'error_trace' => $exception->getTraceAsString(),
             ]);
         }
     }
@@ -87,23 +87,23 @@ trait HandlesFailureGracefully
         if (str_contains($class, 'MaxAttemptsExceeded')) {
             return 'max_attempts';
         }
-        
+
         if (str_contains($message, 'timeout') || str_contains($message, 'curl')) {
             return 'network_timeout';
         }
-        
+
         if (str_contains($message, 'timed out') || str_contains($class, 'TimeoutExceeded')) {
             return 'job_timeout';
         }
-        
+
         if (str_contains($message, '404') || str_contains($message, '403')) {
             return 'http_error';
         }
-        
+
         if (str_contains($message, 'robots.txt')) {
             return 'robots_blocked';
         }
-        
+
         if (str_contains($message, 'memory') || str_contains($message, 'Fatal error')) {
             return 'memory_limit';
         }
@@ -119,14 +119,14 @@ trait HandlesFailureGracefully
         $cacheKey = "scraping_errors_{$tenantId}_{$errorType}";
         $currentCount = Cache::get($cacheKey, 0);
         $newCount = $currentCount + 1;
-        
+
         Cache::put($cacheKey, $newCount, $this->errorCountTtl);
-        
+
         // Mantieni anche un contatore generale
         $generalKey = "scraping_errors_{$tenantId}_total";
         $totalCount = Cache::get($generalKey, 0) + 1;
         Cache::put($generalKey, $totalCount, $this->errorCountTtl);
-        
+
         return $newCount;
     }
 
@@ -137,13 +137,13 @@ trait HandlesFailureGracefully
     {
         $disableKey = "scraping_disabled_{$tenantId}";
         $disableUntil = now()->addHours(2); // Disabilita per 2 ore
-        
+
         Cache::put($disableKey, $disableUntil->toISOString(), 7200); // 2 ore
-        
-        Log::warning("Scraping temporaneamente disabilitato", [
+
+        Log::warning('Scraping temporaneamente disabilitato', [
             'tenant_id' => $tenantId,
             'disabled_until' => $disableUntil->toISOString(),
-            'reason' => 'Troppi errori consecutivi'
+            'reason' => 'Troppi errori consecutivi',
         ]);
     }
 
@@ -153,6 +153,7 @@ trait HandlesFailureGracefully
     protected function isScrapingDisabled(int $tenantId): bool
     {
         $disableKey = "scraping_disabled_{$tenantId}";
+
         return Cache::has($disableKey);
     }
 

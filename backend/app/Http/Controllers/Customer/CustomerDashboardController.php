@@ -15,14 +15,14 @@ class CustomerDashboardController extends Controller
     {
         // Verifica che l'utente abbia accesso a questo tenant
         $user = $request->user();
-        
-        if (!$user->tenants()->where('tenant_id', $tenant->id)->exists()) {
+
+        if (! $user->tenants()->where('tenant_id', $tenant->id)->exists()) {
             abort(403, 'Non hai accesso a questo tenant.');
         }
 
         // Carica informazioni base del tenant
         $tenant->load(['knowledgeBases', 'forms', 'widgetConfig']);
-        
+
         // Statistiche base
         $stats = [
             'knowledge_bases' => $tenant->knowledgeBases()->count(),
@@ -44,8 +44,8 @@ class CustomerDashboardController extends Controller
     {
         $user = $request->user();
         $firstTenant = $user->tenants()->first();
-        
-        if (!$firstTenant) {
+
+        if (! $firstTenant) {
             // Se l'utente non ha tenant associati, mostra una pagina di errore
             return view('customer.no-tenants');
         }

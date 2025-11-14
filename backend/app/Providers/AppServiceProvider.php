@@ -113,7 +113,7 @@ class AppServiceProvider extends ServiceProvider
 
         // ✅ FIX BUG 4: Registra Observer per invalidare cache RAG config
         Tenant::observe(\App\Observers\TenantObserver::class);
-        
+
         // ✅ FIX: Registra Observer per sincronizzare delete con Milvus
         \App\Models\Document::observe(\App\Observers\DocumentObserver::class);
     }

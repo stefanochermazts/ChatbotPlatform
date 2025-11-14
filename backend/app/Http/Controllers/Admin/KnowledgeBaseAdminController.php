@@ -25,6 +25,7 @@ class KnowledgeBaseAdminController extends Controller
         if ($kb->is_default) {
             KnowledgeBase::where('tenant_id', $tenant->id)->where('id', '!=', $kb->id)->update(['is_default' => false]);
         }
+
         return back()->with('ok', 'Knowledge base creata');
     }
 
@@ -46,6 +47,7 @@ class KnowledgeBaseAdminController extends Controller
         if ($knowledgeBase->is_default) {
             KnowledgeBase::where('tenant_id', $tenant->id)->where('id', '!=', $knowledgeBase->id)->update(['is_default' => false]);
         }
+
         return back()->with('ok', 'Knowledge base aggiornata');
     }
 
@@ -63,8 +65,7 @@ class KnowledgeBaseAdminController extends Controller
                 $newDefault->update(['is_default' => true]);
             }
         }
+
         return back()->with('ok', 'Knowledge base eliminata');
     }
 }
-
-

@@ -2,6 +2,9 @@
 
 namespace Tests\Unit\Services\Chat;
 
+use App\Contracts\Chat\ChatProfilingServiceInterface;
+use App\Contracts\Chat\ContextScoringServiceInterface;
+use App\Contracts\Chat\FallbackStrategyServiceInterface;
 use App\Models\Tenant;
 use App\Services\Chat\ChatOrchestrationService;
 use App\Services\CitationService;
@@ -17,9 +20,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 use PHPUnit\Framework\MockObject\MockObject;
 use Tests\TestCase;
-use App\Contracts\Chat\ContextScoringServiceInterface;
-use App\Contracts\Chat\FallbackStrategyServiceInterface;
-use App\Contracts\Chat\ChatProfilingServiceInterface;
 
 class ChatOrchestrationServiceTest extends TestCase
 {
@@ -126,6 +126,7 @@ class ChatOrchestrationServiceTest extends TestCase
                 $this->isType('array'),
                 $this->callback(function (array $response) use (&$capturedResponse) {
                     $capturedResponse = $response;
+
                     return true;
                 })
             );
@@ -165,5 +166,3 @@ class ChatOrchestrationServiceTest extends TestCase
         $this->assertSame('Risposta sintetica', $capturedResponse['choices'][0]['message']['content']);
     }
 }
-
-

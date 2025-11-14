@@ -58,7 +58,9 @@ class FormResponse extends Model
      * Tipi di risposta
      */
     public const TYPE_WEB = 'web';
+
     public const TYPE_EMAIL = 'email';
+
     public const TYPE_AUTO = 'auto';
 
     public const TYPES = [
@@ -71,8 +73,11 @@ class FormResponse extends Model
      * Priorità risposta
      */
     public const PRIORITY_LOW = 'low';
+
     public const PRIORITY_NORMAL = 'normal';
+
     public const PRIORITY_HIGH = 'high';
+
     public const PRIORITY_URGENT = 'urgent';
 
     public const PRIORITIES = [
@@ -160,7 +165,7 @@ class FormResponse extends Model
     public function scopeEmailPending($query)
     {
         return $query->where('response_type', self::TYPE_EMAIL)
-                    ->where('email_sent', false);
+            ->where('email_sent', false);
     }
 
     /**
@@ -224,7 +229,7 @@ class FormResponse extends Model
      */
     public function getTypeIconAttribute(): string
     {
-        return match($this->response_type) {
+        return match ($this->response_type) {
             self::TYPE_WEB => '💻',
             self::TYPE_EMAIL => '📧',
             self::TYPE_AUTO => '🤖',
@@ -269,7 +274,7 @@ class FormResponse extends Model
      */
     public function hasEmailError(): bool
     {
-        return !empty($this->email_error);
+        return ! empty($this->email_error);
     }
 
     /**
@@ -308,7 +313,7 @@ class FormResponse extends Model
      */
     public function getEmailStatusColorAttribute(): string
     {
-        if (!$this->isEmailResponse()) {
+        if (! $this->isEmailResponse()) {
             return 'gray';
         }
 
@@ -328,7 +333,7 @@ class FormResponse extends Model
      */
     public function getEmailStatusLabelAttribute(): string
     {
-        if (!$this->isEmailResponse()) {
+        if (! $this->isEmailResponse()) {
             return 'N/A';
         }
 
@@ -361,8 +366,9 @@ class FormResponse extends Model
     public function getContentPreviewAttribute(): string
     {
         $content = strip_tags($this->response_content);
-        return mb_strlen($content) > 100 
-            ? mb_substr($content, 0, 100) . '...'
+
+        return mb_strlen($content) > 100
+            ? mb_substr($content, 0, 100).'...'
             : $content;
     }
 
@@ -391,7 +397,7 @@ class FormResponse extends Model
      */
     public function isInThread(): bool
     {
-        return !empty($this->thread_id);
+        return ! empty($this->thread_id);
     }
 
     /**
@@ -407,7 +413,7 @@ class FormResponse extends Model
      */
     public function getPriorityIconAttribute(): string
     {
-        return match($this->priority) {
+        return match ($this->priority) {
             self::PRIORITY_LOW => '🟢',
             self::PRIORITY_NORMAL => '🟡',
             self::PRIORITY_HIGH => '🟠',
@@ -421,7 +427,7 @@ class FormResponse extends Model
      */
     public function getPriorityColorAttribute(): string
     {
-        return match($this->priority) {
+        return match ($this->priority) {
             self::PRIORITY_LOW => 'green',
             self::PRIORITY_NORMAL => 'yellow',
             self::PRIORITY_HIGH => 'orange',
@@ -435,7 +441,7 @@ class FormResponse extends Model
      */
     public static function generateThreadId(): string
     {
-        return 'thread_' . uniqid() . '_' . time();
+        return 'thread_'.uniqid().'_'.time();
     }
 
     /**
@@ -476,9 +482,10 @@ class FormResponse extends Model
      */
     public function getThreadResponsesCountAttribute(): int
     {
-        if (!$this->thread_id) {
+        if (! $this->thread_id) {
             return 0;
         }
+
         return self::where('thread_id', $this->thread_id)->count();
     }
 
@@ -487,9 +494,10 @@ class FormResponse extends Model
      */
     public function getLastThreadResponseAttribute(): ?FormResponse
     {
-        if (!$this->thread_id) {
+        if (! $this->thread_id) {
             return null;
         }
+
         return self::where('thread_id', $this->thread_id)->latest()->first();
     }
 
@@ -498,7 +506,7 @@ class FormResponse extends Model
      */
     public function shouldNotifyAdmin(): bool
     {
-        return !$this->admin_notified && $this->response_type !== self::TYPE_AUTO;
+        return ! $this->admin_notified && $this->response_type !== self::TYPE_AUTO;
     }
 
     /**
@@ -506,7 +514,7 @@ class FormResponse extends Model
      */
     public function shouldNotifyUser(): bool
     {
-        return !$this->user_notified && $this->response_type === self::TYPE_EMAIL;
+        return ! $this->user_notified && $this->response_type === self::TYPE_EMAIL;
     }
 
     /**
@@ -514,12 +522,13 @@ class FormResponse extends Model
      */
     public function getThreadStatusAttribute(): string
     {
-        if (!$this->isInThread()) {
+        if (! $this->isInThread()) {
             return 'Messaggio singolo';
         }
 
         $count = $this->getThreadResponsesCountAttribute();
-        return "Thread con {$count} " . ($count === 1 ? 'messaggio' : 'messaggi');
+
+        return "Thread con {$count} ".($count === 1 ? 'messaggio' : 'messaggi');
     }
 
     /**
@@ -528,7 +537,8 @@ class FormResponse extends Model
     public function generateEmailMessageId(): string
     {
         $domain = parse_url(config('app.url'), PHP_URL_HOST) ?: 'chatbotplatform.com';
-        return "<response-{$this->id}-" . time() . "@{$domain}>";
+
+        return "<response-{$this->id}-".time()."@{$domain}>";
     }
 
     /**
@@ -537,17 +547,17 @@ class FormResponse extends Model
     public function generateEmailReferences(): string
     {
         $references = [];
-        
+
         // Aggiungi Message-ID della submission originale se disponibile
         if ($this->formSubmission && $this->formSubmission->email_message_id) {
             $references[] = $this->formSubmission->email_message_id;
         }
-        
+
         // Aggiungi Message-ID del parent se disponibile
         if ($this->parentResponse && $this->parentResponse->email_message_id) {
             $references[] = $this->parentResponse->email_message_id;
         }
-        
+
         return implode(' ', $references);
     }
 }

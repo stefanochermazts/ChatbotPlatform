@@ -10,12 +10,10 @@ class RagCache
     {
         $enabled = (bool) config('rag.cache.enabled', true);
         $ttl = (int) config('rag.cache.ttl_seconds', 120);
-        if (!$enabled) {
+        if (! $enabled) {
             return $callback();
         }
+
         return Cache::remember($key, $ttl, $callback);
     }
 }
-
-
-

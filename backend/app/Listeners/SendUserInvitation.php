@@ -17,9 +17,9 @@ class SendUserInvitation implements ShouldQueue
     public function handle(Registered $event): void
     {
         $user = $event->user;
-        
+
         // Invia notifica di invito solo se l'email non è ancora verificata
-        if (!$user->hasVerifiedEmail()) {
+        if (! $user->hasVerifiedEmail()) {
             $user->notify(new UserInvitation(true));
         }
     }

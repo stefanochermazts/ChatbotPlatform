@@ -36,8 +36,9 @@ class ManageTenantSynonyms extends Command
         $tenantId = (int) $this->argument('tenant_id');
         $tenant = Tenant::find($tenantId);
 
-        if (!$tenant) {
+        if (! $tenant) {
             $this->error("Tenant con ID {$tenantId} non trovato");
+
             return 1;
         }
 
@@ -71,6 +72,7 @@ class ManageTenantSynonyms extends Command
 
         // Se nessuna opzione, mostra help
         $this->showUsageExamples();
+
         return 0;
     }
 
@@ -80,15 +82,16 @@ class ManageTenantSynonyms extends Command
 
         if (empty($synonyms)) {
             $this->warn('🔍 Nessun sinonimo configurato');
+
             return 0;
         }
 
         $this->info('📋 Sinonimi configurati:');
-        
+
         if ($tenant->custom_synonyms === null) {
             $this->line('<comment>   (usando sinonimi di default del sistema)</comment>');
         }
-        
+
         $this->line('');
 
         foreach ($synonyms as $term => $alternatives) {
@@ -96,7 +99,8 @@ class ManageTenantSynonyms extends Command
         }
 
         $this->line('');
-        $this->info("✅ Totale: " . count($synonyms) . " sinonimi configurati");
+        $this->info('✅ Totale: '.count($synonyms).' sinonimi configurati');
+
         return 0;
     }
 
@@ -107,21 +111,24 @@ class ManageTenantSynonyms extends Command
 
         $this->info('🔄 Sinonimi ripristinati ai valori di default del sistema');
         $this->line('   Il tenant userà ora i sinonimi standard per tutti i servizi');
+
         return 0;
     }
 
     private function setSynonyms(Tenant $tenant, string $jsonData): int
     {
         $synonyms = json_decode($jsonData, true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->error('❌ Formato JSON non valido: ' . json_last_error_msg());
+            $this->error('❌ Formato JSON non valido: '.json_last_error_msg());
             $this->line('   Esempio valido: \'{"vigili":"polizia locale","comune":"municipio"}\'');
+
             return 1;
         }
 
-        if (!is_array($synonyms)) {
+        if (! is_array($synonyms)) {
             $this->error('❌ I sinonimi devono essere un oggetto JSON chiave-valore');
+
             return 1;
         }
 
@@ -129,15 +136,17 @@ class ManageTenantSynonyms extends Command
         $tenant->save();
 
         $this->info('💾 Sinonimi personalizzati salvati');
-        $this->line("   Configurati " . count($synonyms) . " sinonimi per il tenant");
+        $this->line('   Configurati '.count($synonyms).' sinonimi per il tenant');
+
         return 0;
     }
 
     private function addSynonym(Tenant $tenant, string $addData): int
     {
-        if (!str_contains($addData, '=')) {
+        if (! str_contains($addData, '=')) {
             $this->error('❌ Formato non valido. Usa: termine=sinonimi');
             $this->line('   Esempio: vigili="polizia locale municipale"');
+
             return 1;
         }
 
@@ -147,25 +156,28 @@ class ManageTenantSynonyms extends Command
 
         if (empty($term) || empty($alternatives)) {
             $this->error('❌ Termine e sinonimi non possono essere vuoti');
+
             return 1;
         }
 
         $currentSynonyms = $tenant->custom_synonyms ?? DefaultSynonymsSeeder::getDefaultSynonyms();
         $currentSynonyms[$term] = $alternatives;
-        
+
         $tenant->custom_synonyms = $currentSynonyms;
         $tenant->save();
 
         $this->info("➕ Sinonimo aggiunto: <info>{$term}</info> → <comment>{$alternatives}</comment>");
+
         return 0;
     }
 
     private function removeSynonym(Tenant $tenant, string $term): int
     {
         $currentSynonyms = $tenant->custom_synonyms ?? DefaultSynonymsSeeder::getDefaultSynonyms();
-        
-        if (!isset($currentSynonyms[$term])) {
+
+        if (! isset($currentSynonyms[$term])) {
             $this->warn("⚠️  Sinonimo '{$term}' non trovato");
+
             return 1;
         }
 
@@ -174,6 +186,7 @@ class ManageTenantSynonyms extends Command
         $tenant->save();
 
         $this->info("🗑️  Sinonimo rimosso: <info>{$term}</info>");
+
         return 0;
     }
 

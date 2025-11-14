@@ -231,7 +231,7 @@ class RagTestController extends Controller
             if ($tenant && ! empty($tenant->custom_system_prompt)) {
                 $messages[] = ['role' => 'system', 'content' => $tenant->custom_system_prompt];
             } else {
-            $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
+                $messages[] = ['role' => 'system', 'content' => 'Seleziona solo informazioni dai passaggi forniti nel contesto. Se non sono sufficienti, rispondi: "Non lo so". 
 
 IMPORTANTE per i link:
 - Usa SOLO i titoli esatti delle fonti: [Titolo Esatto](URL_dalla_fonte)

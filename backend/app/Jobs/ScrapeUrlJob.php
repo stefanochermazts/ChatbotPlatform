@@ -16,6 +16,7 @@ class ScrapeUrlJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $timeout = 300; // 5 minuti per URL
+
     public $tries = 2;
 
     /**
@@ -36,29 +37,31 @@ class ScrapeUrlJob implements ShouldQueue
      */
     public function handle(WebScraperService $scraper): void
     {
-        \Log::info("🚀 [SCRAPE-JOB-START] Inizio scraping URL", [
+        \Log::info('🚀 [SCRAPE-JOB-START] Inizio scraping URL', [
             'url' => $this->url,
             'depth' => $this->depth,
             'tenant_id' => $this->tenantId,
-            'session_id' => $this->sessionId
+            'session_id' => $this->sessionId,
         ]);
 
         $tenant = Tenant::find($this->tenantId);
         $config = ScraperConfig::find($this->configId);
 
-        if (!$tenant) {
+        if (! $tenant) {
             \Log::error('❌ [SCRAPE-JOB-ERROR] Tenant non trovato', [
                 'tenant_id' => $this->tenantId,
-                'url' => $this->url
+                'url' => $this->url,
             ]);
+
             return;
         }
 
-        if (!$config) {
+        if (! $config) {
             \Log::error('❌ [SCRAPE-JOB-ERROR] Config non trovata', [
                 'config_id' => $this->configId,
-                'url' => $this->url
+                'url' => $this->url,
             ]);
+
             return;
         }
 
@@ -74,15 +77,15 @@ class ScrapeUrlJob implements ShouldQueue
                 $tenant
             );
 
-            \Log::info("✅ [SCRAPE-JOB-SUCCESS] URL scrappato con successo", [
+            \Log::info('✅ [SCRAPE-JOB-SUCCESS] URL scrappato con successo', [
                 'url' => $this->url,
-                'session_id' => $this->sessionId
+                'session_id' => $this->sessionId,
             ]);
         } catch (\Exception $e) {
-            \Log::error("❌ [SCRAPE-JOB-ERROR] Errore durante scraping", [
+            \Log::error('❌ [SCRAPE-JOB-ERROR] Errore durante scraping', [
                 'url' => $this->url,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
             throw $e; // Rilancia per triggera retry
         }
@@ -99,7 +102,7 @@ class ScrapeUrlJob implements ShouldQueue
             'tenant_id' => $this->tenantId,
             'session_id' => $this->sessionId,
             'error' => $exception->getMessage(),
-            'tries' => $this->tries
+            'tries' => $this->tries,
         ]);
     }
 
@@ -110,10 +113,9 @@ class ScrapeUrlJob implements ShouldQueue
     {
         return [
             'scraping',
-            'tenant:' . $this->tenantId,
-            'depth:' . $this->depth,
-            'session:' . substr($this->sessionId, 0, 8)
+            'tenant:'.$this->tenantId,
+            'depth:'.$this->depth,
+            'session:'.substr($this->sessionId, 0, 8),
         ];
     }
 }
-

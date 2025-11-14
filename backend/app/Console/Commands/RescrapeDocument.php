@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use App\Services\Scraper\WebScraperService;
 use App\Models\Document;
+use App\Services\Scraper\WebScraperService;
+use Illuminate\Console\Command;
 
 class RescrapeDocument extends Command
 {
@@ -51,14 +51,16 @@ class RescrapeDocument extends Command
         try {
             // Verifica che il documento esista
             $document = Document::find($documentId);
-            
-            if (!$document) {
+
+            if (! $document) {
                 $this->error("❌ Documento #{$documentId} non trovato");
+
                 return Command::FAILURE;
             }
 
-            if (!$document->source_url) {
+            if (! $document->source_url) {
                 $this->error("❌ Documento #{$documentId} non ha source_url - non può essere ri-scrapato");
+
                 return Command::FAILURE;
             }
 
@@ -73,23 +75,24 @@ class RescrapeDocument extends Command
             ]);
 
             $this->newLine();
-            
-            if (!$this->confirm("Procedere con il re-scraping?")) {
-                $this->info("Operazione annullata.");
+
+            if (! $this->confirm('Procedere con il re-scraping?')) {
+                $this->info('Operazione annullata.');
+
                 return Command::SUCCESS;
             }
 
-            $scraperService = new WebScraperService();
-            
+            $scraperService = new WebScraperService;
+
             $this->newLine();
-            $this->info("⏳ Avvio re-scraping...");
-            
+            $this->info('⏳ Avvio re-scraping...');
+
             $result = $scraperService->forceRescrapDocument($documentId);
-            
+
             if ($result['success']) {
                 $this->newLine();
-                $this->info("✅ Re-scraping completato con successo!");
-                
+                $this->info('✅ Re-scraping completato con successo!');
+
                 $this->table(['Metrica', 'Valore'], [
                     ['Documento ID', $result['document_id']],
                     ['Message', $result['message']],
@@ -99,17 +102,18 @@ class RescrapeDocument extends Command
                 ]);
 
                 return Command::SUCCESS;
-                
+
             } else {
                 $this->newLine();
-                $this->error("❌ Re-scraping fallito: " . $result['message']);
+                $this->error('❌ Re-scraping fallito: '.$result['message']);
+
                 return Command::FAILURE;
             }
 
         } catch (\Exception $e) {
             $this->newLine();
-            $this->error("💥 Errore durante il re-scraping: " . $e->getMessage());
-            
+            $this->error('💥 Errore durante il re-scraping: '.$e->getMessage());
+
             if ($this->getOutput()->isVerbose()) {
                 $this->line($e->getTraceAsString());
             }
@@ -123,8 +127,9 @@ class RescrapeDocument extends Command
      */
     private function handleBatchRescrape(?int $tenantId): int
     {
-        if (!$tenantId) {
-            $this->error("❌ --tenant è richiesto quando usi --all-scraped");
+        if (! $tenantId) {
+            $this->error('❌ --tenant è richiesto quando usi --all-scraped');
+
             return Command::FAILURE;
         }
 
@@ -139,35 +144,37 @@ class RescrapeDocument extends Command
 
             if ($documents->isEmpty()) {
                 $this->warn("⚠️ Nessun documento con source_url trovato per tenant #{$tenantId}");
+
                 return Command::SUCCESS;
             }
 
             $this->info("📄 Trovati {$documents->count()} documenti da ri-scrapare:");
-            
+
             $tableData = [];
             foreach ($documents->take(10) as $doc) {
                 $tableData[] = [
                     $doc->id,
                     \Illuminate\Support\Str::limit($doc->title, 40),
                     \Illuminate\Support\Str::limit($doc->source_url, 50),
-                    $doc->last_scraped_at ?? 'Mai'
+                    $doc->last_scraped_at ?? 'Mai',
                 ];
             }
-            
+
             $this->table(['ID', 'Titolo', 'URL', 'Ultimo Scraping'], $tableData);
-            
+
             if ($documents->count() > 10) {
-                $this->line("   ... e altri " . ($documents->count() - 10) . " documenti");
+                $this->line('   ... e altri '.($documents->count() - 10).' documenti');
             }
 
             $this->newLine();
-            
-            if (!$this->confirm("Procedere con il re-scraping di {$documents->count()} documenti?")) {
-                $this->info("Operazione annullata.");
+
+            if (! $this->confirm("Procedere con il re-scraping di {$documents->count()} documenti?")) {
+                $this->info('Operazione annullata.');
+
                 return Command::SUCCESS;
             }
 
-            $scraperService = new WebScraperService();
+            $scraperService = new WebScraperService;
             $successCount = 0;
             $failureCount = 0;
 
@@ -178,23 +185,23 @@ class RescrapeDocument extends Command
             foreach ($documents as $document) {
                 try {
                     $result = $scraperService->forceRescrapDocument($document->id);
-                    
+
                     if ($result['success']) {
                         $successCount++;
                     } else {
                         $failureCount++;
                         $this->newLine();
-                        $this->error("❌ Fallito doc #{$document->id}: " . $result['message']);
+                        $this->error("❌ Fallito doc #{$document->id}: ".$result['message']);
                     }
-                    
+
                 } catch (\Exception $e) {
                     $failureCount++;
                     $this->newLine();
-                    $this->error("💥 Errore doc #{$document->id}: " . $e->getMessage());
+                    $this->error("💥 Errore doc #{$document->id}: ".$e->getMessage());
                 }
-                
+
                 $bar->advance();
-                
+
                 // Rate limiting
                 usleep(500000); // 0.5 secondi tra richieste
             }
@@ -202,7 +209,7 @@ class RescrapeDocument extends Command
             $bar->finish();
             $this->newLine(2);
 
-            $this->info("📊 Re-scraping batch completato!");
+            $this->info('📊 Re-scraping batch completato!');
             $this->table(['Risultato', 'Conteggio'], [
                 ['✅ Successi', $successCount],
                 ['❌ Fallimenti', $failureCount],
@@ -213,8 +220,8 @@ class RescrapeDocument extends Command
 
         } catch (\Exception $e) {
             $this->newLine();
-            $this->error("💥 Errore durante re-scraping batch: " . $e->getMessage());
-            
+            $this->error('💥 Errore durante re-scraping batch: '.$e->getMessage());
+
             if ($this->getOutput()->isVerbose()) {
                 $this->line($e->getTraceAsString());
             }

@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use App\Services\Scraper\WebScraperService;
 use App\Models\KnowledgeBase;
+use App\Services\Scraper\WebScraperService;
+use Illuminate\Console\Command;
 
 class ScrapeUrl extends Command
 {
@@ -37,12 +37,13 @@ class ScrapeUrl extends Command
         $kbId = $this->option('kb') ? (int) $this->option('kb') : null;
 
         // Validazioni
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        if (! filter_var($url, FILTER_VALIDATE_URL)) {
             $this->error("❌ URL non valido: {$url}");
+
             return Command::FAILURE;
         }
 
-        $this->info("🎯 Inizio scraping singolo URL");
+        $this->info('🎯 Inizio scraping singolo URL');
         $this->table(['Parametro', 'Valore'], [
             ['Tenant ID', $tenantId],
             ['URL', $url],
@@ -55,27 +56,28 @@ class ScrapeUrl extends Command
             $kb = KnowledgeBase::where('id', $kbId)
                 ->where('tenant_id', $tenantId)
                 ->first();
-            
-            if (!$kb) {
+
+            if (! $kb) {
                 $this->error("❌ Knowledge Base #{$kbId} non trovata per tenant #{$tenantId}");
+
                 return Command::FAILURE;
             }
-            
+
             $this->info("📚 Knowledge Base target: {$kb->name}");
         }
 
         try {
-            $scraperService = new WebScraperService();
-            
+            $scraperService = new WebScraperService;
+
             $this->newLine();
-            $this->info("⏳ Avvio scraping...");
-            
+            $this->info('⏳ Avvio scraping...');
+
             $result = $scraperService->scrapeSingleUrl($tenantId, $url, $force, $kbId);
-            
+
             if ($result['success']) {
                 $this->newLine();
-                $this->info("✅ Scraping completato con successo!");
-                
+                $this->info('✅ Scraping completato con successo!');
+
                 $this->table(['Metrica', 'Valore'], [
                     ['URL', $result['url']],
                     ['Documenti salvati', $result['saved_count']],
@@ -87,27 +89,27 @@ class ScrapeUrl extends Command
                 if (isset($result['document'])) {
                     $doc = $result['document'];
                     $this->newLine();
-                    $this->info("📄 Documento estratto:");
+                    $this->info('📄 Documento estratto:');
                     $this->line("   Titolo: {$doc['title']}");
-                    $this->line("   Contenuto: " . strlen($doc['content']) . " caratteri");
+                    $this->line('   Contenuto: '.strlen($doc['content']).' caratteri');
                     $this->line("   Estratto: {$doc['extracted_at']}");
                 }
 
                 return Command::SUCCESS;
-                
+
             } else {
                 $this->newLine();
-                $this->error("❌ Scraping fallito: " . $result['message']);
-                
+                $this->error('❌ Scraping fallito: '.$result['message']);
+
                 if (isset($result['existing_document'])) {
                     $existing = $result['existing_document'];
                     $this->newLine();
-                    $this->warn("📄 Documento esistente trovato:");
+                    $this->warn('📄 Documento esistente trovato:');
                     $this->line("   ID: {$existing['id']}");
                     $this->line("   Titolo: {$existing['title']}");
                     $this->line("   Creato: {$existing['created_at']}");
                     $this->newLine();
-                    $this->comment("💡 Usa --force per sovrascrivere il documento esistente");
+                    $this->comment('💡 Usa --force per sovrascrivere il documento esistente');
                 }
 
                 return Command::FAILURE;
@@ -115,8 +117,8 @@ class ScrapeUrl extends Command
 
         } catch (\Exception $e) {
             $this->newLine();
-            $this->error("💥 Errore durante l'esecuzione: " . $e->getMessage());
-            
+            $this->error("💥 Errore durante l'esecuzione: ".$e->getMessage());
+
             if ($this->getOutput()->isVerbose()) {
                 $this->line($e->getTraceAsString());
             }

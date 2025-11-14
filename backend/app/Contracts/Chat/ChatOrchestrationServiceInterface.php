@@ -9,18 +9,16 @@ use Illuminate\Http\JsonResponse;
 
 /**
  * Interface for chat orchestration service
- * 
+ *
  * Orchestrates the complete RAG (Retrieval Augmented Generation) pipeline
  * from query processing to LLM response generation. Handles both streaming
  * and synchronous response modes.
- * 
- * @package App\Contracts\Chat
  */
 interface ChatOrchestrationServiceInterface
 {
     /**
      * Orchestrate the complete RAG pipeline
-     * 
+     *
      * This method coordinates:
      * - KB (Knowledge Base) selection and retrieval
      * - Intent detection
@@ -29,7 +27,7 @@ interface ChatOrchestrationServiceInterface
      * - Citation scoring
      * - LLM generation (streaming or sync)
      * - Response formatting (OpenAI-compatible)
-     * 
+     *
      * @param array{
      *     tenant_id: int,
      *     model: string,
@@ -40,7 +38,6 @@ interface ChatOrchestrationServiceInterface
      *     tool_choice?: string|array,
      *     response_format?: array
      * } $request Request payload following OpenAI Chat Completions format
-     * 
      * @return Generator<int, array{
      *     id: string,
      *     object: string,
@@ -54,9 +51,9 @@ interface ChatOrchestrationServiceInterface
      *     }>,
      *     usage?: array{prompt_tokens: int, completion_tokens: int, total_tokens: int}
      * }>|JsonResponse Generator for streaming chunks or JsonResponse for synchronous
-     * 
+     *
      * @throws \App\Exceptions\ChatException When orchestration fails
-     * 
+     *
      * @example Streaming mode
      * ```php
      * $request = ['tenant_id' => 1, 'model' => 'gpt-4o-mini', 'messages' => [...], 'stream' => true];
@@ -65,7 +62,6 @@ interface ChatOrchestrationServiceInterface
      *     echo "data: " . json_encode($chunk) . "\n\n";
      * }
      * ```
-     * 
      * @example Synchronous mode
      * ```php
      * $request = ['tenant_id' => 1, 'model' => 'gpt-4o-mini', 'messages' => [...], 'stream' => false];

@@ -2,12 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Carbon\Carbon;
 
 class ConversationSession extends Model
 {
@@ -15,7 +13,7 @@ class ConversationSession extends Model
 
     protected $fillable = [
         'tenant_id',
-        'widget_config_id', 
+        'widget_config_id',
         'session_id',
         'user_identifier',
         'channel',
@@ -40,7 +38,7 @@ class ConversationSession extends Model
         'resolution_type',
         'metadata',
         'tags',
-        'summary'
+        'summary',
     ];
 
     protected $casts = [
@@ -55,17 +53,17 @@ class ConversationSession extends Model
         'satisfaction_score' => 'decimal:2',
         'goal_achieved' => 'boolean',
         'total_messages' => 'integer',
-        'bot_messages' => 'integer', 
+        'bot_messages' => 'integer',
         'user_messages' => 'integer',
-        'operator_messages' => 'integer'
+        'operator_messages' => 'integer',
     ];
 
     protected $dates = [
         'assigned_at',
-        'handoff_requested_at', 
+        'handoff_requested_at',
         'started_at',
         'last_activity_at',
-        'ended_at'
+        'ended_at',
     ];
 
     // 🏢 Relationships
@@ -128,7 +126,7 @@ class ConversationSession extends Model
 
     public function isAssigned(): bool
     {
-        return $this->status === 'assigned' && !is_null($this->assigned_operator_id);
+        return $this->status === 'assigned' && ! is_null($this->assigned_operator_id);
     }
 
     public function hasHandoffRequested(): bool
@@ -138,16 +136,21 @@ class ConversationSession extends Model
 
     public function getDurationInMinutes(): ?int
     {
-        if (!$this->started_at) return null;
-        
+        if (! $this->started_at) {
+            return null;
+        }
+
         $endTime = $this->ended_at ?? now();
+
         return $this->started_at->diffInMinutes($endTime);
     }
 
     public function getInactivityInMinutes(): ?int
     {
-        if (!$this->last_activity_at) return null;
-        
+        if (! $this->last_activity_at) {
+            return null;
+        }
+
         return $this->last_activity_at->diffInMinutes(now());
     }
 
@@ -159,8 +162,8 @@ class ConversationSession extends Model
     public function incrementMessageCount(string $senderType): void
     {
         $this->increment('total_messages');
-        
-        match($senderType) {
+
+        match ($senderType) {
             'user' => $this->increment('user_messages'),
             'bot' => $this->increment('bot_messages'),
             'operator' => $this->increment('operator_messages'),
@@ -169,23 +172,23 @@ class ConversationSession extends Model
     }
 
     // 🎯 Session Management
-    public function assignToOperator(int $operatorId, string $reason = null): bool
+    public function assignToOperator(int $operatorId, ?string $reason = null): bool
     {
         return $this->update([
             'status' => 'assigned',
             'handoff_status' => 'handoff_active',
             'assigned_operator_id' => $operatorId,
             'assigned_at' => now(),
-            'handoff_reason' => $reason
+            'handoff_reason' => $reason,
         ]);
     }
 
-    public function endSession(string $resolutionType = null): bool
+    public function endSession(?string $resolutionType = null): bool
     {
         return $this->update([
             'status' => 'resolved',
             'ended_at' => now(),
-            'resolution_type' => $resolutionType
+            'resolution_type' => $resolutionType,
         ]);
     }
 }

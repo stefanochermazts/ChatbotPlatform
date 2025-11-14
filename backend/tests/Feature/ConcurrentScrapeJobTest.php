@@ -64,7 +64,7 @@ class ConcurrentScrapeJobTest extends TestCase
 
 class TestProgressDispatchJob implements ShouldQueue
 {
-    use Queueable, InteractsWithQueue, SerializesModels;
+    use InteractsWithQueue, Queueable, SerializesModels;
 
     public function __construct(
         private readonly int $tenantId,
@@ -83,4 +83,3 @@ class TestProgressDispatchJob implements ShouldQueue
         return $service->transitionToDispatched($this->tenantId, $this->progressId);
     }
 }
-

@@ -1,14 +1,13 @@
 <?php
 
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__.'/vendor/autoload.php';
 
-$app = require_once __DIR__ . '/bootstrap/app.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
-use App\Models\Document;
 use App\Jobs\DeleteVectorsJobFixed;
-use Illuminate\Support\Facades\Log;
+use App\Models\Document;
 
 echo "🧪 TEST VERSIONE FIXED - DeleteVectorsJobFixed\n";
 echo "==============================================\n\n";
@@ -28,19 +27,19 @@ $doc = Document::create([
 DB::table('document_chunks')->insert([
     [
         'tenant_id' => 5,
-        'document_id' => $doc->id, 
-        'chunk_index' => 0, 
+        'document_id' => $doc->id,
+        'chunk_index' => 0,
         'content' => 'Test chunk 1 per verifica fixed delete sync',
         'created_at' => now(),
-        'updated_at' => now()
+        'updated_at' => now(),
     ],
     [
         'tenant_id' => 5,
-        'document_id' => $doc->id, 
-        'chunk_index' => 1, 
+        'document_id' => $doc->id,
+        'chunk_index' => 1,
         'content' => 'Test chunk 2 per verifica fixed delete sync',
         'created_at' => now(),
-        'updated_at' => now()
+        'updated_at' => now(),
     ],
 ]);
 
@@ -69,13 +68,13 @@ echo "4️⃣ Eseguo il job DeleteVectorsJobFixed...\n";
 try {
     // Crea manualmente l'istanza MilvusClient
     $milvusClient = app()->make(\App\Services\RAG\MilvusClient::class);
-    
+
     // Esegui il job
     $job->handle($milvusClient);
     echo "   ✅ Job eseguito con successo!\n";
-    
+
 } catch (Exception $e) {
-    echo "   ❌ Errore durante esecuzione job: " . $e->getMessage() . "\n";
+    echo '   ❌ Errore durante esecuzione job: '.$e->getMessage()."\n";
 }
 
 echo "\n🎯 CONFRONTO:\n";

@@ -5,7 +5,6 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-use App\Models\User;
 
 class OperatorAuth
 {
@@ -17,14 +16,14 @@ class OperatorAuth
     public function handle(Request $request, Closure $next): Response
     {
         // 🔒 Verifica che l'utente sia autenticato
-        if (!auth()->check()) {
+        if (! auth()->check()) {
             return response()->json(['error' => 'Authentication required'], 401);
         }
 
         $user = auth()->user();
 
         // 👨‍💼 Verifica che l'utente sia un operatore
-        if (!$user->isOperator()) {
+        if (! $user->isOperator()) {
             return response()->json(['error' => 'Operator access required'], 403);
         }
 

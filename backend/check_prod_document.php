@@ -2,7 +2,7 @@
 
 /**
  * VERIFICA DOCUMENTO IN PRODUZIONE
- * 
+ *
  * Controlla il contenuto del documento 779 per vedere se contiene il telefono
  */
 
@@ -21,7 +21,7 @@ $tenantId = 1;
 
 // Verifica documento
 $doc = \App\Models\Document::find($docId);
-if (!$doc) {
+if (! $doc) {
     echo "❌ Documento {$docId} non trovato!\n";
     exit(1);
 }
@@ -43,14 +43,14 @@ $chunks = DB::select("
     ORDER BY chunk_index
 ", [$docId, $tenantId]);
 
-echo "📋 Chunk con 'polizia' (". count($chunks) ."):\n";
+echo "📋 Chunk con 'polizia' (".count($chunks)."):\n";
 foreach ($chunks as $i => $chunk) {
     echo "\n--- Chunk {$chunk->chunk_index} ---\n";
-    echo substr($chunk->content, 0, 500) . "\n";
-    
+    echo substr($chunk->content, 0, 500)."\n";
+
     // Cerca telefoni
     if (preg_match_all('/(?:tel[\.:]*\s*)?(?:\+39\s*)?0\d{1,3}[\s\.\-]*\d{6,8}/i', $chunk->content, $phoneMatches)) {
-        echo "📞 TELEFONI TROVATI: " . implode(', ', $phoneMatches[0]) . "\n";
+        echo '📞 TELEFONI TROVATI: '.implode(', ', $phoneMatches[0])."\n";
     } else {
         echo "📞 Nessun telefono in questo chunk\n";
     }
@@ -58,12 +58,12 @@ foreach ($chunks as $i => $chunk) {
 
 // Cerca tutti i chunk per telefoni generici
 echo "\n🔍 RICERCA TELEFONI IN TUTTO IL DOCUMENTO:\n";
-$allChunks = DB::select("
+$allChunks = DB::select('
     SELECT chunk_index, content
     FROM document_chunks
     WHERE document_id = ? AND tenant_id = ?
     ORDER BY chunk_index
-", [$docId, $tenantId]);
+', [$docId, $tenantId]);
 
 $foundPhones = [];
 foreach ($allChunks as $chunk) {

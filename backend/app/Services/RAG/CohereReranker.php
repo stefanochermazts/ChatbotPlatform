@@ -22,7 +22,7 @@ class CohereReranker implements RerankerInterface
             return array_slice($candidates, 0, $topN);
         }
 
-        $docs = array_map(fn($c) => ['text' => (string) $c['text']], $candidates);
+        $docs = array_map(fn ($c) => ['text' => (string) $c['text']], $candidates);
 
         $resp = $this->http->post($endpoint, [
             'headers' => [
@@ -41,16 +41,17 @@ class CohereReranker implements RerankerInterface
         $reordered = [];
         foreach ($data['results'] ?? [] as $r) {
             $idx = (int) ($r['index'] ?? -1);
-            if (!isset($candidates[$idx])) continue;
+            if (! isset($candidates[$idx])) {
+                continue;
+            }
             $item = $candidates[$idx];
             $item['score'] = (float) ($r['relevance_score'] ?? $item['score']);
             $reordered[] = $item;
         }
-        if ($reordered === []) return array_slice($candidates, 0, $topN);
+        if ($reordered === []) {
+            return array_slice($candidates, 0, $topN);
+        }
+
         return $reordered;
     }
 }
-
-
-
-

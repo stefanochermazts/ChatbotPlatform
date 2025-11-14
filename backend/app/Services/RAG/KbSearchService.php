@@ -173,7 +173,7 @@ class KbSearchService
             'intents_count' => count($intents),
             'intents_list' => $intents,
         ]);
-        
+
         foreach ($intents as $intentType) {
             Log::info("🔍 [RETRIEVE] Testando intent: {$intentType}", [
                 'tenant_id' => $tenantId,
@@ -199,13 +199,13 @@ class KbSearchService
             }
 
             // 🔧 Prima prova l'intent NORMALE (mantiene la logica esistente che funziona)
-            Log::info("🚀 [RETRIEVE] Eseguendo executeIntent", [
+            Log::info('🚀 [RETRIEVE] Eseguendo executeIntent', [
                 'intent_type' => $intentType,
                 'tenant_id' => $tenantId,
                 'query' => $query,
                 'selected_kb_id' => $selectedKbIdIntent,
             ]);
-            
+
             $result = $this->executeIntent($intentType, $tenantId, $query, $debug, $selectedKbIdIntent);
 
             Log::info("📊 [RETRIEVE] Risultato intent {$intentType}", [
@@ -217,7 +217,7 @@ class KbSearchService
             if ($result !== null) {
                 // Espansione opzionale info di contatto (abilitata via flag)
                 $contactExpansionEnabled = (bool) ($this->tenantConfig->getConfig($tenantId)['features']['contact_expansion'] ?? false);
-                Log::info("🎯 [INTENT] Contact expansion check", [
+                Log::info('🎯 [INTENT] Contact expansion check', [
                     'tenant_id' => $tenantId,
                     'intent_type' => $intentType,
                     'contact_expansion_enabled' => $contactExpansionEnabled,
@@ -1415,24 +1415,24 @@ class KbSearchService
      */
     private function executeIntent(string $intentType, int $tenantId, string $query, bool $debug, ?int $knowledgeBaseId = null): ?array
     {
-        Log::info("🎯 [EXECUTE-INTENT] Inizio esecuzione intent", [
+        Log::info('🎯 [EXECUTE-INTENT] Inizio esecuzione intent', [
             'intent_type' => $intentType,
             'tenant_id' => $tenantId,
             'query' => $query,
             'knowledge_base_id' => $knowledgeBaseId,
         ]);
-        
+
         $name = $this->extractNameFromQuery($query, $intentType);
-        
-        Log::info("🎯 [EXECUTE-INTENT] Nome estratto", [
+
+        Log::info('🎯 [EXECUTE-INTENT] Nome estratto', [
             'intent_type' => $intentType,
             'extracted_name' => $name,
         ]);
 
         // Espandi il nome con sinonimi per migliorare la ricerca
         $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
-        
-        Log::info("🎯 [EXECUTE-INTENT] Nome espanso con sinonimi", [
+
+        Log::info('🎯 [EXECUTE-INTENT] Nome espanso con sinonimi', [
             'intent_type' => $intentType,
             'original_name' => $name,
             'expanded_name' => $expandedName,
@@ -1442,9 +1442,10 @@ class KbSearchService
             case 'thanks':
                 // Intent speciale: restituisce direttamente una risposta cortese senza cercare documenti
                 Log::info("🎯 [EXECUTE-INTENT] Eseguendo intent 'thanks'");
+
                 return $this->executeThanksIntent($tenantId, $query, $debug);
             case 'schedule':
-                Log::info("🎯 [EXECUTE-INTENT] Cercando schedule", [
+                Log::info('🎯 [EXECUTE-INTENT] Cercando schedule', [
                     'expanded_name' => $expandedName,
                     'knowledge_base_id' => $knowledgeBaseId,
                 ]);
@@ -1452,7 +1453,7 @@ class KbSearchService
                 $field = 'schedule';
                 break;
             case 'phone':
-                Log::info("🎯 [EXECUTE-INTENT] Cercando telefoni", [
+                Log::info('🎯 [EXECUTE-INTENT] Cercando telefoni', [
                     'expanded_name' => $expandedName,
                     'knowledge_base_id' => $knowledgeBaseId,
                 ]);
@@ -1460,7 +1461,7 @@ class KbSearchService
                 $field = 'phone';
                 break;
             case 'email':
-                Log::info("🎯 [EXECUTE-INTENT] Cercando email", [
+                Log::info('🎯 [EXECUTE-INTENT] Cercando email', [
                     'expanded_name' => $expandedName,
                     'knowledge_base_id' => $knowledgeBaseId,
                 ]);
@@ -1468,7 +1469,7 @@ class KbSearchService
                 $field = 'email';
                 break;
             case 'address':
-                Log::info("🎯 [EXECUTE-INTENT] Cercando indirizzi", [
+                Log::info('🎯 [EXECUTE-INTENT] Cercando indirizzi', [
                     'expanded_name' => $expandedName,
                     'knowledge_base_id' => $knowledgeBaseId,
                 ]);
@@ -1476,13 +1477,14 @@ class KbSearchService
                 $field = 'address';
                 break;
             default:
-                Log::warning("🎯 [EXECUTE-INTENT] Intent type sconosciuto", [
+                Log::warning('🎯 [EXECUTE-INTENT] Intent type sconosciuto', [
                     'intent_type' => $intentType,
                 ]);
+
                 return null;
         }
-        
-        Log::info("🎯 [EXECUTE-INTENT] Risultati ricerca", [
+
+        Log::info('🎯 [EXECUTE-INTENT] Risultati ricerca', [
             'intent_type' => $intentType,
             'results_count' => count($results),
             'field' => $field,
@@ -1490,26 +1492,28 @@ class KbSearchService
 
         // Se la ricerca specifica non trova nulla, prova ricerca semantica con sinonimi
         if ($results === []) {
-            Log::info("🎯 [EXECUTE-INTENT] Nessun risultato trovato, provo fallback semantico", [
+            Log::info('🎯 [EXECUTE-INTENT] Nessun risultato trovato, provo fallback semantico', [
                 'intent_type' => $intentType,
                 'name' => $name,
             ]);
             $semanticResults = $this->executeSemanticFallback($intentType, $tenantId, $name, $query, $debug, $knowledgeBaseId);
             if ($semanticResults !== null) {
-                Log::info("🎯 [EXECUTE-INTENT] Fallback semantico trovato risultati", [
+                Log::info('🎯 [EXECUTE-INTENT] Fallback semantico trovato risultati', [
                     'intent_type' => $intentType,
                     'citations_count' => count($semanticResults['citations'] ?? []),
                 ]);
+
                 return $semanticResults;
             }
 
-            Log::info("🎯 [EXECUTE-INTENT] Nessun risultato trovato né con ricerca specifica né con fallback", [
+            Log::info('🎯 [EXECUTE-INTENT] Nessun risultato trovato né con ricerca specifica né con fallback', [
                 'intent_type' => $intentType,
             ]);
+
             return null;
         }
-        
-        Log::info("🎯 [EXECUTE-INTENT] Risultati trovati con ricerca specifica", [
+
+        Log::info('🎯 [EXECUTE-INTENT] Risultati trovati con ricerca specifica', [
             'intent_type' => $intentType,
             'results_count' => count($results),
         ]);
@@ -1940,9 +1944,9 @@ class KbSearchService
         ]);
 
         $nameNormalized = mb_strtolower(trim($name));
-        $primaryTerms = array_values(array_filter(array_unique(preg_split('/\s+/', $nameNormalized, -1, PREG_SPLIT_NO_EMPTY) ?: []), static fn(string $term) => mb_strlen($term) >= 3));
+        $primaryTerms = array_values(array_filter(array_unique(preg_split('/\s+/', $nameNormalized, -1, PREG_SPLIT_NO_EMPTY) ?: []), static fn (string $term) => mb_strlen($term) >= 3));
         $expandedName = $this->synonymExpansion->expandName($name, $tenantId);
-        $expandedTerms = array_values(array_filter(array_unique(preg_split('/\s+/', mb_strtolower($expandedName), -1, PREG_SPLIT_NO_EMPTY) ?: []), static fn(string $term) => mb_strlen($term) >= 3));
+        $expandedTerms = array_values(array_filter(array_unique(preg_split('/\s+/', mb_strtolower($expandedName), -1, PREG_SPLIT_NO_EMPTY) ?: []), static fn (string $term) => mb_strlen($term) >= 3));
 
         foreach ($semanticHits as $hit) {
             $processedCount++;
@@ -2500,6 +2504,7 @@ class KbSearchService
                     if (strcasecmp($normalizedCell, 'CHIUSO') === 0 || stripos($normalizedCell, 'CHIUSO') !== false) {
                         $times[] = 'Chiuso';
                     }
+
                     continue;
                 }
 
@@ -2508,6 +2513,7 @@ class KbSearchService
                         $endTime = $rangeMatches[2][$idx] ?? null;
                         $times[] = $endTime ? ($startTime.'-'.$endTime) : $startTime;
                     }
+
                     continue;
                 }
 
@@ -2930,7 +2936,8 @@ class KbSearchService
     {
         // Delegate to new service but extract from cache
         $tenant = $tenantId ? Tenant::find($tenantId) : null;
-        return $tenant && !empty($tenant->custom_synonyms)
+
+        return $tenant && ! empty($tenant->custom_synonyms)
             ? (array) $tenant->custom_synonyms
             : $this->getSynonymsMap();
     }

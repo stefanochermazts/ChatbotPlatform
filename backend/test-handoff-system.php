@@ -2,13 +2,13 @@
 
 /**
  * 🧪 Test Script per Handoff System
- * 
+ *
  * Questo script testa:
  * 1. Creazione handoff request
  * 2. Emissione evento HandoffRequested
  * 3. Assegnazione a operatore
  * 4. Verifica campo corretto assigned_operator_id
- * 
+ *
  * Usage:
  * php backend/test-handoff-system.php
  */
@@ -18,14 +18,14 @@ require __DIR__.'/vendor/autoload.php';
 $app = require_once __DIR__.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-use App\Models\Tenant;
+use App\Events\HandoffRequested;
 use App\Models\ConversationSession;
 use App\Models\HandoffRequest;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Services\HandoffService;
-use App\Events\HandoffRequested;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
 echo "🧪 ==========================================\n";
 echo "   HANDOFF SYSTEM TEST\n";
@@ -35,16 +35,16 @@ echo "==========================================\n\n";
 echo "📊 Step 1: Finding test data...\n";
 
 $tenant = Tenant::first();
-if (!$tenant) {
-    die("❌ Error: No tenants found in database!\n");
+if (! $tenant) {
+    exit("❌ Error: No tenants found in database!\n");
 }
 echo "   ✅ Tenant: {$tenant->name} (ID: {$tenant->id})\n";
 
 $operator = User::where('is_operator', true)
-                ->where('operator_status', 'available')
-                ->first();
+    ->where('operator_status', 'available')
+    ->first();
 
-if (!$operator) {
+if (! $operator) {
     echo "   ⚠️  No available operator found. Creating test operator...\n";
     $operator = User::create([
         'name' => 'Test Operator',
@@ -53,7 +53,7 @@ if (!$operator) {
         'is_operator' => true,
         'operator_status' => 'available',
         'max_concurrent_conversations' => 5,
-        'current_conversations' => 0
+        'current_conversations' => 0,
     ]);
     echo "   ✅ Created operator: {$operator->name} (ID: {$operator->id})\n";
 } else {
@@ -61,21 +61,21 @@ if (!$operator) {
 }
 
 $session = ConversationSession::where('tenant_id', $tenant->id)
-                              ->where('status', 'active')
-                              ->first();
+    ->where('status', 'active')
+    ->first();
 
-if (!$session) {
+if (! $session) {
     echo "   ⚠️  No active session found. Creating test session...\n";
-    
+
     // Get widget config for tenant
     $widgetConfig = $tenant->widgetConfig;
-    if (!$widgetConfig) {
+    if (! $widgetConfig) {
         echo "   ⚠️  No widget config found, creating default...\n";
         $widgetConfig = \App\Models\WidgetConfig::createDefaultForTenant($tenant);
     }
-    
+
     $session = ConversationSession::create([
-        'session_id' => 'test-' . uniqid(),
+        'session_id' => 'test-'.uniqid(),
         'tenant_id' => $tenant->id,
         'widget_config_id' => $widgetConfig->id,
         'user_identifier' => 'test-user',
@@ -83,7 +83,7 @@ if (!$session) {
         'status' => 'active',
         'handoff_status' => 'bot_only',
         'started_at' => now(),
-        'last_activity_at' => now()
+        'last_activity_at' => now(),
     ]);
     echo "   ✅ Created session: {$session->session_id}\n";
 } else {
@@ -125,23 +125,23 @@ try {
         ['test' => true],
         'normal'
     );
-    
+
     echo "   ✅ HandoffRequest created: ID {$handoffRequest->id}\n";
     echo "      - Status: {$handoffRequest->status}\n";
     echo "      - Priority: {$handoffRequest->priority}\n";
     echo "      - Trigger: {$handoffRequest->trigger_type}\n";
-    
+
     // Check if event was dispatched
     if ($eventDispatched && $dispatchedHandoffId === $handoffRequest->id) {
         echo "   ✅ Event HandoffRequested dispatched correctly!\n";
     } else {
         echo "   ❌ Event NOT dispatched or wrong ID!\n";
-        echo "      - Event Dispatched: " . ($eventDispatched ? 'YES' : 'NO') . "\n";
+        echo '      - Event Dispatched: '.($eventDispatched ? 'YES' : 'NO')."\n";
         echo "      - Dispatched ID: {$dispatchedHandoffId}\n";
         echo "      - Expected ID: {$handoffRequest->id}\n";
         exit(1);
     }
-    
+
 } catch (\Exception $e) {
     echo "   ❌ Error: {$e->getMessage()}\n";
     exit(1);
@@ -153,15 +153,15 @@ echo "\n";
 echo "👨‍💼 Step 3: Testing Operator Assignment...\n";
 
 echo "   🔍 Operator Status Check:\n";
-echo "      - is_operator: " . ($operator->isOperator() ? 'YES' : 'NO') . "\n";
-echo "      - canTakeNewConversation: " . ($operator->canTakeNewConversation() ? 'YES' : 'NO') . "\n";
+echo '      - is_operator: '.($operator->isOperator() ? 'YES' : 'NO')."\n";
+echo '      - canTakeNewConversation: '.($operator->canTakeNewConversation() ? 'YES' : 'NO')."\n";
 echo "      - operator_status: {$operator->operator_status}\n";
 echo "      - current_conversations: {$operator->current_conversations}\n";
 echo "      - max_concurrent_conversations: {$operator->max_concurrent_conversations}\n";
 
 try {
     $success = $handoffService->assignToOperator($handoffRequest, $operator);
-    
+
     if ($success) {
         $handoffRequest->refresh();
         echo "   ✅ Operator assigned successfully!\n";
@@ -169,7 +169,7 @@ try {
         echo "      - Assigned Operator Name: {$handoffRequest->assignedOperator->name}\n";
         echo "      - Status: {$handoffRequest->status}\n";
         echo "      - Assigned At: {$handoffRequest->assigned_at}\n";
-        
+
         // ✅ CRITICAL CHECK: Verify correct field name
         if ($handoffRequest->assigned_operator_id === $operator->id) {
             echo "   ✅ CRITICAL: 'assigned_operator_id' field is CORRECT!\n";
@@ -177,12 +177,12 @@ try {
             echo "   ❌ CRITICAL: 'assigned_operator_id' field is WRONG!\n";
             exit(1);
         }
-        
+
     } else {
         echo "   ❌ Assignment failed!\n";
         exit(1);
     }
-    
+
 } catch (\Exception $e) {
     echo "   ❌ Error: {$e->getMessage()}\n";
     echo "      Stack: {$e->getTraceAsString()}\n";
@@ -200,7 +200,7 @@ if ($dbHandoff) {
     echo "      - ID: {$dbHandoff->id}\n";
     echo "      - Status: {$dbHandoff->status}\n";
     echo "      - Assigned Operator ID: {$dbHandoff->assigned_operator_id}\n";
-    
+
     // Check if relationship works
     if ($dbHandoff->assignedOperator) {
         echo "   ✅ Relationship 'assignedOperator' works correctly!\n";
@@ -224,18 +224,18 @@ try {
     $session->update([
         'status' => 'active',
         'handoff_status' => 'handoff_requested',
-        'assigned_operator_id' => null
+        'assigned_operator_id' => null,
     ]);
-    
+
     DB::transaction(function () use ($session, $operator) {
         // Simulate takeOverConversation logic
         $session->update([
             'status' => 'assigned',
             'handoff_status' => 'handoff_active',
             'assigned_operator_id' => $operator->id,
-            'last_activity_at' => now()
+            'last_activity_at' => now(),
         ]);
-        
+
         // Create handoff with CORRECT field name
         $handoffRequest = HandoffRequest::firstOrCreate([
             'conversation_session_id' => $session->id,
@@ -247,16 +247,16 @@ try {
             'status' => 'assigned',
             'assigned_operator_id' => $operator->id,  // ✅ CORRECT FIELD
             'requested_at' => now(),
-            'assigned_at' => now()
+            'assigned_at' => now(),
         ]);
-        
+
         echo "   ✅ Take Over simulation successful!\n";
         echo "      - Session Status: {$session->status}\n";
         echo "      - Handoff Status: {$session->handoff_status}\n";
         echo "      - Assigned Operator: {$session->assignedOperator->name}\n";
         echo "      - Handoff Request ID: {$handoffRequest->id}\n";
     });
-    
+
 } catch (\Exception $e) {
     echo "   ❌ Error: {$e->getMessage()}\n";
     echo "      Stack: {$e->getTraceAsString()}\n";
@@ -271,7 +271,7 @@ if ($handoffRequest) {
     $handoffRequest->delete();
     echo "   ✅ Test handoff deleted\n";
 }
-if ($session->session_id === 'test-' . substr($session->session_id, 5)) {
+if ($session->session_id === 'test-'.substr($session->session_id, 5)) {
     $session->delete();
     echo "   ✅ Test session deleted\n";
 }
@@ -285,4 +285,3 @@ echo "Event emission: ✅\n";
 echo "Operator assignment: ✅\n";
 echo "Database fields: ✅\n";
 echo "Take over flow: ✅\n";
-

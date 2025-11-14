@@ -113,6 +113,28 @@
     </div>
   </div>
 
+  <div class="space-y-2">
+    <label class="block">
+      <span class="text-sm font-medium text-gray-700">📰 Strategia per il titolo</span>
+      <select name="title_strategy" class="w-full border rounded px-3 py-2 @error('title_strategy') border-red-500 @enderror">
+        @foreach(\App\Enums\Scraper\TitleStrategy::cases() as $strategy)
+          <option value="{{ $strategy->value }}" @selected(old('title_strategy', $config->title_strategy?->value ?? \App\Enums\Scraper\TitleStrategy::default()->value) === $strategy->value)>
+            {{ __('scraper.title_strategy_options.'.$strategy->value) }}
+          </option>
+        @endforeach
+      </select>
+      <div class="text-xs text-gray-600 mt-1">
+        Seleziona la logica usata per popolare il titolo originale dei documenti:
+        <strong>{{ __('scraper.title_strategy_options.title') }}</strong> usa il tag &lt;title&gt;,
+        <strong>{{ __('scraper.title_strategy_options.h1') }}</strong> usa l'H1 della pagina,
+        <strong>{{ __('scraper.title_strategy_options.h1+h2') }}</strong> concatena H1 e H2.
+      </div>
+      @error('title_strategy')
+        <div class="text-xs text-red-600 mt-1">{{ $message }}</div>
+      @enderror
+    </label>
+  </div>
+
   <div class="space-y-2 mt-4">
     <label class="block">
       <span class="text-sm font-medium text-gray-700">🔗 Link-only Patterns (solo segui link interni, non salvare la pagina)</span>

@@ -3,16 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\FormAdminResponseMail;
+use App\Models\FormResponse;
 use App\Models\FormSubmission;
 use App\Models\TenantForm;
-use App\Models\FormResponse;
 use App\Services\Form\FormSubmissionService;
-use Illuminate\Http\Request;
-use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
-use App\Mail\FormAdminResponseMail;
+use Illuminate\View\View;
 
 /**
  * 📊 FormSubmissionController - Gestione sottomissioni admin
@@ -37,21 +37,21 @@ class FormSubmissionController extends Controller
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date',
             'search' => 'nullable|string|max:255',
-            'per_page' => 'nullable|integer|min:5|max:100'
+            'per_page' => 'nullable|integer|min:5|max:100',
         ]);
 
         // Ricava tenant_id dinamicamente dal form_id se presente
         $tenantId = null;
-        if (!empty($validated['form_id'])) {
+        if (! empty($validated['form_id'])) {
             $form = TenantForm::find($validated['form_id']);
             if ($form) {
                 $tenantId = $form->tenant_id;
             }
         }
-        
+
         // TODO: Implementare gestione admin per vedere tutti i tenant
         // Per ora se non c'è form_id specifico, default al tenant 5
-        if (!$tenantId) {
+        if (! $tenantId) {
             $tenantId = 5; // Fallback per admin
         }
 
@@ -88,14 +88,14 @@ class FormSubmissionController extends Controller
     public function show(FormSubmission $submission): View
     {
         // TODO: Implementare policy check per accesso tenant
-        
+
         $submission->load([
             'tenantForm',
             'tenant',
-            'responses' => function($query) {
+            'responses' => function ($query) {
                 $query->orderBy('created_at', 'desc');
             },
-            'responses.adminUser'
+            'responses.adminUser',
         ]);
 
         return view('admin.forms.submissions.show', compact('submission'));
@@ -107,7 +107,7 @@ class FormSubmissionController extends Controller
     public function respond(FormSubmission $submission): View
     {
         // TODO: Implementare policy check per accesso tenant
-        
+
         $submission->load(['tenantForm', 'tenant']);
 
         return view('admin.forms.submissions.respond', compact('submission'));
@@ -123,17 +123,17 @@ class FormSubmissionController extends Controller
             'response_type' => 'required|in:web,email',
             'email_subject' => 'required_if:response_type,email|string|max:255',
             'closes_submission' => 'boolean',
-            'internal_notes' => 'nullable|string|max:1000'
+            'internal_notes' => 'nullable|string|max:1000',
         ]);
 
         try {
             // Genera thread ID se non esiste
-            $threadId = $submission->responses()->exists() 
-                ? $submission->responses()->first()->thread_id 
+            $threadId = $submission->responses()->exists()
+                ? $submission->responses()->first()->thread_id
                 : FormResponse::generateThreadId();
 
             // Determina se è thread starter
-            $isThreadStarter = !$submission->responses()->exists();
+            $isThreadStarter = ! $submission->responses()->exists();
 
             // Crea la risposta
             $response = FormResponse::create([
@@ -174,7 +174,7 @@ class FormSubmissionController extends Controller
                 $submission->activateConversation($response->priority);
             }
 
-            $message = $validated['response_type'] === 'email' 
+            $message = $validated['response_type'] === 'email'
                 ? 'Risposta inviata via email con successo!'
                 : 'Risposta registrata con successo!';
 
@@ -185,7 +185,7 @@ class FormSubmissionController extends Controller
         } catch (\Exception $e) {
             return back()
                 ->withInput()
-                ->with('error', 'Errore nell\'invio della risposta: ' . $e->getMessage());
+                ->with('error', 'Errore nell\'invio della risposta: '.$e->getMessage());
         }
     }
 
@@ -195,7 +195,7 @@ class FormSubmissionController extends Controller
     public function updateStatus(Request $request, FormSubmission $submission): RedirectResponse
     {
         $validated = $request->validate([
-            'status' => 'required|in:pending,responded,closed'
+            'status' => 'required|in:pending,responded,closed',
         ]);
 
         $submission->update(['status' => $validated['status']]);
@@ -203,10 +203,10 @@ class FormSubmissionController extends Controller
         $statusLabels = [
             'pending' => 'In attesa',
             'responded' => 'Risposta inviata',
-            'closed' => 'Chiusa'
+            'closed' => 'Chiusa',
         ];
 
-        return back()->with('success', 
+        return back()->with('success',
             "Status aggiornato a: {$statusLabels[$validated['status']]}"
         );
     }
@@ -217,16 +217,16 @@ class FormSubmissionController extends Controller
     public function destroy(FormSubmission $submission): RedirectResponse
     {
         // TODO: Implementare policy check per accesso tenant
-        
+
         try {
             $submission->delete();
-            
+
             return redirect()
                 ->route('admin.forms.submissions.index')
                 ->with('success', 'Sottomissione eliminata con successo');
-                
+
         } catch (\Exception $e) {
-            return back()->with('error', 'Errore nell\'eliminazione: ' . $e->getMessage());
+            return back()->with('error', 'Errore nell\'eliminazione: '.$e->getMessage());
         }
     }
 
@@ -239,21 +239,21 @@ class FormSubmissionController extends Controller
             'status' => 'nullable|in:pending,responded,closed',
             'form_id' => 'nullable|integer|exists:tenant_forms,id',
             'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date'
+            'date_to' => 'nullable|date',
         ]);
 
         // Ricava tenant_id dinamicamente dal form_id se presente
         $tenantId = null;
-        if (!empty($validated['form_id'])) {
+        if (! empty($validated['form_id'])) {
             $form = TenantForm::find($validated['form_id']);
             if ($form) {
                 $tenantId = $form->tenant_id;
             }
         }
-        
+
         // TODO: Implementare gestione admin per vedere tutti i tenant
         // Per ora se non c'è form_id specifico, default al tenant 5
-        if (!$tenantId) {
+        if (! $tenantId) {
             $tenantId = 5; // Fallback per admin
         }
 
@@ -262,11 +262,11 @@ class FormSubmissionController extends Controller
 
         $submissions = $this->submissionService->getSubmissions($tenantId, $filters);
 
-        $filename = 'sottomissioni_' . date('Y-m-d_H-i-s') . '.csv';
+        $filename = 'sottomissioni_'.date('Y-m-d_H-i-s').'.csv';
 
-        return response()->streamDownload(function() use ($submissions) {
+        return response()->streamDownload(function () use ($submissions) {
             $handle = fopen('php://output', 'w');
-            
+
             // Header CSV
             fputcsv($handle, [
                 'ID',
@@ -277,7 +277,7 @@ class FormSubmissionController extends Controller
                 'Email Utente',
                 'Trigger',
                 'Dati Form',
-                'Numero Risposte'
+                'Numero Risposte',
             ]);
 
             // Dati
@@ -296,7 +296,7 @@ class FormSubmissionController extends Controller
                     $submission->user_email ?? 'N/A',
                     $submission->getTriggerDescriptionAttribute(),
                     trim($formData),
-                    $submission->responses()->count()
+                    $submission->responses()->count(),
                 ]);
             }
 
@@ -323,23 +323,23 @@ class FormSubmissionController extends Controller
     {
         $validated = $request->validate([
             'period' => 'nullable|in:today,week,month,quarter,year',
-            'form_id' => 'nullable|integer|exists:tenant_forms,id'
+            'form_id' => 'nullable|integer|exists:tenant_forms,id',
         ]);
 
         // Ricava tenant_id dinamicamente dal form_id se presente
         $tenantId = null;
         $formId = $validated['form_id'] ?? null;
-        
+
         if ($formId) {
             $form = TenantForm::find($formId);
             if ($form) {
                 $tenantId = $form->tenant_id;
             }
         }
-        
+
         // TODO: Implementare gestione admin per vedere tutti i tenant
         // Per ora se non c'è form_id specifico, default al tenant 5
-        if (!$tenantId) {
+        if (! $tenantId) {
             $tenantId = 5; // Fallback per admin
         }
 
@@ -347,7 +347,7 @@ class FormSubmissionController extends Controller
 
         // Calcola statistiche per il periodo
         $baseQuery = FormSubmission::forTenant($tenantId);
-        
+
         if ($formId) {
             $baseQuery->where('tenant_form_id', $formId);
         }
@@ -359,17 +359,17 @@ class FormSubmissionController extends Controller
             case 'week':
                 $baseQuery->whereBetween('submitted_at', [
                     now()->startOfWeek(),
-                    now()->endOfWeek()
+                    now()->endOfWeek(),
                 ]);
                 break;
             case 'month':
                 $baseQuery->whereMonth('submitted_at', now()->month)
-                         ->whereYear('submitted_at', now()->year);
+                    ->whereYear('submitted_at', now()->year);
                 break;
             case 'quarter':
                 $baseQuery->whereBetween('submitted_at', [
                     now()->startOfQuarter(),
-                    now()->endOfQuarter()
+                    now()->endOfQuarter(),
                 ]);
                 break;
             case 'year':
@@ -388,7 +388,7 @@ class FormSubmissionController extends Controller
 
         if ($stats['total'] > 0) {
             $stats['response_rate'] = round(
-                (($stats['responded'] + $stats['closed']) / $stats['total']) * 100, 
+                (($stats['responded'] + $stats['closed']) / $stats['total']) * 100,
                 1
             );
         }

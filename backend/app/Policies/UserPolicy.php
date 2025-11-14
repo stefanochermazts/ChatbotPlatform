@@ -36,8 +36,8 @@ class UserPolicy
         // I clienti possono vedere solo utenti dello stesso tenant
         $userTenants = $user->tenants()->pluck('tenant_id')->toArray();
         $modelTenants = $model->tenants()->pluck('tenant_id')->toArray();
-        
-        return !empty(array_intersect($userTenants, $modelTenants));
+
+        return ! empty(array_intersect($userTenants, $modelTenants));
     }
 
     /**

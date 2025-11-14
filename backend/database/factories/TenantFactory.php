@@ -2,7 +2,6 @@
 
 namespace Database\Factories;
 
-use Database\Seeders\DefaultSynonymsSeeder;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,11 +17,11 @@ class TenantFactory extends Factory
     public function definition(): array
     {
         $slug = $this->faker->unique()->slug(2);
-        
+
         return [
             'name' => $this->faker->company(),
             'slug' => $slug,
-            'domain' => $slug . '.example.com',
+            'domain' => $slug.'.example.com',
             'plan' => $this->faker->randomElement(['basic', 'pro', 'enterprise']),
             'metadata' => [
                 'created_by' => 'factory',
@@ -36,7 +35,7 @@ class TenantFactory extends Factory
             'extra_intent_keywords' => [],
             'kb_scope_mode' => 'relaxed',
             'intent_min_score' => null,
-            // I nuovi tenant erediteranno automaticamente i sinonimi di default  
+            // I nuovi tenant erediteranno automaticamente i sinonimi di default
             'custom_synonyms' => [],  // Empty for tests - avoid serialization issues
         ];
     }

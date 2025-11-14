@@ -12,27 +12,29 @@ class EnsureAuthenticated
     /**
      * Handle an incoming request.
      */
-    public function handle(Request $request, Closure $next, string $role = null): Response
+    public function handle(Request $request, Closure $next, ?string $role = null): Response
     {
         // Verifica se l'utente è autenticato
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Unauthenticated'], 401);
             }
+
             return redirect()->route('login');
         }
 
         $user = Auth::user();
 
         // Verifica se l'utente è attivo
-        if (!$user->is_active) {
+        if (! $user->is_active) {
             Auth::logout();
+
             return redirect()->route('login')
                 ->withErrors(['email' => 'Il tuo account è stato disattivato.']);
         }
 
         // Verifica se l'email è verificata
-        if (!$user->hasVerifiedEmail()) {
+        if (! $user->hasVerifiedEmail()) {
             return redirect()->route('verification.notice');
         }
 
@@ -40,7 +42,7 @@ class EnsureAuthenticated
         if ($role) {
             switch ($role) {
                 case 'admin':
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         abort(403, 'Accesso negato. Sono richiesti privilegi di amministratore.');
                     }
                     break;

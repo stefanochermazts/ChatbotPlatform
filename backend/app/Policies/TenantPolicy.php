@@ -85,7 +85,7 @@ class TenantPolicy
     public function access(User $user, Tenant $tenant): bool
     {
         // L'utente deve essere attivo e avere email verificata
-        if (!$user->is_active || !$user->hasVerifiedEmail()) {
+        if (! $user->is_active || ! $user->hasVerifiedEmail()) {
             return false;
         }
 

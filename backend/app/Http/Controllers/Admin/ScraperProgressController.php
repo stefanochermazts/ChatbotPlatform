@@ -15,22 +15,22 @@ class ScraperProgressController extends Controller
     public function current(Request $request, int $tenantId)
     {
         $tenant = Tenant::findOrFail($tenantId);
-        
+
         $progress = ScraperProgress::where('tenant_id', $tenantId)
             ->where('status', 'running')
             ->latest()
             ->first();
 
-        if (!$progress) {
+        if (! $progress) {
             return response()->json([
                 'active' => false,
-                'message' => 'Nessun scraping attivo'
+                'message' => 'Nessun scraping attivo',
             ]);
         }
 
         return response()->json([
             'active' => true,
-            'progress' => $progress->getSummary()
+            'progress' => $progress->getSummary(),
         ]);
     }
 
@@ -40,15 +40,15 @@ class ScraperProgressController extends Controller
     public function history(Request $request, int $tenantId)
     {
         $tenant = Tenant::findOrFail($tenantId);
-        
+
         $history = ScraperProgress::where('tenant_id', $tenantId)
             ->orderBy('started_at', 'desc')
             ->limit(10)
             ->get()
-            ->map(fn($p) => $p->getSummary());
+            ->map(fn ($p) => $p->getSummary());
 
         return response()->json([
-            'history' => $history
+            'history' => $history,
         ]);
     }
 
@@ -58,9 +58,9 @@ class ScraperProgressController extends Controller
     public function session(Request $request, string $sessionId)
     {
         $progress = ScraperProgress::where('session_id', $sessionId)->firstOrFail();
-        
+
         return response()->json([
-            'progress' => $progress->getSummary()
+            'progress' => $progress->getSummary(),
         ]);
     }
 
@@ -76,14 +76,14 @@ class ScraperProgressController extends Controller
         $progress->update([
             'status' => 'cancelled',
             'completed_at' => now(),
-            'last_error' => 'Cancellato dall\'utente'
+            'last_error' => 'Cancellato dall\'utente',
         ]);
 
         // TODO: Implementa logica per fermare effettivamente il job
-        
+
         return response()->json([
             'message' => 'Scraping cancellato',
-            'progress' => $progress->getSummary()
+            'progress' => $progress->getSummary(),
         ]);
     }
 
@@ -93,7 +93,7 @@ class ScraperProgressController extends Controller
     public function dashboard(Request $request, int $tenantId)
     {
         $tenant = Tenant::findOrFail($tenantId);
-        
+
         // Progress attuale
         $currentProgress = ScraperProgress::where('tenant_id', $tenantId)
             ->where('status', 'running')
@@ -122,46 +122,7 @@ class ScraperProgressController extends Controller
                 'documents' => $recentStats->total_documents ?? 0,
                 'ingestion_completed' => $recentStats->total_ingestion_completed ?? 0,
                 'avg_duration_minutes' => $recentStats->avg_duration_seconds ? round($recentStats->avg_duration_seconds / 60, 1) : null,
-            ]
+            ],
         ]);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -16,7 +16,7 @@ class WidgetConfigControllerTest extends TestCase
     public function test_admin_can_update_max_citation_sources(): void
     {
         $tenant = Tenant::factory()->create();
-        $user = User::factory()->create();
+        $user = User::factory()->create(['is_active' => true]);
         $user->tenants()->attach($tenant->id, ['role' => User::ROLE_ADMIN]);
 
         WidgetConfig::createDefaultForTenant($tenant);
@@ -50,5 +50,3 @@ class WidgetConfigControllerTest extends TestCase
         $this->assertSame(7, $settings->getMaxCitationSources($tenant->id));
     }
 }
-
-

@@ -1,15 +1,13 @@
 <?php
 
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__.'/vendor/autoload.php';
 
-$app = require_once __DIR__ . '/bootstrap/app.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
-use App\Models\Document;
-use App\Models\Tenant;
 use App\Jobs\DeleteVectorsJob;
-use Illuminate\Support\Facades\Log;
+use App\Models\Document;
 
 echo "🧪 TEST PROBLEMA SINCRONIZZAZIONE DELETE\n";
 echo "==========================================\n\n";
@@ -29,7 +27,7 @@ foreach ($testDocs as $testDoc) {
     }
 }
 
-if (!$doc) {
+if (! $doc) {
     echo "❌ Documento di test non trovato! Assicurati di aver eseguito lo script di creazione prima.\n";
     exit(1);
 }
@@ -57,14 +55,14 @@ $job = new DeleteVectorsJob([$doc->id]);
 // 2. Simula la cancellazione immediata dei chunks (come fa il controller)
 echo "2️⃣ Simulo cancellazione chunks da PostgreSQL...\n";
 $deletedChunks = DB::table('document_chunks')->where('document_id', $doc->id)->get();
-echo "   Chunks trovati prima della cancellazione: " . $deletedChunks->count() . "\n";
+echo '   Chunks trovati prima della cancellazione: '.$deletedChunks->count()."\n";
 
 // Salva i primary IDs che dovrebbero essere cancellati da Milvus
 $expectedPrimaryIds = [];
 foreach ($deletedChunks as $chunk) {
     $expectedPrimaryIds[] = ($chunk->document_id * 100000) + $chunk->chunk_index;
 }
-echo "   Primary IDs che dovrebbero essere cancellati da Milvus: " . implode(', ', $expectedPrimaryIds) . "\n";
+echo '   Primary IDs che dovrebbero essere cancellati da Milvus: '.implode(', ', $expectedPrimaryIds)."\n";
 
 // Cancella i chunks (simula il controller)
 DB::table('document_chunks')->where('document_id', $doc->id)->delete();
@@ -76,18 +74,18 @@ echo "3️⃣ Eseguo il job DeleteVectorsJob...\n";
 try {
     // Crea manualmente l'istanza MilvusClient
     $milvusClient = app()->make(\App\Services\RAG\MilvusClient::class);
-    
+
     // Esegui il job
     $job->handle($milvusClient);
     echo "   ✅ Job eseguito senza errori\n";
-    
+
 } catch (Exception $e) {
-    echo "   ❌ Errore durante esecuzione job: " . $e->getMessage() . "\n";
+    echo '   ❌ Errore durante esecuzione job: '.$e->getMessage()."\n";
 }
 
 echo "\n🔍 VERIFICA FINALE:\n";
-echo "- Chunks in PostgreSQL per doc {$doc->id}: " . DB::table('document_chunks')->where('document_id', $doc->id)->count() . "\n";
-echo "- I primary IDs " . implode(', ', $expectedPrimaryIds) . " dovrebbero essere stati cancellati da Milvus\n";
+echo "- Chunks in PostgreSQL per doc {$doc->id}: ".DB::table('document_chunks')->where('document_id', $doc->id)->count()."\n";
+echo '- I primary IDs '.implode(', ', $expectedPrimaryIds)." dovrebbero essere stati cancellati da Milvus\n";
 echo "  (ma probabilmente NON lo sono stati, dimostrando il problema!)\n";
 
 echo "\n💡 SOLUZIONE: Modificare DeleteVectorsJob per calcolare primaryIds PRIMA di cercare chunks in PostgreSQL\n";

@@ -7,7 +7,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 
@@ -37,7 +36,7 @@ class FormConfirmationMail extends Mailable
         $form = $this->submission->tenantForm;
         $tenant = $this->submission->tenant;
 
-        $subject = $form->user_confirmation_email_subject 
+        $subject = $form->user_confirmation_email_subject
             ?? "Conferma ricezione richiesta: {$form->name}";
 
         // Replace placeholders in subject
@@ -46,7 +45,7 @@ class FormConfirmationMail extends Mailable
         return new Envelope(
             from: config('mail.from.address', 'noreply@chatbotplatform.com'),
             subject: $subject,
-            replyTo: $form->admin_notification_email 
+            replyTo: $form->admin_notification_email
                 ? [$form->admin_notification_email]
                 : null
         );
@@ -98,7 +97,7 @@ class FormConfirmationMail extends Mailable
     private function getTenantLogoUrl(): ?string
     {
         $form = $this->submission->tenantForm;
-        
+
         if ($form->email_logo_path && Storage::disk('public')->exists($form->email_logo_path)) {
             return Storage::disk('public')->url($form->email_logo_path);
         }
@@ -112,14 +111,14 @@ class FormConfirmationMail extends Mailable
     private function getCustomEmailBody(): string
     {
         $form = $this->submission->tenantForm;
-        
-        $defaultBody = "Abbiamo ricevuto la sua richiesta per {form_name}.\n\n" .
-                      "Dati inviati:\n{form_data}\n\n" .
-                      "La contatteremo al più presto.\n\n" .
+
+        $defaultBody = "Abbiamo ricevuto la sua richiesta per {form_name}.\n\n".
+                      "Dati inviati:\n{form_data}\n\n".
+                      "La contatteremo al più presto.\n\n".
                       "Cordiali saluti,\n{tenant_name}";
 
         $emailBody = $form->user_confirmation_email_body ?? $defaultBody;
-        
+
         return $this->replacePlaceholders($emailBody);
     }
 
@@ -151,8 +150,8 @@ class FormConfirmationMail extends Mailable
         ];
 
         return str_replace(
-            array_keys($placeholders), 
-            array_values($placeholders), 
+            array_keys($placeholders),
+            array_values($placeholders),
             $text
         );
     }
@@ -163,20 +162,8 @@ class FormConfirmationMail extends Mailable
     public function build(): self
     {
         $viewData = $this->viewData();
-        
+
         return $this->view('emails.form-confirmation', $viewData)
-                   ->with($viewData);
+            ->with($viewData);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-

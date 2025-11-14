@@ -59,7 +59,9 @@ class FormSubmission extends Model
      * Status disponibili
      */
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_RESPONDED = 'responded';
+
     public const STATUS_CLOSED = 'closed';
 
     public const STATUSES = [
@@ -72,8 +74,11 @@ class FormSubmission extends Model
      * Trigger types
      */
     public const TRIGGER_KEYWORD = 'keyword';
+
     public const TRIGGER_AUTO = 'auto';
+
     public const TRIGGER_MANUAL = 'manual';
+
     public const TRIGGER_QUESTION = 'question';
 
     /**
@@ -187,7 +192,7 @@ class FormSubmission extends Model
      */
     public function getStatusColorAttribute(): string
     {
-        return match($this->status) {
+        return match ($this->status) {
             self::STATUS_PENDING => 'yellow',
             self::STATUS_RESPONDED => 'blue',
             self::STATUS_CLOSED => 'gray',
@@ -242,7 +247,7 @@ class FormSubmission extends Model
     {
         $formatted = [];
 
-        if (!$this->form_data) {
+        if (! $this->form_data) {
             return $formatted;
         }
 
@@ -252,7 +257,7 @@ class FormSubmission extends Model
         foreach ($this->form_data as $fieldName => $value) {
             $field = $fields->get($fieldName);
             $label = $field ? $field->label : $fieldName;
-            
+
             // Formatta il valore basandosi sul tipo di campo
             if ($field && $field->type === 'checkbox' && is_array($value)) {
                 $value = implode(', ', $value);
@@ -328,7 +333,7 @@ class FormSubmission extends Model
      */
     public function getTriggerDescriptionAttribute(): string
     {
-        $type = match($this->trigger_type) {
+        $type = match ($this->trigger_type) {
             self::TRIGGER_KEYWORD => 'Parola chiave',
             self::TRIGGER_AUTO => 'Automatico',
             self::TRIGGER_MANUAL => 'Manuale',
@@ -383,23 +388,23 @@ class FormSubmission extends Model
     {
         $now = now();
         $responsesCount = $this->responses()->count();
-        
+
         // Calcola tempo prima risposta se è la prima
         $firstResponseTime = null;
         if ($responsesCount === 1) {
             $firstResponseTime = $this->submitted_at->diffInMinutes($now);
         }
-        
+
         // Calcola tempo medio risposta
         $avgResponseTime = $this->calculateAverageResponseTime();
-        
+
         $this->update([
             'responses_count' => $responsesCount,
             'last_response_at' => $now,
             'last_response_by' => $response->admin_user_id,
             'first_response_time_minutes' => $firstResponseTime ?? $this->first_response_time_minutes,
             'avg_response_time_minutes' => $avgResponseTime,
-            'has_active_conversation' => !$response->closes_submission,
+            'has_active_conversation' => ! $response->closes_submission,
         ]);
     }
 
@@ -415,12 +420,12 @@ class FormSubmission extends Model
 
         $totalMinutes = 0;
         $previousTime = $this->submitted_at;
-        
+
         foreach ($responses as $response) {
             $totalMinutes += $previousTime->diffInMinutes($response->created_at);
             $previousTime = $response->created_at;
         }
-        
+
         return intval($totalMinutes / $responses->count());
     }
 
@@ -429,7 +434,7 @@ class FormSubmission extends Model
      */
     public function getConversationPriorityLabelAttribute(): string
     {
-        return match($this->conversation_priority) {
+        return match ($this->conversation_priority) {
             'low' => 'Bassa',
             'normal' => 'Normale',
             'high' => 'Alta',
@@ -443,7 +448,7 @@ class FormSubmission extends Model
      */
     public function getConversationPriorityIconAttribute(): string
     {
-        return match($this->conversation_priority) {
+        return match ($this->conversation_priority) {
             'low' => '🟢',
             'normal' => '🟡',
             'high' => '🟠',
@@ -457,7 +462,7 @@ class FormSubmission extends Model
      */
     public function getConversationPriorityColorAttribute(): string
     {
-        return match($this->conversation_priority) {
+        return match ($this->conversation_priority) {
             'low' => 'green',
             'normal' => 'yellow',
             'high' => 'orange',
@@ -471,10 +476,10 @@ class FormSubmission extends Model
      */
     public function getTimeSinceLastResponseAttribute(): string
     {
-        if (!$this->last_response_at) {
+        if (! $this->last_response_at) {
             return 'Nessuna risposta';
         }
-        
+
         return $this->last_response_at->diffForHumans();
     }
 
@@ -483,17 +488,17 @@ class FormSubmission extends Model
      */
     public function getFirstResponseTimeFormattedAttribute(): string
     {
-        if (!$this->first_response_time_minutes) {
+        if (! $this->first_response_time_minutes) {
             return 'N/A';
         }
-        
+
         $hours = intval($this->first_response_time_minutes / 60);
         $minutes = $this->first_response_time_minutes % 60;
-        
+
         if ($hours > 0) {
             return "{$hours}h {$minutes}m";
         }
-        
+
         return "{$minutes}m";
     }
 
@@ -502,17 +507,17 @@ class FormSubmission extends Model
      */
     public function getAvgResponseTimeFormattedAttribute(): string
     {
-        if (!$this->avg_response_time_minutes) {
+        if (! $this->avg_response_time_minutes) {
             return 'N/A';
         }
-        
+
         $hours = intval($this->avg_response_time_minutes / 60);
         $minutes = $this->avg_response_time_minutes % 60;
-        
+
         if ($hours > 0) {
             return "{$hours}h {$minutes}m";
         }
-        
+
         return "{$minutes}m";
     }
 
@@ -522,20 +527,20 @@ class FormSubmission extends Model
     public function needsUrgentAttention(): bool
     {
         // Conversazione urgente senza risposta da più di 1 ora
-        if ($this->conversation_priority === 'urgent' && 
+        if ($this->conversation_priority === 'urgent' &&
             $this->has_active_conversation &&
             $this->last_response_at &&
             $this->last_response_at->diffInHours(now()) > 1) {
             return true;
         }
-        
+
         // Conversazione normale senza risposta da più di 24 ore
         if ($this->has_active_conversation &&
             $this->last_response_at &&
             $this->last_response_at->diffInHours(now()) > 24) {
             return true;
         }
-        
+
         return false;
     }
 
@@ -544,14 +549,14 @@ class FormSubmission extends Model
      */
     public function getConversationStatusAttribute(): string
     {
-        if (!$this->has_active_conversation) {
+        if (! $this->has_active_conversation) {
             return 'Chiusa';
         }
-        
+
         if ($this->needsUrgentAttention()) {
             return 'Richiede attenzione';
         }
-        
+
         return 'Attiva';
     }
 }

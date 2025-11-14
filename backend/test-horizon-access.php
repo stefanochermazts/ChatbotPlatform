@@ -5,9 +5,9 @@
  * Esegui: php test-horizon-access.php
  */
 
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__.'/vendor/autoload.php';
 
-$app = require_once __DIR__ . '/bootstrap/app.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
@@ -15,13 +15,13 @@ echo "🔍 DEBUG AVANZATO HORIZON\n";
 echo "================================\n\n";
 
 // 1. Verifica ambiente
-echo "1️⃣ Ambiente: " . app()->environment() . "\n\n";
+echo '1️⃣ Ambiente: '.app()->environment()."\n\n";
 
 // 2. Verifica HorizonServiceProvider boot è stato chiamato
 echo "2️⃣ Verifica Service Providers:\n";
 $providers = app()->getLoadedProviders();
-echo "   HorizonServiceProvider: " . (isset($providers[\App\Providers\HorizonServiceProvider::class]) ? '✅' : '❌') . "\n";
-echo "   HorizonApplicationServiceProvider: " . (isset($providers[\Laravel\Horizon\HorizonApplicationServiceProvider::class]) ? '✅' : '❌') . "\n\n";
+echo '   HorizonServiceProvider: '.(isset($providers[\App\Providers\HorizonServiceProvider::class]) ? '✅' : '❌')."\n";
+echo '   HorizonApplicationServiceProvider: '.(isset($providers[\Laravel\Horizon\HorizonApplicationServiceProvider::class]) ? '✅' : '❌')."\n\n";
 
 // 3. Verifica route Horizon
 echo "3️⃣ Route Horizon registrate:\n";
@@ -50,9 +50,9 @@ $horizonMainRoute = collect(app('router')->getRoutes())->first(function ($route)
 if ($horizonMainRoute) {
     echo "   ✅ Route principale trovata\n";
     echo "   URI: {$horizonMainRoute->uri()}\n";
-    echo "   Methods: " . implode(', ', $horizonMainRoute->methods()) . "\n";
-    echo "   Middleware: " . implode(', ', $horizonMainRoute->middleware()) . "\n";
-    echo "   Action: " . $horizonMainRoute->getActionName() . "\n";
+    echo '   Methods: '.implode(', ', $horizonMainRoute->methods())."\n";
+    echo '   Middleware: '.implode(', ', $horizonMainRoute->middleware())."\n";
+    echo '   Action: '.$horizonMainRoute->getActionName()."\n";
 } else {
     echo "   ❌ Route principale NON trovata!\n";
 }
@@ -60,15 +60,15 @@ echo "\n";
 
 // 5. Verifica config Horizon
 echo "5️⃣ Config Horizon:\n";
-echo "   Path: " . config('horizon.path', 'N/A') . "\n";
-echo "   Domain: " . config('horizon.domain', 'N/A') . "\n";
-echo "   Middleware: " . json_encode(config('horizon.middleware')) . "\n\n";
+echo '   Path: '.config('horizon.path', 'N/A')."\n";
+echo '   Domain: '.config('horizon.domain', 'N/A')."\n";
+echo '   Middleware: '.json_encode(config('horizon.middleware'))."\n\n";
 
 // 6. Verifica .htaccess / web server config
 echo "6️⃣ Verifica file pubblici:\n";
 $publicPath = base_path('public');
-$htaccess = $publicPath . '/.htaccess';
-echo "   .htaccess esiste: " . (file_exists($htaccess) ? '✅' : '❌') . "\n";
+$htaccess = $publicPath.'/.htaccess';
+echo '   .htaccess esiste: '.(file_exists($htaccess) ? '✅' : '❌')."\n";
 if (file_exists($htaccess)) {
     $content = file_get_contents($htaccess);
     if (strpos($content, 'horizon') !== false) {
@@ -86,7 +86,7 @@ try {
     echo "   Headers:\n";
     foreach ($response->headers->all() as $key => $values) {
         if (in_array($key, ['content-type', 'location', 'www-authenticate'])) {
-            echo "      {$key}: " . implode(', ', $values) . "\n";
+            echo "      {$key}: ".implode(', ', $values)."\n";
         }
     }
 } catch (\Exception $e) {
@@ -98,7 +98,7 @@ echo "\n";
 echo "8️⃣ Verifica Gates:\n";
 try {
     $gates = \Illuminate\Support\Facades\Gate::abilities();
-    echo "   Gate 'viewHorizon': " . (isset($gates['viewHorizon']) ? '✅ TROVATO' : '❌ NON trovato') . "\n";
+    echo "   Gate 'viewHorizon': ".(isset($gates['viewHorizon']) ? '✅ TROVATO' : '❌ NON trovato')."\n";
 } catch (\Exception $e) {
     echo "   ⚠️ Non riesco a verificare gates\n";
 }
@@ -106,4 +106,3 @@ echo "\n";
 
 echo "================================\n";
 echo "✅ Debug completato\n";
-

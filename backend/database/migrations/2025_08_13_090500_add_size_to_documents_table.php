@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('documents', function (Blueprint $table) {
-            if (!Schema::hasColumn('documents', 'size')) {
+            if (! Schema::hasColumn('documents', 'size')) {
                 $table->unsignedInteger('size')->default(0);
             }
         });
@@ -24,4 +24,3 @@ return new class extends Migration
         });
     }
 };
-

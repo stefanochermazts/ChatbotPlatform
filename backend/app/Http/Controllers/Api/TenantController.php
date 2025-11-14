@@ -48,8 +48,3 @@ class TenantController extends Controller
         return response()->json(['status' => 'ok']);
     }
 }
-
-
-
-
-

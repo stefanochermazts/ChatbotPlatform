@@ -13,7 +13,9 @@ class CreateMilvusPartitionJob implements ShouldQueue
     use Queueable;
 
     public int $tenantId;
+
     public int $tries = 3;
+
     public int $backoff = 30; // secondi
 
     public function __construct(int $tenantId)
@@ -25,11 +27,12 @@ class CreateMilvusPartitionJob implements ShouldQueue
     public function handle(): void
     {
         // Verifica se le partizioni Milvus sono abilitate
-        if (!config('rag.vector.milvus.partitions_enabled', true)) {
+        if (! config('rag.vector.milvus.partitions_enabled', true)) {
             Log::info('milvus.partition.disabled', [
                 'tenant_id' => $this->tenantId,
                 'reason' => 'partitions_disabled_in_config',
             ]);
+
             return;
         }
 
@@ -46,7 +49,7 @@ class CreateMilvusPartitionJob implements ShouldQueue
             // Prima prova a creare usando l'estensione del MilvusClient
             $client = app(MilvusClient::class);
             $client->createPartition($partitionName);
-            
+
             Log::info('milvus.partition.created', [
                 'tenant_id' => $this->tenantId,
                 'partition' => $partitionName,
@@ -60,7 +63,7 @@ class CreateMilvusPartitionJob implements ShouldQueue
 
             // Determina se siamo su Windows
             $isWindows = PHP_OS_FAMILY === 'Windows';
-            
+
             if ($isWindows && $this->isPythonGrpcIssue($e)) {
                 // Su Windows, se è un problema noto di grpcio, non provare Python
                 Log::warning('milvus.partition.skipped_on_windows', [
@@ -69,6 +72,7 @@ class CreateMilvusPartitionJob implements ShouldQueue
                     'error' => $e->getMessage(),
                     'solution' => 'Disable partitions in config or fix grpcio installation',
                 ]);
+
                 return;
             }
 
@@ -81,7 +85,7 @@ class CreateMilvusPartitionJob implements ShouldQueue
                     'php_error' => $e->getMessage(),
                     'python_error' => $pythonError->getMessage(),
                 ]);
-                
+
                 // Non rilancio l'eccezione per non bloccare la creazione del tenant
                 // La partizione può essere creata manualmente se necessario
             }
@@ -94,7 +98,7 @@ class CreateMilvusPartitionJob implements ShouldQueue
     private function isPythonGrpcIssue(\Throwable $e): bool
     {
         $message = $e->getMessage();
-        
+
         // Controlla pattern tipici di errori grpcio su Windows
         $grpcioPatterns = [
             'WinError 10106',
@@ -105,21 +109,21 @@ class CreateMilvusPartitionJob implements ShouldQueue
             'asyncio.*windows_events',
             '_overlapped.*OSError',
         ];
-        
+
         foreach ($grpcioPatterns as $pattern) {
-            if (preg_match('/' . preg_quote($pattern, '/') . '/i', $message)) {
+            if (preg_match('/'.preg_quote($pattern, '/').'/i', $message)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
     private function createPartitionWithPython(string $collectionName, string $partitionName): void
     {
         $scriptPath = base_path('create_milvus_partition.py');
-        
-        if (!file_exists($scriptPath)) {
+
+        if (! file_exists($scriptPath)) {
             throw new \RuntimeException("Script Python non trovato: {$scriptPath}");
         }
 
@@ -142,7 +146,7 @@ class CreateMilvusPartitionJob implements ShouldQueue
             ]);
 
             throw new \RuntimeException(
-                "Fallimento creazione partizione Milvus per tenant {$this->tenantId}: " . 
+                "Fallimento creazione partizione Milvus per tenant {$this->tenantId}: ".
                 $result->errorOutput()
             );
         }

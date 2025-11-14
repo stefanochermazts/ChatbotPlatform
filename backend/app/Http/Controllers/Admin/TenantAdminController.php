@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\CreateMilvusPartitionJob;
-use App\Models\Tenant;
-use App\Models\KnowledgeBase;
-use App\Models\Document;
 use App\Models\ApiKey;
+use App\Models\Document;
+use App\Models\KnowledgeBase;
+use App\Models\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -16,6 +16,7 @@ class TenantAdminController extends Controller
     public function index()
     {
         $tenants = Tenant::orderBy('id', 'desc')->paginate(20);
+
         return view('admin.tenants.index', compact('tenants'));
     }
 
@@ -39,12 +40,12 @@ class TenantAdminController extends Controller
         $data['languages'] = isset($data['languages']) && $data['languages'] !== ''
             ? array_values(array_filter(array_map('trim', explode(',', $data['languages']))))
             : null;
-        
+
         $tenant = Tenant::create($data);
-        
+
         // Crea automaticamente la partizione Milvus per questo tenant
         CreateMilvusPartitionJob::dispatch($tenant->id);
-        
+
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant creato');
     }
 
@@ -69,7 +70,7 @@ class TenantAdminController extends Controller
             'multi_kb_search' => ['sometimes', 'boolean'],
             'api_key_plain' => ['sometimes', 'nullable', 'string', 'min:20'],
         ]);
-        
+
         // Parse languages se presente
         if (array_key_exists('languages', $data)) {
             $langVal = $data['languages'];
@@ -80,17 +81,19 @@ class TenantAdminController extends Controller
                     : null;
             } elseif (is_array($langVal)) {
                 $data['languages'] = array_values(array_filter(array_map('trim', $langVal)));
-                if ($data['languages'] === []) { $data['languages'] = null; }
+                if ($data['languages'] === []) {
+                    $data['languages'] = null;
+                }
             } else {
                 $data['languages'] = null;
             }
         }
-        
+
         if (array_key_exists('extra_intent_keywords', $data)) {
             $json = json_decode($data['extra_intent_keywords'] ?: '{}', true);
             $data['extra_intent_keywords'] = is_array($json) ? $json : null;
         }
-        
+
         // Gestisci sinonimi personalizzati
         if (array_key_exists('custom_synonyms', $data)) {
             if (trim((string) $data['custom_synonyms']) === '') {
@@ -103,9 +106,9 @@ class TenantAdminController extends Controller
                 $data['custom_synonyms'] = is_array($json) ? $json : null;
             }
         }
-        
+
         // Salva l'API key plain (opzionale)
-        if (!empty($data['api_key_plain'] ?? null)) {
+        if (! empty($data['api_key_plain'] ?? null)) {
             $plain = (string) $data['api_key_plain'];
             $hash = hash('sha256', $plain);
 
@@ -115,7 +118,7 @@ class TenantAdminController extends Controller
                 // Se appartiene ad un altro tenant, impedisci riutilizzo
                 if ($existing->tenant_id !== $tenant->id) {
                     return back()->withErrors([
-                        'api_key_plain' => 'Questa API Key è già associata ad un altro tenant.'
+                        'api_key_plain' => 'Questa API Key è già associata ad un altro tenant.',
                     ])->withInput();
                 }
                 // Aggiorna la chiave cifrata e riattiva se revocata
@@ -137,8 +140,9 @@ class TenantAdminController extends Controller
             }
         }
         unset($data['api_key_plain']);
-        
+
         $tenant->update($data);
+
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant aggiornato');
     }
 
@@ -149,17 +153,19 @@ class TenantAdminController extends Controller
             'document_ids' => ['required', 'string'],
         ]);
         $kb = KnowledgeBase::where('tenant_id', $tenant->id)->findOrFail((int) $data['knowledge_base_id']);
-        $ids = array_values(array_filter(array_map(fn($x)=> (int) trim($x), explode(',', $data['document_ids']))));
+        $ids = array_values(array_filter(array_map(fn ($x) => (int) trim($x), explode(',', $data['document_ids']))));
         if ($ids === []) {
             return back()->with('error', 'Nessun documento valido');
         }
         Document::where('tenant_id', $tenant->id)->whereIn('id', $ids)->update(['knowledge_base_id' => $kb->id]);
+
         return back()->with('ok', 'Documenti associati alla KB "'.$kb->name.'"');
     }
 
     public function destroy(Tenant $tenant)
     {
         $tenant->delete();
+
         return redirect()->route('admin.tenants.index')->with('ok', 'Tenant eliminato');
     }
 
@@ -197,12 +203,11 @@ class TenantAdminController extends Controller
         $apiKey = ApiKey::query()
             ->where('tenant_id', $tenant->id)
             ->findOrFail($keyId);
-        
+
         $apiKey->update(['revoked_at' => now()]);
-        
+
         return redirect()
             ->route('admin.tenants.edit', $tenant)
             ->with('success', 'API Key revocata con successo!');
     }
 }
-

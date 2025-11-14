@@ -9,8 +9,3 @@ return [
     // Usato dal RAG tester se non specificato dall'utente
     'max_output_tokens' => env('OPENAI_MAX_OUTPUT_TOKENS', 700),
 ];
-
-
-
-
-

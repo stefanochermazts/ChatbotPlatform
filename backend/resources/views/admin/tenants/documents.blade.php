@@ -97,7 +97,8 @@
       <table class="min-w-full text-sm">
         <thead class="bg-slate-100">
           <tr>
-            <th class="text-left p-3">Titolo</th>
+            <th class="text-left p-3">Titolo archivio</th>
+            <th class="text-left p-3">Titolo originale</th>
             <th class="text-left p-3">Fonte</th>
             <th class="text-left p-3">Stato</th>
             <th class="text-left p-3">Azione</th>
@@ -106,8 +107,22 @@
         <tbody>
           @foreach ($documents as $doc)
             <tr class="border-t">
-              <td class="p-3">{{ $doc->title }}</td>
-              <td class="p-3">
+              <td class="p-3 align-top">
+                <div class="font-medium text-slate-900">{{ $doc->title }}</div>
+                @if ($doc->last_scraped_at)
+                  <div class="text-xs text-slate-400 mt-1">
+                    Aggiornato {{ $doc->last_scraped_at->diffForHumans() }}
+                  </div>
+                @endif
+              </td>
+              <td class="p-3 align-top">
+                @if ($doc->source_page_title)
+                  <div class="text-sm text-slate-900">{{ \Illuminate\Support\Str::limit($doc->source_page_title, 90) }}</div>
+                @else
+                  <div class="text-slate-400">N/A</div>
+                @endif
+              </td>
+              <td class="p-3 align-top min-w-[18rem]">
                 <div class="text-xs uppercase tracking-wide text-slate-500">{{ $doc->source }}</div>
 
                 @if ($doc->source_url)
@@ -120,12 +135,6 @@
                   >
                     {{ \Illuminate\Support\Str::limit($doc->source_url, 70) }}
                   </a>
-
-                  @if ($doc->source_page_title)
-                    <div class="mt-1 text-xs text-slate-500">
-                      {{ \Illuminate\Support\Str::limit($doc->source_page_title, 90) }}
-                    </div>
-                  @endif
                 @else
                   <span class="text-slate-400">N/A</span>
                 @endif

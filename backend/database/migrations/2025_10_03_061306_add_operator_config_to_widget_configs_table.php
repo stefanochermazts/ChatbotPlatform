@@ -29,10 +29,10 @@ return new class extends Migration
         Schema::table('widget_configs', function (Blueprint $table) {
             $table->dropColumn([
                 'operator_enabled',
-                'operator_button_text', 
+                'operator_button_text',
                 'operator_button_icon',
                 'operator_availability',
-                'operator_unavailable_message'
+                'operator_unavailable_message',
             ]);
         });
     }

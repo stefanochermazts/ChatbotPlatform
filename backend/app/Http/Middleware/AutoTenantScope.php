@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Auth;
 
 /**
  * Middleware per auto-scoping del tenant per utenti clienti
- * 
+ *
  * Se l'utente è un cliente e accede a una route admin che richiede un tenant,
  * questo middleware:
  * 1. Verifica che l'utente abbia accesso al tenant
@@ -17,31 +17,33 @@ use Illuminate\Support\Facades\Auth;
  */
 class AutoTenantScope
 {
-    public function handle(Request $request, Closure $next, string $role = null)
+    public function handle(Request $request, Closure $next, ?string $role = null)
     {
         $user = Auth::user();
-        
-        if (!$user) {
+
+        if (! $user) {
             return redirect()->route('login');
         }
 
         // Debug logging
-        \Log::info('AutoTenantScope - Route: ' . $request->route()->getName() . ', User: ' . $user->email . ', IsAdmin: ' . ($user->isAdmin() ? 'yes' : 'no'));
+        \Log::info('AutoTenantScope - Route: '.$request->route()->getName().', User: '.$user->email.', IsAdmin: '.($user->isAdmin() ? 'yes' : 'no'));
 
         // Se l'utente è admin, procedi normalmente senza scoping
         if ($user->isAdmin()) {
             \Log::info('AutoTenantScope - Admin access, no scoping applied');
+
             return $next($request);
         }
 
         // Se l'utente è cliente, applica auto-scoping
         if ($user->tenants()->wherePivot('role', 'customer')->exists()) {
             \Log::info('AutoTenantScope - Customer access, applying scoping');
+
             return $this->handleCustomerAccess($request, $next, $user);
         }
 
         // Se l'utente non ha un ruolo riconosciuto, blocca l'accesso
-        \Log::warning('AutoTenantScope - Access denied for user: ' . $user->email);
+        \Log::warning('AutoTenantScope - Access denied for user: '.$user->email);
         abort(403, 'Accesso non autorizzato.');
     }
 
@@ -49,24 +51,24 @@ class AutoTenantScope
     {
         // Ottieni il tenant dalla route se specificato
         $tenantFromRoute = $request->route('tenant');
-        
-        \Log::info('AutoTenantScope - TenantFromRoute: ' . ($tenantFromRoute ? $tenantFromRoute->id : 'null'));
-        
+
+        \Log::info('AutoTenantScope - TenantFromRoute: '.($tenantFromRoute ? $tenantFromRoute->id : 'null'));
+
         if ($tenantFromRoute) {
             // Verifica che l'utente abbia accesso a questo tenant
-            if (!$user->tenants()->where('tenant_id', $tenantFromRoute->id)->exists()) {
-                \Log::warning('AutoTenantScope - User does not have access to tenant: ' . $tenantFromRoute->id);
+            if (! $user->tenants()->where('tenant_id', $tenantFromRoute->id)->exists()) {
+                \Log::warning('AutoTenantScope - User does not have access to tenant: '.$tenantFromRoute->id);
                 abort(403, 'Non hai accesso a questo tenant.');
             }
-            
-            \Log::info('AutoTenantScope - Setting scoped_tenant_id to: ' . $tenantFromRoute->id);
+
+            \Log::info('AutoTenantScope - Setting scoped_tenant_id to: '.$tenantFromRoute->id);
             // Imposta il tenant corrente nel request per i controller
             $request->merge(['scoped_tenant_id' => $tenantFromRoute->id]);
-            
+
         } else {
             // Se non c'è un tenant nella route, prendi il primo tenant dell'utente
             $userTenants = $user->tenants()->wherePivot('role', 'customer')->get();
-            
+
             if ($userTenants->isEmpty()) {
                 abort(403, 'Non sei associato a nessun tenant.');
             }
@@ -74,15 +76,16 @@ class AutoTenantScope
             // Se l'utente ha più tenant, potremmo dover gestire la selezione
             // Per ora, usa il primo tenant
             $firstTenant = $userTenants->first();
-            
-            \Log::info('AutoTenantScope - Using first tenant: ' . $firstTenant->id);
-            
+
+            \Log::info('AutoTenantScope - Using first tenant: '.$firstTenant->id);
+
             // Reindirizza alle route con tenant specifico se necessario
             if ($this->routeRequiresTenant($request)) {
                 \Log::info('AutoTenantScope - Redirecting to tenant route');
+
                 return $this->redirectToTenantRoute($request, $firstTenant);
             }
-            
+
             // Imposta il tenant corrente nel request
             $request->merge(['scoped_tenant_id' => $firstTenant->id]);
         }
@@ -93,7 +96,7 @@ class AutoTenantScope
     private function routeRequiresTenant(Request $request): bool
     {
         $routeName = $request->route()->getName();
-        
+
         // Route admin che richiedono un tenant specifico
         $tenantRequiredRoutes = [
             'admin.tenants.documents.index',
@@ -124,10 +127,10 @@ class AutoTenantScope
     {
         $routeName = $request->route()->getName();
         $routeParams = $request->route()->parameters();
-        
+
         // Aggiungi il tenant ai parametri
         $routeParams['tenant'] = $tenant->id;
-        
+
         return redirect()->route($routeName, $routeParams);
     }
 }

@@ -15,15 +15,15 @@ return new class extends Migration
             // Rimuovi i campi multithread non più necessari
             $multiThreadFields = [
                 'mt_max_threads',
-                'mt_chunk_size', 
+                'mt_chunk_size',
                 'mt_request_timeout',
                 'mt_rate_limit_per_minute',
                 'mt_retry_attempts',
                 'mt_retry_delay_seconds',
                 'mt_memory_limit_mb',
-                'mt_fast_mode'
+                'mt_fast_mode',
             ];
-            
+
             foreach ($multiThreadFields as $field) {
                 if (Schema::hasColumn('scraper_configs', $field)) {
                     $table->dropColumn($field);

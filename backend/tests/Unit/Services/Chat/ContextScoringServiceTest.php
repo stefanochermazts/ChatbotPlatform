@@ -2,14 +2,14 @@
 
 namespace Tests\Unit\Services\Chat;
 
-use App\Services\Chat\ContextScoringService;
 use App\Exceptions\ChatException;
+use App\Services\Chat\ContextScoringService;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase as BaseTestCase;
 
 /**
  * Tests for ContextScoringService
- * 
+ *
  * @group scoring
  * @group chat
  * @group services
@@ -17,7 +17,7 @@ use Tests\TestCase as BaseTestCase;
 class ContextScoringServiceTest extends BaseTestCase
 {
     private ContextScoringService $service;
-    
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -27,33 +27,33 @@ class ContextScoringServiceTest extends BaseTestCase
             'authority' => 0.25,
             'intent_match' => 0.25,
         ]);
-        $this->service = new ContextScoringService();
+        $this->service = new ContextScoringService;
     }
-    
+
     public function test_returns_empty_array_for_empty_citations(): void
     {
         $context = [
             'query' => 'test query',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations([], $context);
-        
+
         $this->assertIsArray($result);
         $this->assertEmpty($result);
     }
-    
+
     public function test_throws_exception_for_invalid_context(): void
     {
         $this->expectException(ChatException::class);
         $this->expectExceptionMessage('Missing required fields');
-        
+
         $citations = [['content' => 'test']];
         $context = []; // Missing query and tenant_id
-        
+
         $this->service->scoreCitations($citations, $context);
     }
-    
+
     public function test_scores_single_citation(): void
     {
         $citations = [
@@ -63,23 +63,23 @@ class ContextScoringServiceTest extends BaseTestCase
                 'document_source_url' => 'https://www.comune.test.it/doc.pdf',
                 'score' => 0.85,
                 'document_id' => 1,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'orari apertura',
             'tenant_id' => 1,
-            'intent' => 'hours'
+            'intent' => 'hours',
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         $this->assertCount(1, $result);
         $this->assertArrayHasKey('composite_score', $result[0]);
         $this->assertArrayHasKey('score_breakdown', $result[0]);
         $this->assertGreaterThan(0, $result[0]['composite_score']);
     }
-    
+
     public function test_score_breakdown_has_all_dimensions(): void
     {
         $citations = [
@@ -87,16 +87,16 @@ class ContextScoringServiceTest extends BaseTestCase
                 'content' => 'Test content with sufficient length for quality scoring',
                 'source' => 'test.pdf',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'test query',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         $breakdown = $result[0]['score_breakdown'];
         $this->assertArrayHasKey('source_score', $breakdown);
         $this->assertArrayHasKey('quality_score', $breakdown);
@@ -105,7 +105,7 @@ class ContextScoringServiceTest extends BaseTestCase
         $this->assertArrayHasKey('original_rag_score', $breakdown);
         $this->assertArrayHasKey('weighted_composite', $breakdown);
     }
-    
+
     public function test_filters_citations_below_min_confidence(): void
     {
         $citations = [
@@ -119,22 +119,22 @@ class ContextScoringServiceTest extends BaseTestCase
                 'content' => 'x', // Very short, low quality
                 'source' => 'test.txt',
                 'score' => 0.10,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'test',
             'tenant_id' => 1,
-            'min_confidence' => 0.30
+            'min_confidence' => 0.30,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // Only high-quality citation should pass
         $this->assertLessThan(2, count($result));
         $this->assertGreaterThanOrEqual(0.30, $result[0]['composite_score'] ?? 0.0);
     }
-    
+
     public function test_sorts_by_composite_score_descending(): void
     {
         $citations = [
@@ -150,23 +150,23 @@ class ContextScoringServiceTest extends BaseTestCase
                 'document_source_url' => 'https://www.comune.test.it/doc.pdf',
                 'score' => 0.90,
                 'document_id' => 2,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'delibera',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // First result should have highest score
         $this->assertGreaterThanOrEqual(
             $result[1]['composite_score'] ?? 0,
             $result[0]['composite_score']
         );
     }
-    
+
     public function test_boosts_official_pdf_sources(): void
     {
         $citations = [
@@ -181,20 +181,20 @@ class ContextScoringServiceTest extends BaseTestCase
                 'source' => 'test.txt',
                 'document_source_url' => 'https://example.com/test.txt',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'test',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // PDF from comune should have higher source score
-        $pdfResult = array_values(array_filter($result, fn($r) => str_contains($r['source'] ?? '', '.pdf')))[0] ?? null;
-        $txtResult = array_values(array_filter($result, fn($r) => str_contains($r['source'] ?? '', '.txt')))[0] ?? null;
-        
+        $pdfResult = array_values(array_filter($result, fn ($r) => str_contains($r['source'] ?? '', '.pdf')))[0] ?? null;
+        $txtResult = array_values(array_filter($result, fn ($r) => str_contains($r['source'] ?? '', '.txt')))[0] ?? null;
+
         $this->assertNotNull($pdfResult);
         $this->assertNotNull($txtResult);
         $this->assertGreaterThan(
@@ -202,7 +202,7 @@ class ContextScoringServiceTest extends BaseTestCase
             $pdfResult['score_breakdown']['source_score']
         );
     }
-    
+
     public function test_boosts_authority_keywords(): void
     {
         $citations = [
@@ -215,26 +215,26 @@ class ContextScoringServiceTest extends BaseTestCase
                 'content' => 'General information about something',
                 'source' => 'info.txt',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'regolamento',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // Citation with authority keywords should have higher authority score
         $authorityResult = $result[0];
         $genericResult = $result[1];
-        
+
         $this->assertGreaterThan(
             $genericResult['score_breakdown']['authority_score'],
             $authorityResult['score_breakdown']['authority_score']
         );
     }
-    
+
     public function test_boosts_intent_specific_fields(): void
     {
         $citations = [
@@ -246,21 +246,21 @@ class ContextScoringServiceTest extends BaseTestCase
             [
                 'content' => 'General content without contact info',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'numero telefono',
             'tenant_id' => 1,
-            'intent' => 'phone'
+            'intent' => 'phone',
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // Citation with phone field should have higher intent match score for phone intent
-        $phoneResult = array_values(array_filter($result, fn($r) => !empty($r['phone'])))[0] ?? null;
-        $genericResult = array_values(array_filter($result, fn($r) => empty($r['phone'] ?? null)))[0] ?? null;
-        
+        $phoneResult = array_values(array_filter($result, fn ($r) => ! empty($r['phone'])))[0] ?? null;
+        $genericResult = array_values(array_filter($result, fn ($r) => empty($r['phone'] ?? null)))[0] ?? null;
+
         $this->assertNotNull($phoneResult);
         $this->assertNotNull($genericResult);
         $this->assertGreaterThan(
@@ -268,7 +268,7 @@ class ContextScoringServiceTest extends BaseTestCase
             $phoneResult['score_breakdown']['intent_match_score']
         );
     }
-    
+
     public function test_quality_score_penalizes_very_short_content(): void
     {
         $citations = [
@@ -281,19 +281,19 @@ class ContextScoringServiceTest extends BaseTestCase
                 'content' => str_repeat('This is a well-structured document with sufficient content. ', 10), // Optimal length
                 'source' => 'long.pdf',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'test',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
-        $longResult = array_values(array_filter($result, fn($r) => str_contains($r['source'] ?? '', 'long')))[0] ?? null;
-        $shortResult = array_values(array_filter($result, fn($r) => str_contains($r['source'] ?? '', 'short')))[0] ?? null;
-        
+
+        $longResult = array_values(array_filter($result, fn ($r) => str_contains($r['source'] ?? '', 'long')))[0] ?? null;
+        $shortResult = array_values(array_filter($result, fn ($r) => str_contains($r['source'] ?? '', 'short')))[0] ?? null;
+
         if ($longResult && $shortResult) {
             $this->assertGreaterThan(
                 $shortResult['score_breakdown']['quality_score'],
@@ -304,7 +304,7 @@ class ContextScoringServiceTest extends BaseTestCase
             $this->assertTrue(true);
         }
     }
-    
+
     public function test_quality_score_boosts_structured_content(): void
     {
         $citations = [
@@ -317,19 +317,19 @@ class ContextScoringServiceTest extends BaseTestCase
                 'content' => 'Plain text without any structure or formatting',
                 'source' => 'plain.txt',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'sindaco',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
-        $tableResult = array_values(array_filter($result, fn($r) => str_contains($r['source'] ?? '', 'table')))[0] ?? null;
-        $plainResult = array_values(array_filter($result, fn($r) => str_contains($r['source'] ?? '', 'plain')))[0] ?? null;
-        
+
+        $tableResult = array_values(array_filter($result, fn ($r) => str_contains($r['source'] ?? '', 'table')))[0] ?? null;
+        $plainResult = array_values(array_filter($result, fn ($r) => str_contains($r['source'] ?? '', 'plain')))[0] ?? null;
+
         $this->assertNotNull($tableResult);
         $this->assertNotNull($plainResult);
         $this->assertGreaterThanOrEqual(
@@ -337,7 +337,7 @@ class ContextScoringServiceTest extends BaseTestCase
             $tableResult['score_breakdown']['quality_score']
         );
     }
-    
+
     public function test_skips_citations_without_content_field(): void
     {
         $citations = [
@@ -349,21 +349,21 @@ class ContextScoringServiceTest extends BaseTestCase
                 'content' => 'Valid citation with content',
                 'source' => 'valid.pdf',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'test',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // Only the valid citation should be processed
         $this->assertCount(1, $result);
         $this->assertEquals('valid.pdf', $result[0]['source']);
     }
-    
+
     public function test_handles_chunk_text_fallback(): void
     {
         $citations = [
@@ -371,19 +371,18 @@ class ContextScoringServiceTest extends BaseTestCase
                 'chunk_text' => 'Content in chunk_text field instead of content',
                 'source' => 'test.pdf',
                 'score' => 1.0,
-            ]
+            ],
         ];
-        
+
         $context = [
             'query' => 'content',
-            'tenant_id' => 1
+            'tenant_id' => 1,
         ];
-        
+
         $result = $this->service->scoreCitations($citations, $context);
-        
+
         // Should process chunk_text as fallback for content
         $this->assertCount(1, $result);
         $this->assertGreaterThan(0, $result[0]['composite_score']);
     }
 }
-

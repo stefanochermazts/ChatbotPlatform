@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\TenantForm;
 use App\Models\FormSubmission;
-use App\Services\Form\FormTriggerService;
+use App\Models\TenantForm;
 use App\Services\Form\FormSubmissionService;
-use Illuminate\Http\Request;
+use App\Services\Form\FormTriggerService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * 📝 FormController - API endpoints per form dinamici
@@ -28,7 +28,7 @@ class FormController extends Controller
     /**
      * 🎯 Check Form Triggers
      * Controlla se un messaggio utente deve attivare un form
-     * 
+     *
      * POST /api/v1/forms/check-triggers
      */
     public function checkTriggers(Request $request): JsonResponse
@@ -42,13 +42,13 @@ class FormController extends Controller
                 'conversation_history' => 'array',
                 'conversation_history.*.role' => 'in:user,assistant',
                 'conversation_history.*.content' => 'string',
-                'conversation_history.*.timestamp' => 'nullable|string' // Più flessibile
+                'conversation_history.*.timestamp' => 'nullable|string', // Più flessibile
             ]);
 
             Log::info('📝 Form Trigger Check', [
                 'tenant_id' => $validated['tenant_id'],
                 'message' => substr($validated['message'], 0, 100),
-                'session_id' => $validated['session_id']
+                'session_id' => $validated['session_id'],
             ]);
 
             // Check per trigger
@@ -62,31 +62,31 @@ class FormController extends Controller
             if ($trigger) {
                 return response()->json([
                     'triggered' => true,
-                    'form' => $trigger
+                    'form' => $trigger,
                 ]);
             }
 
             return response()->json([
                 'triggered' => false,
-                'form' => null
+                'form' => null,
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'triggered' => false,
                 'error' => 'Invalid request data',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
             Log::error('📝 Form trigger check error', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'triggered' => false,
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -94,7 +94,7 @@ class FormController extends Controller
     /**
      * 📤 Submit Form
      * Gestisce la sottomissione di un form dal widget
-     * 
+     *
      * POST /api/v1/forms/submit
      */
     public function submit(Request $request): JsonResponse
@@ -109,7 +109,7 @@ class FormController extends Controller
                 'trigger_type' => 'required|string|in:keyword,auto,question,manual',
                 'trigger_value' => 'nullable|string|max:255',
                 'ip_address' => 'nullable|ip',
-                'user_agent' => 'nullable|string|max:500'
+                'user_agent' => 'nullable|string|max:500',
             ]);
 
             // Carica form e verifica accesso
@@ -118,19 +118,19 @@ class FormController extends Controller
                 ->where('active', true)
                 ->first();
 
-            if (!$form) {
+            if (! $form) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Form non trovato o non attivo'
+                    'message' => 'Form non trovato o non attivo',
                 ], 404);
             }
 
             // Verifica tenant (sicurezza)
             $tenantId = $request->attributes->get('tenant_id');
-            if (!$tenantId || $form->tenant_id !== $tenantId) {
+            if (! $tenantId || $form->tenant_id !== $tenantId) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Accesso negato'
+                    'message' => 'Accesso negato',
                 ], 403);
             }
 
@@ -138,7 +138,7 @@ class FormController extends Controller
                 'form_id' => $form->id,
                 'form_name' => $form->name,
                 'tenant_id' => $tenantId,
-                'session_id' => $validated['session_id']
+                'session_id' => $validated['session_id'],
             ]);
 
             // Protezione anti-spam time-based (invece di status-based)
@@ -151,17 +151,17 @@ class FormController extends Controller
             if ($recentSubmission) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Hai già inviato una richiesta simile di recente. Attendi 2 minuti prima di inviarne un\'altra.'
+                    'message' => 'Hai già inviato una richiesta simile di recente. Attendi 2 minuti prima di inviarne un\'altra.',
                 ], 409);
             }
 
             // Validazione dinamica dei campi del form
             $fieldValidation = $this->validateFormFields($form, $validated['form_data']);
-            if (!$fieldValidation['valid']) {
+            if (! $fieldValidation['valid']) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Alcuni campi non sono validi',
-                    'errors' => $fieldValidation['errors']
+                    'errors' => $fieldValidation['errors'],
                 ], 422);
             }
 
@@ -181,26 +181,26 @@ class FormController extends Controller
                 'success' => true,
                 'submission_id' => $submission->id,
                 'message' => $form->auto_response_message ?? 'Richiesta inviata con successo! Ti risponderemo al più presto.',
-                'confirmation_email_sent' => $submission->confirmation_email_sent
+                'confirmation_email_sent' => $submission->confirmation_email_sent,
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Dati non validi',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
             Log::error('📝 Form submission error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'request_data' => $request->except(['form_data']) // Exclude form data from logs for privacy
+                'request_data' => $request->except(['form_data']), // Exclude form data from logs for privacy
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Errore interno del server. Riprova più tardi.'
+                'message' => 'Errore interno del server. Riprova più tardi.',
             ], 500);
         }
     }
@@ -208,7 +208,7 @@ class FormController extends Controller
     /**
      * 📋 List User Submissions
      * Elenca le submissions dell'utente per la sessione corrente
-     * 
+     *
      * GET /api/v1/forms/submissions
      */
     public function listSubmissions(Request $request): JsonResponse
@@ -216,7 +216,7 @@ class FormController extends Controller
         try {
             $validated = $request->validate([
                 'session_id' => 'required|string|max:255',
-                'limit' => 'integer|min:1|max:50'
+                'limit' => 'integer|min:1|max:50',
             ]);
 
             $tenantId = $request->user()->tenant_id;
@@ -235,32 +235,29 @@ class FormController extends Controller
                     'form_name' => $submission->tenantForm->name,
                     'status' => $submission->status,
                     'submitted_at' => $submission->submitted_at->format('Y-m-d H:i:s'),
-                    'form_data' => $submission->getFormattedDataAttribute()
+                    'form_data' => $submission->getFormattedDataAttribute(),
                 ];
             });
 
             return response()->json([
                 'success' => true,
-                'submissions' => $formattedSubmissions
+                'submissions' => $formattedSubmissions,
             ]);
 
         } catch (\Exception $e) {
             Log::error('📝 List submissions error', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Errore nel recupero delle richieste'
+                'message' => 'Errore nel recupero delle richieste',
             ], 500);
         }
     }
 
     /**
      * ✅ Validazione dinamica dei campi del form
-     * @param TenantForm $form
-     * @param array $formData
-     * @return array
      */
     private function validateFormFields(TenantForm $form, array $formData): array
     {
@@ -270,7 +267,7 @@ class FormController extends Controller
 
         foreach ($form->fields as $field) {
             $fieldRules = [];
-            
+
             // Required validation
             if ($field->required) {
                 $fieldRules[] = 'required';
@@ -296,7 +293,7 @@ class FormController extends Controller
                 case 'radio':
                     if ($field->options) {
                         $validOptions = array_keys($field->options);
-                        $fieldRules[] = 'in:' . implode(',', $validOptions);
+                        $fieldRules[] = 'in:'.implode(',', $validOptions);
                     }
                     break;
                 case 'checkbox':
@@ -304,7 +301,7 @@ class FormController extends Controller
                     if ($field->options) {
                         $validOptions = array_keys($field->options);
                         $fieldRules[] = 'array';
-                        $rules[$field->name . '.*'] = 'in:' . implode(',', $validOptions);
+                        $rules[$field->name.'.*'] = 'in:'.implode(',', $validOptions);
                     }
                     break;
                 case 'textarea':
@@ -319,10 +316,10 @@ class FormController extends Controller
 
             // Custom validation rules from field configuration
             if ($field->validation_rules) {
-                $customRules = is_array($field->validation_rules) 
-                    ? $field->validation_rules 
+                $customRules = is_array($field->validation_rules)
+                    ? $field->validation_rules
                     : json_decode($field->validation_rules, true);
-                
+
                 if (is_array($customRules)) {
                     $fieldRules = array_merge($fieldRules, $customRules);
                 }
@@ -330,14 +327,14 @@ class FormController extends Controller
 
             $rules[$field->name] = $fieldRules;
             $attributes[$field->name] = $field->label;
-            
+
             // Custom error messages
             if ($field->required) {
-                $messages[$field->name . '.required'] = "Il campo {$field->label} è obbligatorio";
+                $messages[$field->name.'.required'] = "Il campo {$field->label} è obbligatorio";
             }
-            
+
             if ($field->type === 'email') {
-                $messages[$field->name . '.email'] = "Il campo {$field->label} deve essere un indirizzo email valido";
+                $messages[$field->name.'.email'] = "Il campo {$field->label} deve essere un indirizzo email valido";
             }
         }
 
@@ -346,13 +343,13 @@ class FormController extends Controller
         if ($validator->fails()) {
             return [
                 'valid' => false,
-                'errors' => $validator->errors()->toArray()
+                'errors' => $validator->errors()->toArray(),
             ];
         }
 
         return [
             'valid' => true,
-            'errors' => []
+            'errors' => [],
         ];
     }
 }

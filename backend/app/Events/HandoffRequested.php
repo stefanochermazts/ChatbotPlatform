@@ -5,7 +5,6 @@ namespace App\Events;
 use App\Models\HandoffRequest;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -28,7 +27,7 @@ class HandoffRequested implements ShouldBroadcast
     {
         return [
             // 👨‍💼 Channel per tutti gli operatori del tenant
-            new PrivateChannel('tenant.' . $this->handoffRequest->tenant_id . '.operators'),
+            new PrivateChannel('tenant.'.$this->handoffRequest->tenant_id.'.operators'),
             // 🚨 Channel priorità alta per handoff urgenti
             new PrivateChannel('handoffs.urgent'),
         ];
@@ -46,15 +45,15 @@ class HandoffRequested implements ShouldBroadcast
                 'trigger_type' => $this->handoffRequest->trigger_type,
                 'reason' => $this->handoffRequest->reason,
                 'requested_at' => $this->handoffRequest->requested_at->toISOString(),
-                'age_minutes' => $this->handoffRequest->getAgeInMinutes()
+                'age_minutes' => $this->handoffRequest->getAgeInMinutes(),
             ],
             'session' => [
                 'session_id' => $this->handoffRequest->conversationSession->session_id,
                 'user_identifier' => $this->handoffRequest->conversationSession->user_identifier,
                 'channel' => $this->handoffRequest->conversationSession->channel,
-                'last_activity_at' => $this->handoffRequest->conversationSession->last_activity_at->toISOString()
+                'last_activity_at' => $this->handoffRequest->conversationSession->last_activity_at->toISOString(),
             ],
-            'tenant_id' => $this->handoffRequest->tenant_id
+            'tenant_id' => $this->handoffRequest->tenant_id,
         ];
     }
 

@@ -6,11 +6,8 @@ namespace App\Exceptions;
 
 /**
  * Exception thrown when file upload fails
- * 
- * @package App\Exceptions
  */
 class UploadException extends \RuntimeException
 {
     //
 }
-

@@ -2,13 +2,13 @@
 
 /**
  * Script di debug per testare l'autenticazione Horizon
- * 
+ *
  * Esegui: php test-horizon-auth.php
  */
 
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__.'/vendor/autoload.php';
 
-$app = require_once __DIR__ . '/bootstrap/app.php';
+$app = require_once __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
@@ -16,14 +16,14 @@ echo "🔍 DEBUG HORIZON AUTHENTICATION\n";
 echo "================================\n\n";
 
 // 1. Verifica ambiente
-echo "1️⃣ Ambiente: " . app()->environment() . "\n";
-echo "   APP_ENV: " . env('APP_ENV') . "\n\n";
+echo '1️⃣ Ambiente: '.app()->environment()."\n";
+echo '   APP_ENV: '.env('APP_ENV')."\n\n";
 
 // 2. Verifica configurazione Horizon
 echo "2️⃣ Configurazione Horizon:\n";
-echo "   Domain: " . config('horizon.domain') . "\n";
-echo "   Path: " . config('horizon.path') . "\n";
-echo "   Middleware: " . json_encode(config('horizon.middleware')) . "\n\n";
+echo '   Domain: '.config('horizon.domain')."\n";
+echo '   Path: '.config('horizon.path')."\n";
+echo '   Middleware: '.json_encode(config('horizon.middleware'))."\n\n";
 
 // 3. Verifica utente nel database
 echo "3️⃣ Verifica utente stefano@crowdm.com:\n";
@@ -33,7 +33,7 @@ if ($user) {
     echo "      - ID: {$user->id}\n";
     echo "      - Email: {$user->email}\n";
     echo "      - Name: {$user->name}\n";
-    echo "      - Tenant ID: " . ($user->tenant_id ?? 'N/A') . "\n";
+    echo '      - Tenant ID: '.($user->tenant_id ?? 'N/A')."\n";
 } else {
     echo "   ❌ Utente NON trovato nel database!\n";
 }
@@ -76,4 +76,3 @@ echo "\n";
 
 echo "================================\n";
 echo "✅ Debug completato\n";
-

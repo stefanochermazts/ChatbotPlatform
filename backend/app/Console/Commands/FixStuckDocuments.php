@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use App\Models\Document;
 use App\Jobs\IngestUploadedDocumentJob;
+use App\Models\Document;
+use Illuminate\Console\Command;
 
 class FixStuckDocuments extends Command
 {
@@ -38,6 +38,7 @@ class FixStuckDocuments extends Command
 
         if ($stuckDocuments->isEmpty()) {
             $this->info('✅ Nessun documento bloccato trovato');
+
             return Command::SUCCESS;
         }
 
@@ -50,7 +51,7 @@ class FixStuckDocuments extends Command
                 $doc->tenant_id,
                 \Illuminate\Support\Str::limit($doc->title, 40),
                 $doc->updated_at->diffForHumans(),
-                $doc->source ?? 'N/A'
+                $doc->source ?? 'N/A',
             ];
         }
 
@@ -58,11 +59,13 @@ class FixStuckDocuments extends Command
 
         if ($dryRun) {
             $this->info('🔍 Dry run - nessuna modifica applicata');
+
             return Command::SUCCESS;
         }
 
-        if (!$this->confirm('Ripristinare questi documenti a stato pending?')) {
+        if (! $this->confirm('Ripristinare questi documenti a stato pending?')) {
             $this->info('Operazione annullata');
+
             return Command::SUCCESS;
         }
 
@@ -79,16 +82,16 @@ class FixStuckDocuments extends Command
                 $document->update([
                     'ingestion_status' => 'pending',
                     'ingestion_error' => null,
-                    'progress_percentage' => 0
+                    'progress_percentage' => 0,
                 ]);
 
                 // Riavvia job di ingestion
                 IngestUploadedDocumentJob::dispatch($document->id)->onQueue('ingestion');
-                
+
                 $fixed++;
             } catch (\Exception $e) {
                 $this->newLine();
-                $this->error("❌ Errore riparando doc #{$document->id}: " . $e->getMessage());
+                $this->error("❌ Errore riparando doc #{$document->id}: ".$e->getMessage());
                 $failed++;
             }
 
@@ -98,7 +101,7 @@ class FixStuckDocuments extends Command
         $bar->finish();
         $this->newLine(2);
 
-        $this->info("📊 Riparazione completata!");
+        $this->info('📊 Riparazione completata!');
         $this->table(['Risultato', 'Conteggio'], [
             ['✅ Riparati', $fixed],
             ['❌ Falliti', $failed],

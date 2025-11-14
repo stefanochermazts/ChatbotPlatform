@@ -9,9 +9,8 @@ class KnowledgeBaseSelector
 {
     public function __construct(
         private readonly TextSearchService $text,
-        private readonly TenantRagConfigService $tenantConfig = new TenantRagConfigService()
-    ) {
-    }
+        private readonly TenantRagConfigService $tenantConfig = new TenantRagConfigService
+    ) {}
 
     /**
      * Sceglie automaticamente la KB per una query di un tenant.
@@ -30,11 +29,11 @@ class KnowledgeBaseSelector
         $uploadBoost = (float) ($kbConfig['upload_boost'] ?? 1.0);
         $titleKeywordBoosts = (array) ($kbConfig['title_keyword_boosts'] ?? []);
         $locationBoosts = (array) ($kbConfig['location_boosts'] ?? []);
-        
-        // Normalizza la query per evitare che punteggiatura e parole di contesto 
+
+        // Normalizza la query per evitare che punteggiatura e parole di contesto
         // influenzino negativamente la selezione della KB
         $normalizedQuery = $this->normalizeQueryForKbSelection($query);
-        
+
         // 🔍 LOG: Query normalizzazione per debug
         \Log::info('KB Selection Query Normalization', [
             'tenant_id' => $tenantId,
@@ -43,7 +42,7 @@ class KnowledgeBaseSelector
             'kb_selection_mode' => $mode,
             'bm25_boost_factor' => $bm25BoostFactor,
             'vector_boost_factor' => $vectorBoostFactor,
-            'caller' => 'KnowledgeBaseSelector'
+            'caller' => 'KnowledgeBaseSelector',
         ]);
         // Boost per keyword specifiche SOW (usa query normalizzata)
         $sowKeywords = ['sow', 'statement of work', 'contratto quadro', 'contratti quadro', 'servizi it'];
@@ -54,21 +53,22 @@ class KnowledgeBaseSelector
                 $kbs = DB::table('knowledge_bases as kb')
                     ->join('documents as d', 'd.knowledge_base_id', '=', 'kb.id')
                     ->where('kb.tenant_id', $tenantId)
-                    ->where(function($q) {
+                    ->where(function ($q) {
                         $q->where('d.title', 'like', '%SOW%')
-                          ->orWhere('d.title', 'like', '%Statement of Work%')
-                          ->orWhere('d.title', 'like', '%Contratto Quadro%');
+                            ->orWhere('d.title', 'like', '%Statement of Work%')
+                            ->orWhere('d.title', 'like', '%Contratto Quadro%');
                     })
                     ->select('kb.id', 'kb.name')
                     ->distinct()
                     ->get();
-                
+
                 if ($kbs->isNotEmpty()) {
                     $kb = $kbs->first();
+
                     return [
                         'knowledge_base_id' => $kb->id,
                         'kb_name' => $kb->name,
-                        'reason' => 'sow_keyword_match'
+                        'reason' => 'sow_keyword_match',
                     ];
                 }
             }
@@ -78,11 +78,12 @@ class KnowledgeBaseSelector
         $hits = $this->text->searchTopK($tenantId, $normalizedQuery, 50, null);
         if ($hits === []) {
             $kb = $this->getDefaultKb($tenantId);
+
             return ['knowledge_base_id' => $kb?->id, 'kb_name' => $kb?->name, 'reason' => 'fallback_default_no_hits'];
         }
 
         // Mappa document_id -> knowledge_base_id
-        $docIds = array_values(array_unique(array_map(fn($h) => (int) $h['document_id'], $hits)));
+        $docIds = array_values(array_unique(array_map(fn ($h) => (int) $h['document_id'], $hits)));
         $rows = DB::table('documents')
             ->select(['id', 'knowledge_base_id', 'source', 'title'])
             ->whereIn('id', $docIds)
@@ -108,11 +109,13 @@ class KnowledgeBaseSelector
             $docId = (int) $h['document_id'];
             $meta = $docMeta[$docId] ?? null;
             $kbId = $meta['kb'] ?? 0;
-            if ($kbId <= 0) { continue; }
+            if ($kbId <= 0) {
+                continue;
+            }
             // Applica boost factor BM25 (dal config admin)
             $boostMultiplier = $bm25BoostFactor;
             // Boost documenti caricati manualmente (configurabile)
-            if (!empty($meta['source']) && $meta['source'] === 'upload' && $uploadBoost > 0) {
+            if (! empty($meta['source']) && $meta['source'] === 'upload' && $uploadBoost > 0) {
                 $boostMultiplier *= $uploadBoost;
             }
             // Boost per keyword nel titolo (configurabili)
@@ -138,21 +141,22 @@ class KnowledgeBaseSelector
 
         if ($scoreByKb === []) {
             $kb = $this->getDefaultKb($tenantId);
+
             return ['knowledge_base_id' => $kb?->id, 'kb_name' => $kb?->name, 'reason' => 'fallback_default_no_kb_mapping'];
         }
 
         arsort($scoreByKb);
-        
+
         // 🔍 Verifica che la KB selezionata abbia effettivamente documenti
         foreach ($scoreByKb as $kbId => $score) {
             $kbDocCount = DB::table('documents')
                 ->where('tenant_id', $tenantId)
                 ->where('knowledge_base_id', $kbId)
                 ->count();
-                
+
             if ($kbDocCount > 0) {
                 $bestKb = KnowledgeBase::query()->where('tenant_id', $tenantId)->find($kbId);
-                
+
                 // 🔍 LOG: Dettagli selezione KB con validazione
                 \Log::info('KB Selection Result', [
                     'tenant_id' => $tenantId,
@@ -164,9 +168,9 @@ class KnowledgeBaseSelector
                     'score_by_kb' => $scoreByKb,
                     'total_hits' => count($hits),
                     'kb_doc_count' => $kbDocCount,
-                    'reason' => 'bm25_with_validation'
+                    'reason' => 'bm25_with_validation',
                 ]);
-                
+
                 return [
                     'knowledge_base_id' => $bestKb?->id,
                     'kb_name' => $bestKb?->name,
@@ -174,7 +178,7 @@ class KnowledgeBaseSelector
                 ];
             }
         }
-        
+
         // Se tutte le KB con score hanno 0 documenti, vai in fallback
         $kb = $this->getDefaultKb($tenantId);
         \Log::info('KB Selection Fallback', [
@@ -182,17 +186,20 @@ class KnowledgeBaseSelector
             'query' => $query,
             'reason' => 'all_scored_kbs_empty',
             'fallback_kb_id' => $kb?->id,
-            'fallback_kb_name' => $kb?->name
+            'fallback_kb_name' => $kb?->name,
         ]);
-        
+
         return ['knowledge_base_id' => $kb?->id, 'kb_name' => $kb?->name, 'reason' => 'fallback_scored_kbs_empty'];
     }
 
     private function getDefaultKb(int $tenantId): ?KnowledgeBase
     {
         $kb = KnowledgeBase::query()->where('tenant_id', $tenantId)->where('is_default', true)->first();
-        if ($kb) return $kb;
+        if ($kb) {
+            return $kb;
+        }
         $kb = KnowledgeBase::query()->where('tenant_id', $tenantId)->orderBy('id')->first();
+
         return $kb;
     }
 
@@ -200,7 +207,7 @@ class KnowledgeBaseSelector
      * Normalizza una query per la selezione della KB rimuovendo elementi che possono
      * interferire con la corretta identificazione della KB più rilevante.
      *
-     * @param string $query Query originale dell'utente
+     * @param  string  $query  Query originale dell'utente
      * @return string Query normalizzata per la selezione KB
      */
     private function normalizeQueryForKbSelection(string $query): string
@@ -218,27 +225,25 @@ class KnowledgeBaseSelector
             '/\b(iniziativa|progetto|programma)\b/iu',         // Parole generiche che causano confusione
             '/\b(che|che cosa|quale)\b/iu',                    // Altri interrogativi
         ];
-        
+
         $normalized = $query;
         foreach ($stopWordsPattern as $pattern) {
             $normalized = preg_replace($pattern, ' ', $normalized);
         }
-        
+
         // Step 2: Rimuovi punteggiatura che può interferire con BM25
         $normalized = str_replace(['"', "'", '`'], '', $normalized);      // Virgolette semplici
         $normalized = preg_replace('/[?.!;,:]/', ' ', $normalized);       // Punteggiatura standard
-        
+
         // Step 3: Normalizza spazi multipli e trim
         $normalized = preg_replace('/\s+/', ' ', $normalized);
         $normalized = trim($normalized);
-        
+
         // Step 4: Se la query è diventata troppo corta o vuota, usa l'originale
         if (mb_strlen($normalized) < 3) {
             return $query;
         }
-        
+
         return $normalized;
     }
 }
-
-

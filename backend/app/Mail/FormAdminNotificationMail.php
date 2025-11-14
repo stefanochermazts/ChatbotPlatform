@@ -8,7 +8,6 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * 📢 FormAdminNotificationMail
@@ -37,7 +36,7 @@ class FormAdminNotificationMail extends Mailable
         $tenant = $this->submission->tenant;
 
         $subject = "🚨 Nuova sottomissione form: {$form->name}";
-        
+
         if ($this->submission->user_email) {
             $subject .= " da {$this->submission->user_email}";
         }
@@ -45,7 +44,7 @@ class FormAdminNotificationMail extends Mailable
         return new Envelope(
             from: config('mail.from.address', 'noreply@chatbotplatform.com'),
             subject: $subject,
-            replyTo: $this->submission->user_email 
+            replyTo: $this->submission->user_email
                 ? [$this->submission->user_email]
                 : null
         );
@@ -103,7 +102,7 @@ class FormAdminNotificationMail extends Mailable
      */
     private function getChatContextSummary(): ?string
     {
-        if (!$this->submission->chat_context || empty($this->submission->chat_context)) {
+        if (! $this->submission->chat_context || empty($this->submission->chat_context)) {
             return null;
         }
 
@@ -148,11 +147,11 @@ class FormAdminNotificationMail extends Mailable
     {
         // Cerca parole chiave di urgenza
         $urgentKeywords = ['urgente', 'immediato', 'subito', 'emergenza', 'problema', 'errore'];
-        
+
         $text = strtolower($this->submission->trigger_value ?? '');
         if ($this->submission->chat_context) {
             foreach ($this->submission->chat_context as $message) {
-                $text .= ' ' . strtolower($message['content'] ?? '');
+                $text .= ' '.strtolower($message['content'] ?? '');
             }
         }
 
@@ -163,8 +162,8 @@ class FormAdminNotificationMail extends Mailable
         }
 
         // Se è stato triggerato automaticamente dopo molti messaggi
-        if ($this->submission->trigger_type === 'auto' && 
-            is_array($this->submission->chat_context) && 
+        if ($this->submission->trigger_type === 'auto' &&
+            is_array($this->submission->chat_context) &&
             count($this->submission->chat_context) >= 3) {
             return 'MEDIA';
         }
@@ -178,20 +177,8 @@ class FormAdminNotificationMail extends Mailable
     public function build(): self
     {
         $viewData = $this->viewData();
-        
+
         return $this->view('emails.form-admin-notification', $viewData)
-                   ->with($viewData);
+            ->with($viewData);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-

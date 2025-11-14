@@ -4,8 +4,8 @@ namespace App\Jobs;
 
 use App\Jobs\Concerns\HandlesFailureGracefully;
 use App\Models\Tenant;
-use App\Services\Scraper\WebScraperService;
 use App\Services\Scraper\ScrapingHealthMonitor;
+use App\Services\Scraper\WebScraperService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -14,10 +14,12 @@ use Illuminate\Queue\SerializesModels;
 
 class RunWebScrapingJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, HandlesFailureGracefully;
+    use Dispatchable, HandlesFailureGracefully, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 3;
+
     public $timeout = 7200; // 2 ore per scraping ricorsivi complessi con JavaScript
+
     public $backoff = [300, 600, 1200]; // 5min, 10min, 20min retry delays
 
     public function __construct(
@@ -32,54 +34,55 @@ class RunWebScrapingJob implements ShouldQueue
     {
         // Verifica se lo scraping è disabilitato per questo tenant
         if ($monitor->isScrapingDisabled($this->tenantId)) {
-            \Log::warning("Scraping saltato - temporaneamente disabilitato", [
+            \Log::warning('Scraping saltato - temporaneamente disabilitato', [
                 'tenant_id' => $this->tenantId,
-                'scraper_config_id' => $this->scraperConfigId
+                'scraper_config_id' => $this->scraperConfigId,
             ]);
+
             return;
         }
 
         try {
             // 🚀 Determina modalità: parallela (default in produzione) o sequenziale
             $useParallel = $this->useParallel ?? (app()->environment('production') || config('app.scraper_parallel_mode', true));
-            
+
             if ($useParallel) {
-                \Log::info("🚀 [PARALLEL-MODE] Avvio scraping parallelo", [
+                \Log::info('🚀 [PARALLEL-MODE] Avvio scraping parallelo', [
                     'tenant_id' => $this->tenantId,
                     'scraper_config_id' => $this->scraperConfigId,
-                    'environment' => app()->environment()
+                    'environment' => app()->environment(),
                 ]);
-                
+
                 $result = $scraper->scrapeForTenantParallel($this->tenantId, $this->scraperConfigId);
             } else {
-                \Log::info("📝 [SEQUENTIAL-MODE] Avvio scraping sequenziale", [
+                \Log::info('📝 [SEQUENTIAL-MODE] Avvio scraping sequenziale', [
                     'tenant_id' => $this->tenantId,
-                    'scraper_config_id' => $this->scraperConfigId
+                    'scraper_config_id' => $this->scraperConfigId,
                 ]);
-                
+
                 $result = $scraper->scrapeForTenant($this->tenantId, $this->scraperConfigId);
             }
-            
-            \Log::info("Web scraping completato", [
+
+            \Log::info('Web scraping completato', [
                 'tenant_id' => $this->tenantId,
                 'scraper_config_id' => $this->scraperConfigId,
                 'mode' => $useParallel ? 'parallel' : 'sequential',
                 'urls_visited' => $result['urls_visited'] ?? 0,
-                'documents_saved' => $result['documents_saved'] ?? 0
+                'documents_saved' => $result['documents_saved'] ?? 0,
             ]);
-            
+
             // Reset contatori errori se il job ha successo
             if (($result['urls_visited'] ?? 0) > 0) {
                 $monitor->resetErrorCounters($this->tenantId);
             }
-            
+
         } catch (\Exception $e) {
-            \Log::error("Errore durante web scraping", [
+            \Log::error('Errore durante web scraping', [
                 'tenant_id' => $this->tenantId,
                 'error' => $e->getMessage(),
-                'attempts' => $this->attempts()
+                'attempts' => $this->attempts(),
             ]);
-            
+
             throw $e;
         }
     }

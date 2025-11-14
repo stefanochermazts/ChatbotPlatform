@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * 🎯 CompleteQueryDetector
- * 
+ *
  * Rileva quando una query richiede completezza assoluta invece di rilevanza semantica.
  * Per queste query, bypassa il retrieval normale e recupera tutti i chunk rilevanti.
  */
@@ -21,28 +21,28 @@ class CompleteQueryDetector
         '/\belenco\s+(?:completo|totale|integrale)/i',
         '/\b(?:elenco|lista)\s+(?:di\s+)?(?:tutti|tutte)/i',
         '/\b(?:completo|completa|intero|intera|totale)\s+(?:elenco|lista)/i',
-        
+
         // Numeri specifici che indicano completezza
         '/\b(?:23|ventitr[eè]|16|sedici)\s+(?:consiglieri|membri|persone)/i',
         '/\btut[it]e?\s+(?:e\s+)?(?:23|ventitr[eè]|16|sedici)/i',
-        
+
         // Keywords di completezza - ESTESO
         '/\b(?:ogni|ciascun[oa]?|qualsiasi)\s+(?:consigliere|assessore|membro)/i',
         '/\bsenza\s+(?:eccezioni?|esclusioni?)/i',
         '/\b(?:giunta\s+e\s+consiglio|consiglio\s+e\s+giunta)/i',
         '/\borgani\s+politico[-\s]?amministrativ[io]/i',
-        
+
         // Pattern aggiuntivi comuni
         '/\b(?:chi\s+sono\s+tutti|quali\s+sono\s+tutti)\s+(?:i|gli)\s+(?:consiglieri|assessori)/i',
         '/\b(?:nomi\s+di\s+tutti|nomi\s+completi)/i',
         '/\b(?:intera\s+amministrazione|tutta\s+l[\'\']amministrazione)/i',
         '/\b(?:composizione\s+(?:completa|totale))/i',
         '/\b(?:struttura\s+(?:completa|totale))\s+(?:del\s+)?(?:comune|consiglio|giunta)/i',
-        
+
         // Pattern per servizi e altri domini
         '/\b(?:tutti|tutte)\s+(?:i|le|gli)?\s*(?:servizi|uffici|dipartimenti)/i',
         '/\b(?:elenco|lista)\s+(?:servizi|uffici|contatti)/i',
-        '/\b(?:orari\s+di\s+tutti|numeri\s+di\s+tutti)/i'
+        '/\b(?:orari\s+di\s+tutti|numeri\s+di\s+tutti)/i',
     ];
 
     /**
@@ -52,33 +52,33 @@ class CompleteQueryDetector
         'consiglieri' => [
             'keywords' => ['consigliere', 'consiglieri', 'consiglio comunale', 'presidente consiglio'],
             'document_patterns' => ['organi-politico-amministrativo'],
-            'chunk_threshold' => 15  // Minimo chunk da recuperare
+            'chunk_threshold' => 15,  // Minimo chunk da recuperare
         ],
         'assessori' => [
             'keywords' => ['assessore', 'assessori', 'giunta', 'vice sindaco'],
             'document_patterns' => ['organi-politico-amministrativo'],
-            'chunk_threshold' => 5
+            'chunk_threshold' => 5,
         ],
         'organi_politici' => [
             'keywords' => ['organi politico', 'amministrativo', 'politico-amministrativo', 'sindaco'],
             'document_patterns' => ['organi-politico-amministrativo'],
-            'chunk_threshold' => 25
+            'chunk_threshold' => 25,
         ],
         'servizi' => [
             'keywords' => ['servizi', 'uffici', 'dipartimenti', 'settori'],
             'document_patterns' => ['servizi', 'uffici', 'contatti'],
-            'chunk_threshold' => 20
+            'chunk_threshold' => 20,
         ],
         'contatti' => [
             'keywords' => ['contatti', 'telefoni', 'numeri', 'indirizzi'],
             'document_patterns' => ['numeri-indirizzi-utili', 'contatti'],
-            'chunk_threshold' => 15
+            'chunk_threshold' => 15,
         ],
         'orari' => [
             'keywords' => ['orari', 'apertura', 'chiusura', 'ricevimento'],
             'document_patterns' => ['orari', 'servizi'],
-            'chunk_threshold' => 10
-        ]
+            'chunk_threshold' => 10,
+        ],
     ];
 
     /**
@@ -87,10 +87,10 @@ class CompleteQueryDetector
     public function detectCompleteIntent(string $query): array
     {
         $query = trim($query);
-        
+
         Log::debug('🔍 [COMPLETE-DETECTOR] Analyzing query', [
             'query' => $query,
-            'length' => strlen($query)
+            'length' => strlen($query),
         ]);
 
         // STEP 1: Controllo pattern di completezza
@@ -98,15 +98,15 @@ class CompleteQueryDetector
             if (preg_match($pattern, $query)) {
                 Log::info('✅ [COMPLETE-DETECTOR] Complete intent detected by pattern', [
                     'query' => $query,
-                    'pattern' => $pattern
+                    'pattern' => $pattern,
                 ]);
-                
+
                 return [
                     'is_complete_query' => true,
                     'intent_type' => 'pattern_based',
                     'detected_pattern' => $pattern,
                     'topic' => $this->detectTopic($query),
-                    'confidence' => 0.9
+                    'confidence' => 0.9,
                 ];
             }
         }
@@ -119,21 +119,21 @@ class CompleteQueryDetector
                     $keywordMatches++;
                 }
             }
-            
+
             // Se trova multiple keywords del topic = probabile complete query
             if ($keywordMatches >= 2) {
                 Log::info('✅ [COMPLETE-DETECTOR] Complete intent detected by topic', [
                     'query' => $query,
                     'topic' => $topicName,
-                    'keyword_matches' => $keywordMatches
+                    'keyword_matches' => $keywordMatches,
                 ]);
-                
+
                 return [
                     'is_complete_query' => true,
                     'intent_type' => 'topic_based',
                     'topic' => $topicName,
                     'chunk_threshold' => $config['chunk_threshold'],
-                    'confidence' => min(0.7 + ($keywordMatches * 0.1), 0.95)
+                    'confidence' => min(0.7 + ($keywordMatches * 0.1), 0.95),
                 ];
             }
         }
@@ -143,7 +143,7 @@ class CompleteQueryDetector
             'is_complete_query' => false,
             'intent_type' => 'normal',
             'topic' => null,
-            'confidence' => 0.0
+            'confidence' => 0.0,
         ];
     }
 
@@ -159,7 +159,7 @@ class CompleteQueryDetector
                 }
             }
         }
-        
+
         return null;
     }
 
@@ -170,7 +170,7 @@ class CompleteQueryDetector
     {
         $topic = $intentData['topic'] ?? 'generic';
         $chunkThreshold = $intentData['chunk_threshold'] ?? 25;
-        
+
         return [
             'strategy' => 'complete_retrieval',
             'vector_top_k' => 200,
@@ -178,7 +178,7 @@ class CompleteQueryDetector
             'final_top_k' => $chunkThreshold + 10, // Margine di sicurezza
             'reranker_driver' => 'none', // NO reranking per completezza
             'document_patterns' => self::COMPLETE_TOPICS[$topic]['document_patterns'] ?? [],
-            'enable_document_level_retrieval' => true
+            'enable_document_level_retrieval' => true,
         ];
     }
 
@@ -192,8 +192,7 @@ class CompleteQueryDetector
                 return true;
             }
         }
+
         return false;
     }
 }
-
-

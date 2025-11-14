@@ -2,8 +2,8 @@
 
 namespace App\Mail;
 
-use App\Models\FormSubmission;
 use App\Models\FormResponse;
+use App\Models\FormSubmission;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -36,14 +36,14 @@ class FormAdminResponseMail extends Mailable
         $form = $this->submission->tenantForm;
         $tenant = $this->submission->tenant;
 
-        $subject = $this->response->email_subject ?? 
+        $subject = $this->response->email_subject ??
                   "Re: {$form->name} - Risposta alla tua richiesta";
 
         return Envelope::create(
             from: config('mail.from.address', 'noreply@chatbotplatform.com'),
             fromName: $tenant->name ?? config('mail.from.name', 'ChatBot Platform'),
             subject: $subject,
-            replyTo: $form->admin_notification_email 
+            replyTo: $form->admin_notification_email
                 ? [$form->admin_notification_email]
                 : null
         );
@@ -84,62 +84,8 @@ class FormAdminResponseMail extends Mailable
     public function build(): self
     {
         $viewData = $this->viewData();
-        
+
         return $this->view('emails.form-admin-response', $viewData)
-                   ->with($viewData);
+            ->with($viewData);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

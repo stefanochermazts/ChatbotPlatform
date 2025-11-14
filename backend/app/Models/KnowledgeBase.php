@@ -32,5 +32,3 @@ class KnowledgeBase extends Model
         return $this->hasMany(Document::class);
     }
 }
-
-

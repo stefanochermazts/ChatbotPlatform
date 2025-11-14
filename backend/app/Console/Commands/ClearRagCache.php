@@ -44,26 +44,27 @@ class ClearRagCache extends Command
         }
 
         $this->info("🔍 Pattern di ricerca: {$pattern}");
-        $this->info("🏃 Modalità: " . ($isDryRun ? 'DRY RUN (solo visualizzazione)' : 'ELIMINAZIONE EFFETTIVA'));
+        $this->info('🏃 Modalità: '.($isDryRun ? 'DRY RUN (solo visualizzazione)' : 'ELIMINAZIONE EFFETTIVA'));
         $this->newLine();
 
         try {
             // Ottieni tutte le chiavi che corrispondono al pattern
             $keys = $this->findCacheKeys($pattern);
-            
+
             if (empty($keys)) {
                 $this->warn("❌ Nessuna chiave trovata con pattern: {$pattern}");
+
                 return 0;
             }
 
-            $this->info("📋 Trovate " . count($keys) . " chiavi cache:");
+            $this->info('📋 Trovate '.count($keys).' chiavi cache:');
 
             // Raggruppa le chiavi per tipo per una visualizzazione migliore
             $groupedKeys = $this->groupKeysByType($keys);
-            
+
             foreach ($groupedKeys as $type => $typeKeys) {
-                $this->line("  📂 {$type}: " . count($typeKeys) . " chiavi");
-                
+                $this->line("  📂 {$type}: ".count($typeKeys).' chiavi');
+
                 if ($this->option('verbose')) {
                     foreach ($typeKeys as $key) {
                         $this->line("    - {$key}");
@@ -74,32 +75,35 @@ class ClearRagCache extends Command
             $this->newLine();
 
             if ($isDryRun) {
-                $this->warn("🏃 DRY RUN: Nessuna chiave è stata effettivamente cancellata");
+                $this->warn('🏃 DRY RUN: Nessuna chiave è stata effettivamente cancellata');
+
                 return 0;
             }
 
             // Conferma prima di cancellare (solo se non è dry-run)
-            if (!$this->confirm("⚠️  Sei sicuro di voler cancellare tutte queste " . count($keys) . " chiavi cache?")) {
-                $this->info("❌ Operazione annullata");
+            if (! $this->confirm('⚠️  Sei sicuro di voler cancellare tutte queste '.count($keys).' chiavi cache?')) {
+                $this->info('❌ Operazione annullata');
+
                 return 0;
             }
 
             // Cancella le chiavi
             $deleted = $this->deleteCacheKeys($keys);
 
-            $this->info("✅ Cache RAG pulita con successo!");
+            $this->info('✅ Cache RAG pulita con successo!');
             $this->line("🗑️  Chiavi cancellate: {$deleted}");
 
             // Verifica che le chiavi siano state effettivamente cancellate
             $remainingKeys = $this->findCacheKeys($pattern);
             if (count($remainingKeys) > 0) {
-                $this->warn("⚠️  Alcune chiavi potrebbero non essere state cancellate: " . count($remainingKeys));
+                $this->warn('⚠️  Alcune chiavi potrebbero non essere state cancellate: '.count($remainingKeys));
             } else {
-                $this->info("✅ Tutte le chiavi sono state cancellate correttamente");
+                $this->info('✅ Tutte le chiavi sono state cancellate correttamente');
             }
 
         } catch (\Exception $e) {
-            $this->error("❌ Errore durante la pulizia cache: " . $e->getMessage());
+            $this->error('❌ Errore durante la pulizia cache: '.$e->getMessage());
+
             return 1;
         }
 
@@ -115,24 +119,24 @@ class ClearRagCache extends Command
             // Ottieni le chiavi da Redis usando SCAN per evitare di bloccare Redis
             $redis = Redis::connection();
             $keys = [];
-            
+
             // Aggiungi il prefisso di Laravel se configurato
             $prefix = config('cache.prefix', '');
-            $searchPattern = $prefix ? $prefix . $pattern : $pattern;
-            
+            $searchPattern = $prefix ? $prefix.$pattern : $pattern;
+
             // Usa SCAN invece di KEYS per prestazioni migliori
             $cursor = 0;
             do {
                 $result = $redis->scan($cursor, ['match' => $searchPattern, 'count' => 100]);
-                
+
                 // Verifica che il risultato sia un array
-                if (!is_array($result) || count($result) < 2) {
+                if (! is_array($result) || count($result) < 2) {
                     break;
                 }
-                
+
                 $cursor = (int) $result[0];
                 $foundKeys = $result[1] ?? [];
-                
+
                 if (is_array($foundKeys)) {
                     foreach ($foundKeys as $key) {
                         $keys[] = $key;
@@ -141,10 +145,11 @@ class ClearRagCache extends Command
             } while ($cursor !== 0);
 
             return $keys;
-            
+
         } catch (\Exception $e) {
             // Fallback: usa Cache facade per trovare le chiavi
-            $this->warn("⚠️  SCAN fallito, uso fallback method: " . $e->getMessage());
+            $this->warn('⚠️  SCAN fallito, uso fallback method: '.$e->getMessage());
+
             return $this->findCacheKeysFallback($pattern);
         }
     }
@@ -157,14 +162,16 @@ class ClearRagCache extends Command
         try {
             $redis = Redis::connection();
             $prefix = config('cache.prefix', '');
-            $searchPattern = $prefix ? $prefix . $pattern : $pattern;
-            
+            $searchPattern = $prefix ? $prefix.$pattern : $pattern;
+
             // Usa KEYS come fallback (meno efficiente ma più sicuro)
             $keys = $redis->keys($searchPattern);
+
             return is_array($keys) ? $keys : [];
-            
+
         } catch (\Exception $e) {
-            $this->error("❌ Impossibile accedere a Redis: " . $e->getMessage());
+            $this->error('❌ Impossibile accedere a Redis: '.$e->getMessage());
+
             return [];
         }
     }
@@ -197,7 +204,7 @@ class ClearRagCache extends Command
         }
 
         // Rimuovi gruppi vuoti
-        return array_filter($grouped, fn($group) => !empty($group));
+        return array_filter($grouped, fn ($group) => ! empty($group));
     }
 
     /**
@@ -211,17 +218,17 @@ class ClearRagCache extends Command
 
         // Cancella usando Laravel Cache facade che gestisce automaticamente i prefissi
         $deleted = 0;
-        
+
         foreach ($keys as $key) {
             try {
                 // Rimuovi il prefisso Laravel se presente per usare Cache::forget
                 $cleanKey = $this->removeRedisPrefix($key);
-                
+
                 if (Cache::forget($cleanKey)) {
                     $deleted++;
                 }
             } catch (\Exception $e) {
-                $this->warn("⚠️  Impossibile cancellare la chiave: {$key} - " . $e->getMessage());
+                $this->warn("⚠️  Impossibile cancellare la chiave: {$key} - ".$e->getMessage());
             }
         }
 
@@ -235,11 +242,11 @@ class ClearRagCache extends Command
     {
         // Laravel aggiunge automaticamente il prefisso configurato in cache.php
         $prefix = config('cache.prefix', '');
-        
+
         if ($prefix && str_starts_with($key, $prefix)) {
             return substr($key, strlen($prefix));
         }
-        
+
         return $key;
     }
 }

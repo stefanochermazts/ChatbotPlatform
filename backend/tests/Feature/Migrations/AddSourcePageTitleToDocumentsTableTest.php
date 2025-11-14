@@ -10,10 +10,8 @@ class AddSourcePageTitleToDocumentsTableTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function testDocumentsTableHasSourcePageTitleColumn(): void
+    public function test_documents_table_has_source_page_title_column(): void
     {
         $this->assertTrue(Schema::hasColumn('documents', 'source_page_title'));
     }
 }
-
-

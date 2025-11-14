@@ -11,20 +11,18 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Service for vector database indexing with Milvus
- * 
+ *
  * Wraps MilvusClient with additional features:
  * - Error handling
  * - Logging
  * - Tenant partition management
- * 
- * @package App\Services\Ingestion
  */
 class VectorIndexingService implements VectorIndexingServiceInterface
 {
     public function __construct(
         private readonly MilvusClient $milvusClient
     ) {}
-    
+
     /**
      * {@inheritDoc}
      */
@@ -33,40 +31,42 @@ class VectorIndexingService implements VectorIndexingServiceInterface
         if (empty($chunks)) {
             Log::warning('indexing.no_chunks', [
                 'document_id' => $documentId,
-                'tenant_id' => $tenantId
+                'tenant_id' => $tenantId,
             ]);
+
             return true; // No chunks to index is not an error
         }
-        
+
         Log::debug('indexing.upsert_start', [
             'document_id' => $documentId,
             'tenant_id' => $tenantId,
-            'chunks_count' => count($chunks)
+            'chunks_count' => count($chunks),
         ]);
-        
+
         try {
             // Prepare data for Milvus
             // MilvusClient expects $chunks (text array) and $vectors (vector array) separately
             $chunkTexts = [];
             $vectors = [];
-            
+
             foreach ($chunks as $chunk) {
-                if (!isset($chunk['vector'])) {
+                if (! isset($chunk['vector'])) {
                     Log::warning('indexing.invalid_chunk_missing_vector', [
                         'document_id' => $documentId,
-                        'chunk' => $chunk
+                        'chunk' => $chunk,
                     ]);
+
                     continue;
                 }
-                
+
                 $chunkTexts[] = $chunk['text'] ?? '';
                 $vectors[] = $chunk['vector'];
             }
-            
+
             if (empty($vectors)) {
-                throw new IndexingException("No valid vectors to index");
+                throw new IndexingException('No valid vectors to index');
             }
-            
+
             // Upsert to Milvus (void return type)
             $this->milvusClient->upsertVectors(
                 $tenantId,
@@ -74,30 +74,30 @@ class VectorIndexingService implements VectorIndexingServiceInterface
                 $chunkTexts,
                 $vectors
             );
-            
+
             Log::debug('indexing.upsert_success', [
                 'document_id' => $documentId,
                 'tenant_id' => $tenantId,
-                'vectors_count' => count($vectors)
+                'vectors_count' => count($vectors),
             ]);
-            
+
             return true;
         } catch (\Throwable $e) {
             Log::error('indexing.upsert_failed', [
                 'document_id' => $documentId,
                 'tenant_id' => $tenantId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             throw new IndexingException(
-                "Failed to index vectors for document {$documentId}: " . $e->getMessage(),
+                "Failed to index vectors for document {$documentId}: ".$e->getMessage(),
                 0,
                 $e
             );
         }
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -105,34 +105,34 @@ class VectorIndexingService implements VectorIndexingServiceInterface
     {
         Log::debug('indexing.delete_start', [
             'document_id' => $documentId,
-            'tenant_id' => $tenantId
+            'tenant_id' => $tenantId,
         ]);
-        
+
         try {
             // MilvusClient::deleteByDocument() returns void
             $this->milvusClient->deleteByDocument($tenantId, $documentId);
-            
+
             Log::debug('indexing.delete_success', [
                 'document_id' => $documentId,
-                'tenant_id' => $tenantId
+                'tenant_id' => $tenantId,
             ]);
-            
+
             return true;
         } catch (\Throwable $e) {
             Log::error('indexing.delete_failed', [
                 'document_id' => $documentId,
                 'tenant_id' => $tenantId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             throw new IndexingException(
-                "Failed to delete vectors for document {$documentId}: " . $e->getMessage(),
+                "Failed to delete vectors for document {$documentId}: ".$e->getMessage(),
                 0,
                 $e
             );
         }
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -140,32 +140,32 @@ class VectorIndexingService implements VectorIndexingServiceInterface
     {
         Log::warning('indexing.delete_tenant_start', [
             'tenant_id' => $tenantId,
-            'note' => 'This operation will delete ALL vectors for the tenant!'
+            'note' => 'This operation will delete ALL vectors for the tenant!',
         ]);
-        
+
         try {
             // Delete all vectors for the tenant
             $result = $this->milvusClient->deleteByTenant($tenantId);
-            
+
             Log::warning('indexing.delete_tenant_success', [
-                'tenant_id' => $tenantId
+                'tenant_id' => $tenantId,
             ]);
-            
+
             return $result;
         } catch (\Throwable $e) {
             Log::error('indexing.delete_tenant_failed', [
                 'tenant_id' => $tenantId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             throw new IndexingException(
-                "Failed to delete tenant vectors for tenant {$tenantId}: " . $e->getMessage(),
+                "Failed to delete tenant vectors for tenant {$tenantId}: ".$e->getMessage(),
                 0,
                 $e
             );
         }
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -177,12 +177,12 @@ class VectorIndexingService implements VectorIndexingServiceInterface
         Log::debug('indexing.exists_check_placeholder', [
             'document_id' => $documentId,
             'tenant_id' => $tenantId,
-            'note' => 'Method not yet implemented'
+            'note' => 'Method not yet implemented',
         ]);
-        
+
         return false;
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -193,4 +193,3 @@ class VectorIndexingService implements VectorIndexingServiceInterface
         return "tenant_{$tenantId}_vectors";
     }
 }
-

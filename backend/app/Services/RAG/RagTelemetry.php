@@ -15,10 +15,9 @@ class RagTelemetry
 
     public function event(string $name, array $data = []): void
     {
-        if (!$this->enabled) return;
+        if (! $this->enabled) {
+            return;
+        }
         Log::info('rag.'.$name, $data);
     }
 }
-
-
-

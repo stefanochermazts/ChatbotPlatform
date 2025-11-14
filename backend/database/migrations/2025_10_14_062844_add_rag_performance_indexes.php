@@ -8,11 +8,11 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * ⚡ PERFORMANCE OPTIMIZATION: Composite indexes for RAG + Admin queries
-     * 
+     *
      * Expected Improvement: 5x faster queries (500ms → 100ms)
-     * 
+     *
      * Before running: ANALYZE the slow queries with EXPLAIN to verify index usage.
      * After running: REINDEX CONCURRENTLY if table is large and in production.
      */
@@ -26,11 +26,11 @@ return new class extends Migration
                 ['document_id', 'tenant_id'],
                 'idx_document_chunks_document_tenant'
             );
-            
+
             // Note: document_chunks.knowledge_base_id does NOT exist!
             // KB filtering happens via JOIN with documents table
         });
-        
+
         Schema::table('documents', function (Blueprint $table) {
             // ⚡ Index #3: Admin panel filtering
             // Speeds up: DocumentAdminController::index() with multiple filters
@@ -39,7 +39,7 @@ return new class extends Migration
                 ['tenant_id', 'knowledge_base_id', 'ingestion_status'],
                 'idx_documents_admin_filtering'
             );
-            
+
             // ⚡ Index #4: Source URL deduplication check
             // Speeds up: WebScraperService finding existing documents
             // Usage: WHERE tenant_id = ? AND source_url = ? AND content_hash = ?
@@ -47,7 +47,7 @@ return new class extends Migration
                 ['tenant_id', 'source_url', 'content_hash'],
                 'idx_documents_source_url_hash'
             );
-            
+
             // ⚡ Index #5: KB-level operations (batch delete, stats)
             // Speeds up: Deleting all documents in a KB, counting docs per KB
             // Usage: WHERE knowledge_base_id = ? [AND tenant_id = ?]
@@ -56,13 +56,13 @@ return new class extends Migration
                 'idx_documents_kb_tenant'
             );
         });
-        
+
         // ⚠️ conversation_sessions index skipped - table structure varies
         // Add manually if needed after verifying table schema
-        
+
         // ⚡ VERIFY EXISTING INDEXES
         // Full-text search on document_chunks.content should already exist:
-        // CREATE INDEX idx_document_chunks_content_fts ON document_chunks 
+        // CREATE INDEX idx_document_chunks_content_fts ON document_chunks
         //   USING GIN (to_tsvector('italian', content));
         // If not, uncomment:
         /*
@@ -82,15 +82,15 @@ return new class extends Migration
         Schema::table('document_chunks', function (Blueprint $table) {
             $table->dropIndex('idx_document_chunks_document_tenant');
         });
-        
+
         Schema::table('documents', function (Blueprint $table) {
             $table->dropIndex('idx_documents_admin_filtering');
             $table->dropIndex('idx_documents_source_url_hash');
             $table->dropIndex('idx_documents_kb_tenant');
         });
-        
+
         // conversation_sessions index skipped in up(), nothing to drop
-        
+
         // Full-text index rollback (if created):
         // DB::statement("DROP INDEX IF EXISTS idx_document_chunks_content_fts");
     }

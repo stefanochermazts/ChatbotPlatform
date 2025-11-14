@@ -18,12 +18,12 @@ use Illuminate\Support\Facades\Broadcast;
 // í´ Private channel per conversazioni specifiche
 Broadcast::channel('conversation.{sessionId}', function (User $user, string $sessionId) {
     // Permettere accesso se:
-    // 1. L'utente Ã¨ un operatore 
+    // 1. L'utente Ã¨ un operatore
     // 2. La sessione Ã¨ assegnata a questo operatore
     $session = ConversationSession::where('session_id', $sessionId)->first();
-    
-    return $user->isOperator() && 
-           $session && 
+
+    return $user->isOperator() &&
+           $session &&
            $session->assigned_operator_id === $user->id;
 });
 

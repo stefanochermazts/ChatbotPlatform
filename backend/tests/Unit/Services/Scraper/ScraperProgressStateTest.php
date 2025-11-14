@@ -14,6 +14,7 @@ class ScraperProgressStateTest extends TestCase
     use RefreshDatabase;
 
     private ProgressStateService $service;
+
     private Tenant $tenant;
 
     protected function setUp(): void
@@ -60,6 +61,4 @@ class ScraperProgressStateTest extends TestCase
     {
         $this->assertFalse($this->service->transitionToDispatched($this->tenant->id, 999999));
     }
-
 }
-

@@ -3,19 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\IngestUploadedDocumentJob;
 use App\Jobs\DeleteVectorsJobFixed;
-
+use App\Jobs\IngestUploadedDocumentJob;
 use App\Models\Document;
 use App\Models\Tenant;
-use App\Models\ScraperConfig;
 use App\Services\RAG\MilvusClient;
-use Illuminate\Support\Facades\DB;
-
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 
 class DocumentAdminController extends Controller
 {
@@ -24,46 +19,47 @@ class DocumentAdminController extends Controller
         $kbId = (int) $request->query('kb_id', 0);
         $sourceUrlSearch = $request->query('source_url', '');
         $qualityFilter = $request->query('quality_filter', '');
-        
+
         $query = Document::where('tenant_id', $tenant->id);
-        
+
         if ($kbId > 0) {
             $query->where('knowledge_base_id', $kbId);
         }
-        
-        if (!empty($sourceUrlSearch)) {
-            $query->where(function($q) use ($sourceUrlSearch) {
-                $q->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%')
-                  ->orWhere('title', 'ILIKE', '%' . $sourceUrlSearch . '%');
+
+        if (! empty($sourceUrlSearch)) {
+            $query->where(function ($q) use ($sourceUrlSearch) {
+                $q->where('source_url', 'ILIKE', '%'.$sourceUrlSearch.'%')
+                    ->orWhere('title', 'ILIKE', '%'.$sourceUrlSearch.'%');
             });
         }
-        
+
         // 🧠 NUOVO: Filtro per qualità contenuto
-        if (!empty($qualityFilter)) {
+        if (! empty($qualityFilter)) {
             switch ($qualityFilter) {
                 case 'high':
                     $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.7");
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.7");
                     break;
                 case 'medium':
                     $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.4")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.7");
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.4")
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.7");
                     break;
                 case 'low':
                     $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.4");
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.4");
                     break;
                 case 'no_analysis':
-                    $query->where(function($q) {
+                    $query->where(function ($q) {
                         $q->whereNull('metadata')
-                          ->orWhereRaw("metadata->'quality_analysis' IS NULL");
+                            ->orWhereRaw("metadata->'quality_analysis' IS NULL");
                     });
                     break;
             }
         }
-        
+
         $docs = $query->orderByDesc('id')->paginate(20)->withQueryString();
+
         return view('admin.documents.index', compact('tenant', 'docs', 'kbId', 'sourceUrlSearch', 'qualityFilter'));
     }
 
@@ -75,52 +71,52 @@ class DocumentAdminController extends Controller
         $kbId = (int) $request->query('kb_id', 0);
         $sourceUrlSearch = $request->query('source_url', '');
         $qualityFilter = $request->query('quality_filter', '');
-        
+
         // Stessa query dell'index per rispettare i filtri
         $query = Document::where('tenant_id', $tenant->id);
-        
+
         if ($kbId > 0) {
             $query->where('knowledge_base_id', $kbId);
         }
-        
-        if (!empty($sourceUrlSearch)) {
-            $query->where(function($q) use ($sourceUrlSearch) {
-                $q->where('source_url', 'ILIKE', '%' . $sourceUrlSearch . '%')
-                  ->orWhere('title', 'ILIKE', '%' . $sourceUrlSearch . '%');
+
+        if (! empty($sourceUrlSearch)) {
+            $query->where(function ($q) use ($sourceUrlSearch) {
+                $q->where('source_url', 'ILIKE', '%'.$sourceUrlSearch.'%')
+                    ->orWhere('title', 'ILIKE', '%'.$sourceUrlSearch.'%');
             });
         }
-        
-        if (!empty($qualityFilter)) {
+
+        if (! empty($qualityFilter)) {
             switch ($qualityFilter) {
                 case 'high':
                     $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.7");
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.7");
                     break;
                 case 'medium':
                     $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.4")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.7");
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) >= 0.4")
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.7");
                     break;
                 case 'low':
                     $query->whereRaw("metadata->'quality_analysis'->>'quality_score' IS NOT NULL")
-                          ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.4");
+                        ->whereRaw("CAST(metadata->'quality_analysis'->>'quality_score' AS FLOAT) < 0.4");
                     break;
                 case 'no_analysis':
-                    $query->where(function($q) {
+                    $query->where(function ($q) {
                         $q->whereNull('metadata')
-                          ->orWhereRaw("metadata->'quality_analysis' IS NULL");
+                            ->orWhereRaw("metadata->'quality_analysis' IS NULL");
                     });
                     break;
             }
         }
-        
+
         // Prendi tutti i documenti (senza paginazione)
         $documents = $query->orderByDesc('id')->get();
-        
+
         // Crea foglio Excel
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
-        
+
         // Imposta intestazioni
         $sheet->setCellValue('A1', 'ID');
         $sheet->setCellValue('B1', 'Titolo');
@@ -130,43 +126,43 @@ class DocumentAdminController extends Controller
         $sheet->setCellValue('F1', 'Source');
         $sheet->setCellValue('G1', 'Status');
         $sheet->setCellValue('H1', 'KB ID');
-        
+
         // Stile header
         $headerStyle = [
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
-            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
         ];
         $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
-        
+
         // Popola dati
         $row = 2;
         foreach ($documents as $doc) {
-            $sheet->setCellValue('A' . $row, $doc->id);
-            $sheet->setCellValue('B' . $row, $doc->title);
-            $sheet->setCellValue('C' . $row, $doc->source_url ?? 'N/A');
-            $sheet->setCellValue('D' . $row, $doc->path ?? 'N/A');
-            $sheet->setCellValue('E' . $row, $doc->last_scraped_at ? $doc->last_scraped_at->format('Y-m-d H:i:s') : 'N/A');
-            $sheet->setCellValue('F' . $row, $doc->source ?? 'N/A');
-            $sheet->setCellValue('G' . $row, $doc->ingestion_status ?? 'N/A');
-            $sheet->setCellValue('H' . $row, $doc->knowledge_base_id ?? 'N/A');
+            $sheet->setCellValue('A'.$row, $doc->id);
+            $sheet->setCellValue('B'.$row, $doc->title);
+            $sheet->setCellValue('C'.$row, $doc->source_url ?? 'N/A');
+            $sheet->setCellValue('D'.$row, $doc->path ?? 'N/A');
+            $sheet->setCellValue('E'.$row, $doc->last_scraped_at ? $doc->last_scraped_at->format('Y-m-d H:i:s') : 'N/A');
+            $sheet->setCellValue('F'.$row, $doc->source ?? 'N/A');
+            $sheet->setCellValue('G'.$row, $doc->ingestion_status ?? 'N/A');
+            $sheet->setCellValue('H'.$row, $doc->knowledge_base_id ?? 'N/A');
             $row++;
         }
-        
+
         // Auto-size colonne
-        foreach(range('A','H') as $col) {
+        foreach (range('A', 'H') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
-        
+
         // Genera file
-        $filename = 'documenti-' . $tenant->slug . '-' . date('Y-m-d-His') . '.xlsx';
+        $filename = 'documenti-'.$tenant->slug.'-'.date('Y-m-d-His').'.xlsx';
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        
+
         // Invia come download
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Content-Disposition: attachment;filename="'.$filename.'"');
         header('Cache-Control: max-age=0');
-        
+
         $writer->save('php://output');
         exit;
     }
@@ -177,25 +173,25 @@ class DocumentAdminController extends Controller
     public function getDocumentStatuses(Request $request, Tenant $tenant)
     {
         $documentIds = $request->input('document_ids', []);
-        
-        if (empty($documentIds) || !is_array($documentIds)) {
+
+        if (empty($documentIds) || ! is_array($documentIds)) {
             return response()->json(['error' => 'document_ids required as array'], 400);
         }
-        
+
         $documents = Document::where('tenant_id', $tenant->id)
             ->whereIn('id', $documentIds)
             ->select('id', 'ingestion_status', 'ingestion_progress', 'last_error')
             ->get();
-        
+
         $statuses = [];
         foreach ($documents as $doc) {
             $statuses[$doc->id] = [
                 'status' => $doc->ingestion_status,
-                'progress' => (int)($doc->ingestion_progress ?? 0),
-                'error' => $doc->last_error
+                'progress' => (int) ($doc->ingestion_progress ?? 0),
+                'error' => $doc->last_error,
             ];
         }
-        
+
         return response()->json(['statuses' => $statuses]);
     }
 
@@ -210,7 +206,7 @@ class DocumentAdminController extends Controller
             ->where('tenant_id', $tenant->id)
             ->where('document_id', $document->id)
             ->orderBy('chunk_index')
-            ->get(['chunk_index','content']);
+            ->get(['chunk_index', 'content']);
 
         return view('admin.documents.chunks', [
             'tenant' => $tenant,
@@ -234,44 +230,44 @@ class DocumentAdminController extends Controller
             foreach ($request->file('files', []) as $file) {
                 try {
                     // Validazione file base
-                    if (!$file->isValid()) {
+                    if (! $file->isValid()) {
                         throw new \Exception('File non valido');
                     }
-                    
+
                     $original = (string) $file->getClientOriginalName();
                     $title = pathinfo($original, PATHINFO_FILENAME) ?: 'Documento';
-                    
+
                     // Fix: genera un nome file sicuro per evitare "Path cannot be empty"
                     $extension = $file->getClientOriginalExtension();
                     if (empty($extension)) {
                         $extension = 'bin'; // fallback per file senza estensione
                     }
-                    $safeName = \Str::random(40) . '.' . $extension;
-                    
+                    $safeName = \Str::random(40).'.'.$extension;
+
                     // DEBUG: Prova metodo alternativo senza storeAs
-                    $directory = storage_path('app/public/kb/' . $tenant->id);
-                    $fullPath = $directory . '/' . $safeName;
-                    
+                    $directory = storage_path('app/public/kb/'.$tenant->id);
+                    $fullPath = $directory.'/'.$safeName;
+
                     \Log::info('Tentativo salvataggio manuale', [
                         'original_name' => $original,
                         'safe_name' => $safeName,
                         'directory' => $directory,
                         'full_path' => $fullPath,
                         'file_exists' => $file->isValid(),
-                        'file_size' => $file->getSize()
+                        'file_size' => $file->getSize(),
                     ]);
-                    
+
                     // Assicurati che la directory esista
-                    if (!is_dir($directory)) {
+                    if (! is_dir($directory)) {
                         mkdir($directory, 0755, true);
                     }
-                    
+
                     // Prova a spostare il file manualmente
-                    if (!$file->move($directory, $safeName)) {
+                    if (! $file->move($directory, $safeName)) {
                         throw new \Exception('Impossibile spostare il file nella directory di destinazione');
                     }
-                    
-                    $path = 'kb/' . $tenant->id . '/' . $safeName;
+
+                    $path = 'kb/'.$tenant->id.'/'.$safeName;
 
                     $kbId = null;
                     if ($request->filled('knowledge_base_id')) {
@@ -279,7 +275,7 @@ class DocumentAdminController extends Controller
                             ->where('id', (int) $request->input('knowledge_base_id'))
                             ->value('id');
                     }
-                    if (!$kbId) {
+                    if (! $kbId) {
                         $kbId = \App\Models\KnowledgeBase::where('tenant_id', $tenant->id)->where('is_default', true)->value('id');
                     }
                     $doc = Document::create([
@@ -298,7 +294,7 @@ class DocumentAdminController extends Controller
                         'tenant_id' => $tenant->id,
                         'file' => $original ?? 'unknown',
                         'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString()
+                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
             }
@@ -326,7 +322,7 @@ class DocumentAdminController extends Controller
                 ->where('id', (int) $request->input('knowledge_base_id'))
                 ->value('id');
         }
-        if (!$kbId) {
+        if (! $kbId) {
             $kbId = \App\Models\KnowledgeBase::where('tenant_id', $tenant->id)->where('is_default', true)->value('id');
         }
         $doc = Document::create([
@@ -338,6 +334,7 @@ class DocumentAdminController extends Controller
             'ingestion_status' => 'pending',
         ]);
         IngestUploadedDocumentJob::dispatch($doc->id)->onQueue('ingestion');
+
         return back()->with('ok', 'Documento caricato: ingestion avviata');
     }
 
@@ -348,6 +345,7 @@ class DocumentAdminController extends Controller
         }
         $document->update(['ingestion_status' => 'pending']);
         IngestUploadedDocumentJob::dispatch($document->id)->onQueue('ingestion');
+
         return back()->with('ok', 'Ingestion riavviata per il documento #'.$document->id);
     }
 
@@ -356,10 +354,10 @@ class DocumentAdminController extends Controller
         if ($document->tenant_id !== $tenant->id) {
             abort(404);
         }
-        
+
         // 🚀 FIXED: Calcola primaryIds PRIMA di cancellare chunks da PostgreSQL
         DeleteVectorsJobFixed::fromDocumentIds([$document->id])->dispatch();
-        
+
         // Elimina file se esiste
         if ($document->path && Storage::disk('public')->exists($document->path)) {
             Storage::disk('public')->delete($document->path);
@@ -371,12 +369,13 @@ class DocumentAdminController extends Controller
         // Elimina righe chunks e documento
         \DB::table('document_chunks')->where('document_id', $document->id)->delete();
         $document->delete();
+
         return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Documento eliminato');
     }
 
     public function destroyAll(Tenant $tenant, MilvusClient $milvus)
     {
-        $docs = Document::where('tenant_id', $tenant->id)->get(['id','path']);
+        $docs = Document::where('tenant_id', $tenant->id)->get(['id', 'path']);
         if ($docs->isEmpty()) {
             return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Nessun documento da eliminare');
         }
@@ -386,7 +385,7 @@ class DocumentAdminController extends Controller
             // 1) Cancellazione sincrona DIRETTA di tutto il tenant da Milvus
             \Log::info('🗑️ [DESTROY-ALL] Cancellazione sincrona tenant da Milvus', [
                 'tenant_id' => $tenant->id,
-                'documents_count' => $docs->count()
+                'documents_count' => $docs->count(),
             ]);
             $success = $milvus->deleteByTenant($tenant->id);
             if ($success) {
@@ -397,7 +396,7 @@ class DocumentAdminController extends Controller
         } catch (\Exception $e) {
             \Log::error('❌ [DESTROY-ALL] Exception during Milvus cleanup', [
                 'tenant_id' => $tenant->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
 
@@ -428,14 +427,14 @@ class DocumentAdminController extends Controller
         // Seleziona documenti del tenant per la KB indicata
         $docs = Document::where('tenant_id', $tenant->id)
             ->where('knowledge_base_id', $kbId)
-            ->get(['id','path']);
+            ->get(['id', 'path']);
         if ($docs->isEmpty()) {
             return redirect()->route('admin.documents.index', $tenant)->with('ok', 'Nessun documento da eliminare per la KB selezionata');
         }
 
         // 🚀 MIGLIORAMENTO: Cancellazione sincrona + asincrona per sicurezza
         $documentIds = $docs->pluck('id')->all();
-        
+
         try {
             // 1) Calcola primaryIds per cancellazione diretta da Milvus
             $chunks = \DB::table('document_chunks')
@@ -453,7 +452,7 @@ class DocumentAdminController extends Controller
                     'tenant_id' => $tenant->id,
                     'kb_id' => $kbId,
                     'documents_count' => count($documentIds),
-                    'chunks_count' => count($primaryIds)
+                    'chunks_count' => count($primaryIds),
                 ]);
 
                 // 2) Cancellazione sincrona diretta da Milvus
@@ -461,24 +460,24 @@ class DocumentAdminController extends Controller
                 \Log::info('✅ [DESTROY-KB] Milvus KB cleanup successful', [
                     'tenant_id' => $tenant->id,
                     'kb_id' => $kbId,
-                    'primary_ids_deleted' => count($primaryIds)
+                    'primary_ids_deleted' => count($primaryIds),
                 ]);
             }
         } catch (\Exception $e) {
             \Log::error('❌ [DESTROY-KB] Exception during Milvus cleanup', [
                 'tenant_id' => $tenant->id,
                 'kb_id' => $kbId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
 
         // 3) BACKUP: Job asincrono per sicurezza (se cancellazione sincrona fallisce)
-        if (!empty($documentIds)) {
+        if (! empty($documentIds)) {
             DeleteVectorsJobFixed::fromDocumentIds($documentIds)->dispatch();
         }
 
         // 4) Cancella dati strutturati e file
-        if (!empty($documentIds)) {
+        if (! empty($documentIds)) {
             \DB::table('document_chunks')->whereIn('document_id', $documentIds)->delete();
             Document::whereIn('id', $documentIds)->delete();
         }
@@ -498,7 +497,7 @@ class DocumentAdminController extends Controller
     {
         $data = $request->validate([
             'url' => 'required|url|max:500',
-            'target_kb' => 'required|integer|exists:knowledge_bases,id'
+            'target_kb' => 'required|integer|exists:knowledge_bases,id',
         ]);
 
         $url = $data['url'];
@@ -510,11 +509,11 @@ class DocumentAdminController extends Controller
                 ->where('tenant_id', $tenant->id)
                 ->firstOrFail();
 
-            \Log::info("🌐 [SINGLE-URL-SCRAPE] Iniziato scraping manuale", [
+            \Log::info('🌐 [SINGLE-URL-SCRAPE] Iniziato scraping manuale', [
                 'tenant_id' => $tenant->id,
                 'url' => $url,
                 'target_kb_id' => $targetKbId,
-                'force' => true
+                'force' => true,
             ]);
 
             // Usa WebScraperService direttamente con force=true
@@ -524,38 +523,38 @@ class DocumentAdminController extends Controller
             if ($result && $result['success']) {
                 $savedCount = $result['saved_count'] ?? 0;
                 $stats = $result['stats'] ?? [];
-                
+
                 // Determina azione basandosi sulle stats
                 $action = 'unknown';
                 $actionMessage = '';
-                
+
                 if (($stats['new'] ?? 0) > 0) {
                     $action = 'created';
-                    $actionMessage = "✅ Nuovo documento creato e aggiunto alla coda di ingestion";
+                    $actionMessage = '✅ Nuovo documento creato e aggiunto alla coda di ingestion';
                 } elseif (($stats['updated'] ?? 0) > 0) {
-                    $action = 'updated';  
-                    $actionMessage = "🔄 Documento esistente aggiornato e re-ingestion avviata";
+                    $action = 'updated';
+                    $actionMessage = '🔄 Documento esistente aggiornato e re-ingestion avviata';
                 } else {
                     $action = 'processed';
-                    $actionMessage = "📄 Documento processato";
+                    $actionMessage = '📄 Documento processato';
                 }
-                
-                \Log::info("✅ [SINGLE-URL-SCRAPE] Completato con successo", [
+
+                \Log::info('✅ [SINGLE-URL-SCRAPE] Completato con successo', [
                     'saved_count' => $savedCount,
                     'action' => $action,
                     'stats' => $stats,
-                    'url' => $url
+                    'url' => $url,
                 ]);
 
                 return redirect()->route('admin.documents.index', $tenant)
-                    ->with('success', $actionMessage . " (Documenti processati: {$savedCount})");
+                    ->with('success', $actionMessage." (Documenti processati: {$savedCount})");
             } else {
                 $error = $result['message'] ?? $result['error'] ?? 'Scraping fallito senza dettagli';
-                
-                \Log::warning("❌ [SINGLE-URL-SCRAPE] Fallito", [
+
+                \Log::warning('❌ [SINGLE-URL-SCRAPE] Fallito', [
                     'url' => $url,
                     'error' => $error,
-                    'result' => $result
+                    'result' => $result,
                 ]);
 
                 return redirect()->route('admin.documents.index', $tenant)
@@ -563,15 +562,15 @@ class DocumentAdminController extends Controller
             }
 
         } catch (\Exception $e) {
-            \Log::error("💥 [SINGLE-URL-SCRAPE] Eccezione", [
+            \Log::error('💥 [SINGLE-URL-SCRAPE] Eccezione', [
                 'url' => $url,
                 'tenant_id' => $tenant->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return redirect()->route('admin.documents.index', $tenant)
-                ->with('error', "💥 Errore durante scraping: " . $e->getMessage());
+                ->with('error', '💥 Errore durante scraping: '.$e->getMessage());
         }
     }
 
@@ -580,54 +579,58 @@ class DocumentAdminController extends Controller
      */
     public function rescrape(\Illuminate\Http\Request $request, Document $document)
     {
-        if (!$document->source_url) {
+        if (! $document->source_url) {
             // Se richiesta UI, torna indietro con errore, altrimenti JSON
-            if (!$request->expectsJson()) {
+            if (! $request->expectsJson()) {
                 return redirect()->back()->with('error', 'Documento senza source_url: impossibile eseguire il re-scrape.');
             }
+
             return response()->json([
                 'success' => false,
-                'message' => 'Documento non ha source_url. Non può essere ri-scrapato.'
+                'message' => 'Documento non ha source_url. Non può essere ri-scrapato.',
             ], 400);
         }
 
         try {
-            $scraperService = new \App\Services\Scraper\WebScraperService();
+            $scraperService = new \App\Services\Scraper\WebScraperService;
             $result = $scraperService->forceRescrapDocument($document->id);
 
             if ($result['success']) {
-                if (!$request->expectsJson()) {
+                if (! $request->expectsJson()) {
                     // UI: redirect con flash message
                     return redirect()->route('admin.documents.index', $document->tenant)
                         ->with('ok', 'Documento ri-scrapato con successo');
                 }
+
                 return response()->json([
                     'success' => true,
                     'message' => $result['message'],
                     'data' => [
                         'document_id' => $result['document_id'],
                         'original_document' => $result['original_document'],
-                        'result' => $result['result']
-                    ]
+                        'result' => $result['result'],
+                    ],
                 ]);
             } else {
-                if (!$request->expectsJson()) {
+                if (! $request->expectsJson()) {
                     return redirect()->route('admin.documents.index', $document->tenant)
                         ->with('error', $result['message'] ?? 'Re-scrape fallito');
                 }
+
                 return response()->json([
                     'success' => false,
-                    'message' => $result['message']
+                    'message' => $result['message'],
                 ], 400);
             }
 
         } catch (\Exception $e) {
-            if (!$request->expectsJson()) {
-                return redirect()->back()->with('error', 'Errore durante il re-scrape: ' . $e->getMessage());
+            if (! $request->expectsJson()) {
+                return redirect()->back()->with('error', 'Errore durante il re-scrape: '.$e->getMessage());
             }
+
             return response()->json([
                 'success' => false,
-                'message' => 'Errore durante il re-scraping: ' . $e->getMessage()
+                'message' => 'Errore durante il re-scraping: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -640,7 +643,7 @@ class DocumentAdminController extends Controller
         $data = $request->validate([
             'confirm' => ['required', 'boolean', 'accepted'],
             'kb_id' => ['nullable', 'integer'],
-            'source_url' => ['nullable', 'string']
+            'source_url' => ['nullable', 'string'],
         ]);
 
         try {
@@ -649,113 +652,116 @@ class DocumentAdminController extends Controller
             $query = Document::where('tenant_id', $tenant->id)
                 ->whereNotNull('source_url')
                 ->where('source_url', '!=', '');
-            
+
             // Applica filtro KB se specificato
-            if (!empty($data['kb_id']) && $data['kb_id'] > 0) {
+            if (! empty($data['kb_id']) && $data['kb_id'] > 0) {
                 $query->where('knowledge_base_id', $data['kb_id']);
             }
-            
+
             // Applica filtro titolo/source_url se specificato (stesso comportamento dell'index)
-            if (!empty($data['source_url'])) {
-                $query->where(function($q) use ($data) {
-                    $q->where('source_url', 'ILIKE', '%' . $data['source_url'] . '%')
-                      ->orWhere('title', 'ILIKE', '%' . $data['source_url'] . '%');
+            if (! empty($data['source_url'])) {
+                $query->where(function ($q) use ($data) {
+                    $q->where('source_url', 'ILIKE', '%'.$data['source_url'].'%')
+                        ->orWhere('title', 'ILIKE', '%'.$data['source_url'].'%');
                 });
             }
-            
+
             $documents = $query->get();
 
             if ($documents->isEmpty()) {
                 $filterMsg = '';
-                if (!empty($data['kb_id']) || !empty($data['source_url'])) {
+                if (! empty($data['kb_id']) || ! empty($data['source_url'])) {
                     $filterMsg = ' con i filtri applicati';
                 }
+
                 return response()->json([
                     'success' => false,
-                    'message' => "Nessun documento con source_url trovato per questo tenant{$filterMsg}."
+                    'message' => "Nessun documento con source_url trovato per questo tenant{$filterMsg}.",
                 ], 400);
             }
 
-            $scraperService = new \App\Services\Scraper\WebScraperService();
+            $scraperService = new \App\Services\Scraper\WebScraperService;
             $successCount = 0;
             $failureCount = 0;
             $errors = [];
             $totalDocuments = $documents->count();
 
-            \Log::info("🔄 [BATCH-RESCRAPE] Inizio batch re-scraping", [
+            \Log::info('🔄 [BATCH-RESCRAPE] Inizio batch re-scraping', [
                 'tenant_id' => $tenant->id,
                 'total_documents' => $totalDocuments,
                 'filters_applied' => [
                     'kb_id' => $data['kb_id'] ?? null,
-                    'source_url' => $data['source_url'] ?? null
-                ]
+                    'source_url' => $data['source_url'] ?? null,
+                ],
             ]);
 
             foreach ($documents as $index => $document) {
                 $currentDoc = $index + 1;
-                
+
                 \Log::info("📋 [BATCH-RESCRAPE] Processando documento {$currentDoc}/{$totalDocuments}", [
                     'document_id' => $document->id,
                     'title' => $document->title,
                     'source_url' => $document->source_url,
-                    'progress_percent' => round(($currentDoc / $totalDocuments) * 100, 1)
+                    'progress_percent' => round(($currentDoc / $totalDocuments) * 100, 1),
                 ]);
-                
+
                 try {
                     $result = $scraperService->forceRescrapDocument($document->id);
-                    
+
                     if ($result['success']) {
                         $successCount++;
                         \Log::info("✅ [BATCH-RESCRAPE] Documento {$currentDoc}/{$totalDocuments} completato", [
                             'document_id' => $document->id,
-                            'status' => 'success'
+                            'status' => 'success',
                         ]);
                     } else {
                         $failureCount++;
-                        $errors[] = "Doc #{$document->id}: " . $result['message'];
+                        $errors[] = "Doc #{$document->id}: ".$result['message'];
                         \Log::warning("❌ [BATCH-RESCRAPE] Documento {$currentDoc}/{$totalDocuments} fallito", [
                             'document_id' => $document->id,
                             'status' => 'failed',
-                            'error' => $result['message']
+                            'error' => $result['message'],
                         ]);
                     }
-                    
+
                 } catch (\Exception $e) {
                     $failureCount++;
-                    $errors[] = "Doc #{$document->id}: " . $e->getMessage();
+                    $errors[] = "Doc #{$document->id}: ".$e->getMessage();
                     \Log::error("💥 [BATCH-RESCRAPE] Documento {$currentDoc}/{$totalDocuments} errore", [
                         'document_id' => $document->id,
                         'status' => 'error',
-                        'error' => $e->getMessage()
+                        'error' => $e->getMessage(),
                     ]);
                 }
-                
+
                 // Log di milestone ogni 10 documenti per batch grandi
                 if ($currentDoc % 10 === 0 || $currentDoc === $totalDocuments) {
                     \Log::info("📊 [BATCH-RESCRAPE] Milestone {$currentDoc}/{$totalDocuments}", [
                         'progress_percent' => round(($currentDoc / $totalDocuments) * 100, 1),
                         'successi' => $successCount,
                         'fallimenti' => $failureCount,
-                        'remaining' => $totalDocuments - $currentDoc
+                        'remaining' => $totalDocuments - $currentDoc,
                     ]);
                 }
-                
+
                 // Rate limiting per evitare sovraccarico
                 usleep(500000); // 0.5 secondi
             }
 
-            \Log::info("🏁 [BATCH-RESCRAPE] Batch completato", [
+            \Log::info('🏁 [BATCH-RESCRAPE] Batch completato', [
                 'tenant_id' => $tenant->id,
                 'total_documents' => $totalDocuments,
                 'success_count' => $successCount,
                 'failure_count' => $failureCount,
-                'success_rate' => round(($successCount / $totalDocuments) * 100, 1) . '%'
+                'success_rate' => round(($successCount / $totalDocuments) * 100, 1).'%',
             ]);
 
-            if (!$request->expectsJson()) {
+            if (! $request->expectsJson()) {
                 $msg = "Re-scraping completato. Successi: {$successCount}, Fallimenti: {$failureCount}";
+
                 return redirect()->route('admin.documents.index', $tenant)->with('ok', $msg);
             }
+
             return response()->json([
                 'success' => $failureCount === 0,
                 'message' => "Re-scraping completato. Successi: {$successCount}, Fallimenti: {$failureCount}",
@@ -763,24 +769,19 @@ class DocumentAdminController extends Controller
                     'total_documents' => $totalDocuments,
                     'success_count' => $successCount,
                     'failure_count' => $failureCount,
-                    'errors' => array_slice($errors, 0, 10)
-                ]
+                    'errors' => array_slice($errors, 0, 10),
+                ],
             ]);
 
         } catch (\Exception $e) {
-            if (!$request->expectsJson()) {
-                return redirect()->back()->with('error', 'Errore durante il re-scrape batch: ' . $e->getMessage());
+            if (! $request->expectsJson()) {
+                return redirect()->back()->with('error', 'Errore durante il re-scrape batch: '.$e->getMessage());
             }
+
             return response()->json([
                 'success' => false,
-                'message' => 'Errore durante il re-scraping batch: ' . $e->getMessage()
+                'message' => 'Errore durante il re-scraping batch: '.$e->getMessage(),
             ], 500);
         }
     }
-
-
-
-
-
-
 }

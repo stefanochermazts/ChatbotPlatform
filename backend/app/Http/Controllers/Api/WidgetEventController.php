@@ -45,25 +45,25 @@ class WidgetEventController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid event data',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 400);
         }
 
         // Get tenant from request
         $tenantId = (int) $request->attributes->get('tenant_id');
-        if (!$tenantId) {
+        if (! $tenantId) {
             return response()->json([
                 'success' => false,
-                'message' => 'Tenant ID is required'
+                'message' => 'Tenant ID is required',
             ], 400);
         }
 
         $data = $validator->validated();
-        
+
         try {
             // Create widget event
             $eventData = $data['event_data'] ?? [];
-            
+
             // Build event attributes, only including non-null values where appropriate
             $eventAttributes = [
                 'tenant_id' => $tenantId,
@@ -75,7 +75,7 @@ class WidgetEventController extends Controller
                 'custom_properties' => $eventData,
                 'had_error' => $data['event_type'] === 'message_error' || $data['event_type'] === 'widget_error',
             ];
-            
+
             // Add optional fields only if they have values
             if (isset($eventData['response_time'])) {
                 $eventAttributes['response_time_ms'] = (int) round($eventData['response_time']);
@@ -87,9 +87,9 @@ class WidgetEventController extends Controller
                 $eventAttributes['tokens_used'] = (int) $eventData['tokens_used'];
             }
             if (isset($eventData['citations'])) {
-                $eventAttributes['citations_count'] = is_array($eventData['citations']) ? count($eventData['citations']) : (int)$eventData['citations'];
+                $eventAttributes['citations_count'] = is_array($eventData['citations']) ? count($eventData['citations']) : (int) $eventData['citations'];
             }
-            
+
             $event = WidgetEvent::create($eventAttributes);
 
             // Log successful tracking for debugging (can be removed in production)
@@ -116,7 +116,7 @@ class WidgetEventController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to track event'
+                'message' => 'Failed to track event',
             ], 500);
         }
     }
@@ -135,21 +135,21 @@ class WidgetEventController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid session ID',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 400);
         }
 
         $tenantId = (int) $request->attributes->get('tenant_id');
-        if (!$tenantId) {
+        if (! $tenantId) {
             return response()->json([
                 'success' => false,
-                'message' => 'Tenant ID is required'
+                'message' => 'Tenant ID is required',
             ], 400);
         }
 
         try {
             $sessionId = $validator->validated()['session_id'];
-            
+
             $events = WidgetEvent::forTenant($tenantId)
                 ->where('session_id', $sessionId)
                 ->orderBy('event_timestamp')
@@ -190,7 +190,7 @@ class WidgetEventController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve session stats'
+                'message' => 'Failed to retrieve session stats',
             ], 500);
         }
     }
@@ -201,7 +201,7 @@ class WidgetEventController extends Controller
     public function health(Request $request): JsonResponse
     {
         $tenantId = (int) $request->attributes->get('tenant_id');
-        
+
         try {
             // Count recent events (last 24 hours) for this tenant
             $recentEvents = WidgetEvent::forTenant($tenantId)
@@ -225,7 +225,7 @@ class WidgetEventController extends Controller
             return response()->json([
                 'success' => false,
                 'status' => 'unhealthy',
-                'error' => 'Database connection issue'
+                'error' => 'Database connection issue',
             ], 500);
         }
     }
@@ -266,22 +266,22 @@ class WidgetEventController extends Controller
                     'request_data' => $request->all(),
                 ]);
             }
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid event data',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 400);
         }
 
         try {
             $data = $validator->validated();
             $properties = $data['properties'] ?? [];
-            
+
             // Create simplified widget event for embed tracking
             $eventData = [
                 'event_type' => $data['event'],
-                'session_id' => $properties['session_id'] ?? 'embed_' . uniqid(),
+                'session_id' => $properties['session_id'] ?? 'embed_'.uniqid(),
                 'event_timestamp' => now(),
                 'user_agent' => $properties['user_agent'] ?? $request->header('User-Agent'),
                 'ip_address' => $request->ip(),
@@ -294,12 +294,12 @@ class WidgetEventController extends Controller
                     'original_properties' => $properties,
                 ],
             ];
-            
+
             // Aggiungi tenant_id solo se presente e valido
-            if (!empty($properties['tenant_id']) && is_numeric($properties['tenant_id'])) {
+            if (! empty($properties['tenant_id']) && is_numeric($properties['tenant_id'])) {
                 $eventData['tenant_id'] = (int) $properties['tenant_id'];
             }
-            
+
             // Gestisci timestamp in qualsiasi formato
             if (isset($properties['timestamp'])) {
                 if (is_numeric($properties['timestamp'])) {
@@ -310,7 +310,7 @@ class WidgetEventController extends Controller
                     $eventData['custom_properties']['timestamp_string'] = $properties['timestamp'];
                 }
             }
-            
+
             $widgetEvent = WidgetEvent::create($eventData);
 
             Log::info('Public widget event tracked', [
@@ -322,19 +322,19 @@ class WidgetEventController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Event tracked successfully',
-                'event_id' => $widgetEvent->id
+                'event_id' => $widgetEvent->id,
             ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to track public widget event', [
                 'error' => $e->getMessage(),
                 'event_type' => $data['event'] ?? 'unknown',
-                'request_data' => $request->all()
+                'request_data' => $request->all(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to track event'
+                'message' => 'Failed to track event',
             ], 500);
         }
     }

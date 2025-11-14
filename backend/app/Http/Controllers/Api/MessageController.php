@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\ConversationSession;
 use App\Models\ConversationMessage;
-use Illuminate\Http\Request;
+use App\Models\ConversationSession;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class MessageController extends Controller
@@ -25,17 +25,17 @@ class MessageController extends Controller
                 'sender_id' => 'nullable|integer|exists:users,id',
                 'sender_name' => 'nullable|string|max:255',
                 'parent_message_id' => 'nullable|integer|exists:conversation_messages,id',
-                'metadata' => 'nullable|array'
+                'metadata' => 'nullable|array',
             ]);
 
             // 🔍 Trova la sessione
             $session = ConversationSession::where('session_id', $validated['session_id'])->first();
 
-            if (!$session) {
+            if (! $session) {
                 return response()->json(['error' => 'Session not found'], 404);
             }
 
-            if (!$session->isActive() && $session->status !== 'assigned') {
+            if (! $session->isActive() && $session->status !== 'assigned') {
                 return response()->json(['error' => 'Session is not active'], 400);
             }
 
@@ -51,7 +51,7 @@ class MessageController extends Controller
                 'parent_message_id' => $validated['parent_message_id'] ?? null,
                 'metadata' => $validated['metadata'] ?? [],
                 'sent_at' => now(),
-                'delivered_at' => now()
+                'delivered_at' => now(),
             ]);
 
             // 📊 Aggiorna contatori sessione
@@ -67,14 +67,15 @@ class MessageController extends Controller
                     'sender_type' => $message->sender_type,
                     'sender_name' => $message->getDisplayName(),
                     'sent_at' => $message->sent_at->toISOString(),
-                    'delivered_at' => $message->delivered_at->toISOString()
-                ]
+                    'delivered_at' => $message->delivered_at->toISOString(),
+                ],
             ], 201);
 
         } catch (ValidationException $e) {
             return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
         } catch (\Exception $e) {
             \Log::error('message.send.failed', ['error' => $e->getMessage()]);
+
             return response()->json(['error' => 'Failed to send message'], 500);
         }
     }
@@ -86,19 +87,19 @@ class MessageController extends Controller
     {
         \Log::info('message.index.called', [
             'session_id' => $sessionId,
-            'headers' => $request->headers->all()
+            'headers' => $request->headers->all(),
         ]);
-        
+
         try {
             $validated = $request->validate([
                 'limit' => 'integer|min:1|max:100',
                 'offset' => 'integer|min:0',
-                'since' => 'nullable|date'
+                'since' => 'nullable|date',
             ]);
 
             $session = ConversationSession::where('session_id', $sessionId)->first();
 
-            if (!$session) {
+            if (! $session) {
                 return response()->json(['error' => 'Session not found'], 404);
             }
 
@@ -115,7 +116,7 @@ class MessageController extends Controller
 
             return response()->json([
                 'success' => true,
-                'messages' => $messages->map(function($message) {
+                'messages' => $messages->map(function ($message) {
                     return [
                         'id' => $message->id,
                         'content' => $message->content,
@@ -125,21 +126,21 @@ class MessageController extends Controller
                         'citations' => $message->citations,
                         'sent_at' => $message->sent_at->toISOString(),
                         'is_helpful' => $message->is_helpful,
-                        'parent_message_id' => $message->parent_message_id
+                        'parent_message_id' => $message->parent_message_id,
                     ];
                 }),
                 'pagination' => [
                     'limit' => $limit,
                     'offset' => $offset,
-                    'total' => $session->message_count_total ?? 0
+                    'total' => $session->message_count_total ?? 0,
                 ],
                 // 🎯 Agent Console: Include conversation status for widget sync
                 'conversation' => [
                     'status' => $session->status,
                     'handoff_status' => $session->handoff_status,
                     'assigned_operator_id' => $session->assigned_operator_id,
-                    'last_activity_at' => $session->last_activity_at?->toISOString()
-                ]
+                    'last_activity_at' => $session->last_activity_at?->toISOString(),
+                ],
             ]);
 
         } catch (ValidationException $e) {
@@ -156,12 +157,12 @@ class MessageController extends Controller
     {
         try {
             $validated = $request->validate([
-                'is_helpful' => 'required|boolean'
+                'is_helpful' => 'required|boolean',
             ]);
 
             $message = ConversationMessage::find($messageId);
 
-            if (!$message) {
+            if (! $message) {
                 return response()->json(['error' => 'Message not found'], 404);
             }
 
@@ -169,7 +170,7 @@ class MessageController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Feedback recorded successfully'
+                'message' => 'Feedback recorded successfully',
             ]);
 
         } catch (ValidationException $e) {
@@ -187,16 +188,16 @@ class MessageController extends Controller
         try {
             $validated = $request->validate([
                 'content' => 'required|string|max:4000',
-                'edit_reason' => 'nullable|string|max:500'
+                'edit_reason' => 'nullable|string|max:500',
             ]);
 
             $message = ConversationMessage::find($messageId);
 
-            if (!$message) {
+            if (! $message) {
                 return response()->json(['error' => 'Message not found'], 404);
             }
 
-            if (!$message->isFromOperator() && !$message->isSystemMessage()) {
+            if (! $message->isFromOperator() && ! $message->isSystemMessage()) {
                 return response()->json(['error' => 'Only operator and system messages can be edited'], 403);
             }
 
@@ -209,8 +210,8 @@ class MessageController extends Controller
                     'content' => $message->content,
                     'is_edited' => $message->is_edited,
                     'edited_at' => $message->edited_at->toISOString(),
-                    'edit_reason' => $message->edit_reason
-                ]
+                    'edit_reason' => $message->edit_reason,
+                ],
             ]);
 
         } catch (ValidationException $e) {

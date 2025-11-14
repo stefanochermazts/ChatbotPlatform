@@ -15,8 +15,7 @@ class WidgetConfigController extends Controller
 {
     public function __construct(
         private readonly SettingService $settingService
-    ) {
-    }
+    ) {}
 
     /**
      * Display widget configurations list
@@ -24,9 +23,9 @@ class WidgetConfigController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        
+
         // Auto-scoping per clienti
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             $tenants = $user->tenants()->wherePivot('role', 'customer')->orderBy('name')->get();
         } else {
             // Determina i tenant da mostrare in base ai filtri per admin
@@ -39,7 +38,7 @@ class WidgetConfigController extends Controller
 
         // Assicura che ogni tenant abbia una configurazione (crea default se mancante)
         foreach ($tenants as $t) {
-            if (!$t->widgetConfig) {
+            if (! $t->widgetConfig) {
                 WidgetConfig::createDefaultForTenant($t);
             }
         }
@@ -63,54 +62,54 @@ class WidgetConfigController extends Controller
             'tenants' => $allTenants,
         ]);
     }
-    
+
     /**
      * Show configuration for specific tenant
      */
     public function show(Tenant $tenant)
     {
         $this->checkTenantAccess($tenant);
-        
+
         $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
-        
+
         // Get the API key for this tenant
         $apiKey = $tenant->getWidgetApiKey();
-        
+
         return view('admin.widget-config.show', compact('tenant', 'config', 'apiKey'));
     }
-    
+
     /**
      * Show form to edit widget configuration
      */
     public function edit(Tenant $tenant)
     {
         $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
-        
+
         // Get the API key for this tenant
         $apiKey = $tenant->getWidgetApiKey();
         $maxCitationSources = $this->settingService->getMaxCitationSources($tenant->id);
-        
+
         $themes = [
             'default' => 'Default Blue',
             'corporate' => 'Corporate Gray',
             'friendly' => 'Friendly Green',
-            'high-contrast' => 'High Contrast'
+            'high-contrast' => 'High Contrast',
         ];
-        
+
         $positions = [
             'bottom-right' => 'Bottom Right',
             'bottom-left' => 'Bottom Left',
             'top-right' => 'Top Right',
-            'top-left' => 'Top Left'
+            'top-left' => 'Top Left',
         ];
-        
+
         $models = [
             'gpt-4o-mini' => 'GPT-4o Mini (Consigliato)',
             'gpt-4o' => 'GPT-4o',
             'gpt-4-turbo' => 'GPT-4 Turbo',
-            'gpt-3.5-turbo' => 'GPT-3.5 Turbo'
+            'gpt-3.5-turbo' => 'GPT-3.5 Turbo',
         ];
-        
+
         return view('admin.widget-config.edit', compact(
             'tenant',
             'config',
@@ -121,14 +120,14 @@ class WidgetConfigController extends Controller
             'maxCitationSources'
         ));
     }
-    
+
     /**
      * Update widget configuration
      */
     public function update(Request $request, Tenant $tenant)
     {
         $config = $tenant->widgetConfig ?? new WidgetConfig(['tenant_id' => $tenant->id]);
-        
+
         $validated = $request->validate([
             // Basic Configuration
             'enabled' => 'boolean',
@@ -137,7 +136,7 @@ class WidgetConfigController extends Controller
             'source_link_text' => 'nullable|string|max:100',
             'position' => ['required', Rule::in(['bottom-right', 'bottom-left', 'top-right', 'top-left'])],
             'auto_open' => 'boolean',
-            
+
             // Theme Configuration
             'theme' => ['required', Rule::in(['default', 'corporate', 'friendly', 'high-contrast', 'custom'])],
             'custom_colors' => 'nullable|array',
@@ -146,34 +145,34 @@ class WidgetConfigController extends Controller
             'logo_url' => 'nullable|url|max:255',
             'favicon_url' => 'nullable|url|max:255',
             'font_family' => 'nullable|string|max:255',
-            
+
             // Layout Configuration
             'widget_width' => 'nullable|string|max:20',
             'widget_height' => 'nullable|string|max:20',
             'border_radius' => 'nullable|string|max:20',
             'button_size' => 'nullable|string|max:20',
-            
+
             // Behavior Configuration
             'show_header' => 'boolean',
             'show_avatar' => 'boolean',
             'show_close_button' => 'boolean',
             'enable_animations' => 'boolean',
             'enable_dark_mode' => 'boolean',
-            
+
             // API Configuration
             'api_model' => ['required', Rule::in(['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'])],
             'temperature' => 'required|numeric|min:0|max:2',
             'max_tokens' => 'required|integer|min:1|max:4000',
             'enable_conversation_context' => 'boolean',
-            
+
             // Security Configuration
             'allowed_domains' => 'nullable|array',
             'allowed_domains.*' => 'nullable|string|max:255',
             'enable_analytics' => 'boolean',
-            
+
             // Citations Configuration
             'max_citation_sources' => 'required|integer|min:1|max:100',
-            
+
             // Operator Configuration
             'operator_enabled' => 'boolean',
             'operator_button_text' => 'nullable|string|max:50',
@@ -184,142 +183,142 @@ class WidgetConfigController extends Controller
             'operator_availability.*.slots.*.start_time' => 'nullable|date_format:H:i',
             'operator_availability.*.slots.*.end_time' => 'nullable|date_format:H:i',
             'operator_unavailable_message' => 'nullable|string|max:500',
-            
+
             'gdpr_compliant' => 'boolean',
-            
+
             // Custom CSS/JS
             'custom_css' => 'nullable|string|max:50000',
             'custom_js' => 'nullable|string|max:50000',
         ]);
-        
+
         // Set defaults for boolean fields
         $booleanFields = [
             'enabled', 'auto_open', 'show_header', 'show_avatar', 'show_close_button',
             'enable_animations', 'enable_dark_mode', 'enable_conversation_context',
-            'enable_analytics', 'gdpr_compliant'
+            'enable_analytics', 'gdpr_compliant',
         ];
-        
+
         foreach ($booleanFields as $field) {
             $validated[$field] = $request->boolean($field);
         }
-        
+
         // Handle file uploads for logo and favicon
         if ($request->hasFile('logo_file')) {
             $logoPath = $this->handleFileUpload($request->file('logo_file'), 'logos', $tenant->slug);
             $validated['logo_url'] = Storage::url($logoPath);
         }
-        
+
         if ($request->hasFile('favicon_file')) {
             $faviconPath = $this->handleFileUpload($request->file('favicon_file'), 'favicons', $tenant->slug);
             $validated['favicon_url'] = Storage::url($faviconPath);
         }
-        
+
         // Clean allowed domains
         if (isset($validated['allowed_domains'])) {
             $validated['allowed_domains'] = array_filter(
                 array_map('trim', $validated['allowed_domains']),
-                fn($domain) => !empty($domain)
+                fn ($domain) => ! empty($domain)
             );
         }
-        
+
         $validated['updated_by'] = auth()->id();
         $validated['last_updated_at'] = now();
-        
+
         $maxCitationSources = (string) $validated['max_citation_sources'];
         unset($validated['max_citation_sources']);
-        
+
         $config->fill($validated);
         $config->save();
-        
+
         $this->settingService->set($tenant->id, 'widget.max_citation_sources', $maxCitationSources);
-        
+
         return redirect()
             ->route('admin.widget-config.show', $tenant)
             ->with('success', 'Configurazione widget aggiornata con successo!');
     }
-    
+
     /**
      * Generate and download embed code
      */
     public function generateEmbed(Tenant $tenant)
     {
         $config = $tenant->widgetConfig;
-        
-        if (!$config) {
+
+        if (! $config) {
             return redirect()->back()->with('error', 'Configurazione widget non trovata.');
         }
-        
+
         $embedCode = $config->generateEmbedCode(config('app.url'));
-        
+
         return response($embedCode)
             ->header('Content-Type', 'text/html')
-            ->header('Content-Disposition', 'attachment; filename="chatbot-embed-' . $tenant->slug . '.html"');
+            ->header('Content-Disposition', 'attachment; filename="chatbot-embed-'.$tenant->slug.'.html"');
     }
-    
+
     /**
      * Generate and download theme CSS
      */
     public function generateCSS(Tenant $tenant)
     {
         $config = $tenant->widgetConfig;
-        
-        if (!$config) {
+
+        if (! $config) {
             return redirect()->back()->with('error', 'Configurazione widget non trovata.');
         }
-        
+
         $css = $config->generateThemeCSS();
-        
+
         return response($css)
             ->header('Content-Type', 'text/css')
-            ->header('Content-Disposition', 'attachment; filename="chatbot-theme-' . $tenant->slug . '.css"');
+            ->header('Content-Disposition', 'attachment; filename="chatbot-theme-'.$tenant->slug.'.css"');
     }
-    
+
     /**
      * Get current design system colors as CSS for easy customization
      */
     public function getCurrentColors(Tenant $tenant)
     {
         $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
-        
+
         $css = $config->getCurrentColorsCSS();
-        
+
         return response()->json([
             'success' => true,
-            'css' => $css
+            'css' => $css,
         ]);
     }
-    
-        /**
+
+    /**
      * Preview widget with current configuration
      * ⚠️ DEPRECATED: Use public route widget.preview instead
      */
     // public function preview(Request $request, Tenant $tenant)
     // {
     //     $config = $tenant->widgetConfig ?? WidgetConfig::createDefaultForTenant($tenant);
-    //     
+    //
     //     // Apply temporary configuration for preview
     //     if ($request->has('preview_config')) {
     //         $previewConfig = $request->input('preview_config');
     //         $config->fill($previewConfig);
     //     }
-    //     
+    //
     //     // Get the API key for this tenant
     //     $apiKey = $tenant->getWidgetApiKey();
-    //     
+    //
     //     return view('admin.widget-config.preview', compact('tenant', 'config', 'apiKey'));
     // }
-    
+
     /**
      * Test widget API integration
      */
     public function testApi(Tenant $tenant)
     {
         $config = $tenant->widgetConfig;
-        
-        if (!$config) {
+
+        if (! $config) {
             return response()->json(['error' => 'Configurazione widget non trovata.'], 404);
         }
-        
+
         try {
             return response()->json([
                 'success' => true,
@@ -327,10 +326,10 @@ class WidgetConfigController extends Controller
                 'config' => [
                     'model' => $config->api_model,
                     'temperature' => $config->temperature,
-                    'max_tokens' => $config->max_tokens
-                ]
+                    'max_tokens' => $config->max_tokens,
+                ],
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -338,7 +337,7 @@ class WidgetConfigController extends Controller
             ], 500);
         }
     }
-    
+
     /**
      * Handle file upload for logos and favicons
      */
@@ -347,6 +346,7 @@ class WidgetConfigController extends Controller
         $safeName = Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
         $extension = $file->getClientOriginalExtension();
         $fileName = $safeName.'-'.uniqid().'.'.$extension;
+
         return $file->storeAs('public/widget/'.$tenantSlug.'/'.$folder, $fileName);
     }
 
@@ -356,10 +356,10 @@ class WidgetConfigController extends Controller
     private function checkTenantAccess(Tenant $tenant)
     {
         $user = auth()->user();
-        
-        if (!$user->isAdmin()) {
+
+        if (! $user->isAdmin()) {
             $userTenantIds = $user->tenants()->wherePivot('role', 'customer')->pluck('tenant_id')->toArray();
-            if (!in_array($tenant->id, $userTenantIds)) {
+            if (! in_array($tenant->id, $userTenantIds)) {
                 abort(403, 'Non hai accesso a questo tenant.');
             }
         }

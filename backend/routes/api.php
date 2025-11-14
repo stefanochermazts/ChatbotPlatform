@@ -1,17 +1,15 @@
 <?php
 
 use App\Http\Controllers\Api\ApiKeyController;
-use App\Http\Controllers\Api\DocumentController;
-use App\Http\Controllers\Api\ScraperConfigController;
-use App\Http\Controllers\Api\TenantController;
 use App\Http\Controllers\Api\ChatCompletionsController;
-use App\Http\Controllers\Api\VonageWhatsAppController;
-use App\Http\Controllers\Api\WidgetEventController;
+use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentViewController;
 use App\Http\Controllers\Api\FormController;
+use App\Http\Controllers\Api\ScraperConfigController;
+use App\Http\Controllers\Api\TenantController;
+use App\Http\Controllers\Api\VonageWhatsAppController;
+use App\Http\Controllers\Api\WidgetEventController;
 use App\Http\Controllers\Api\WidgetThemeController;
-use App\Http\Controllers\Api\ConversationController;
-use App\Http\Controllers\Api\MessageController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -30,36 +28,36 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
         Route::post('/scraper/config', [ScraperConfigController::class, 'storeOrUpdate']);
         Route::get('/scraper/config', [ScraperConfigController::class, 'show']);
-        
+
         // Widget Event Tracking
         Route::post('/widget/events', [WidgetEventController::class, 'track']);
         Route::get('/widget/session-stats', [WidgetEventController::class, 'sessionStats']);
         Route::get('/widget/health', [WidgetEventController::class, 'health']);
-        
+
         // Document Citations & Viewing
         Route::post('/documents/view-token', [DocumentViewController::class, 'generateViewToken']);
         Route::post('/documents/info', [DocumentViewController::class, 'getDocumentInfo']);
-        
+
         // Quick Actions (protected by API key)
         Route::prefix('quick-actions')->group(function () {
             Route::get('/', [\App\Http\Controllers\Api\QuickActionController::class, 'index']);
             Route::post('/execute', [\App\Http\Controllers\Api\QuickActionController::class, 'execute']);
         });
-        
+
         // Dynamic Forms (protected by API key)
         Route::prefix('forms')->group(function () {
             Route::post('/check-triggers', [FormController::class, 'checkTriggers']);
             Route::post('/submit', [FormController::class, 'submit']);
             Route::get('/submissions', [FormController::class, 'listSubmissions']);
         });
-        
+
         // Feedback del Chatbot (protected by API key)
         Route::prefix('feedback')->group(function () {
             Route::post('/', [\App\Http\Controllers\Api\ChatbotFeedbackController::class, 'store']);
             Route::get('/stats', [\App\Http\Controllers\Api\ChatbotFeedbackController::class, 'stats']);
         });
     });
-    
+
     // Public document viewing (no API key needed, uses secure token)
     Route::get('/documents/view/{token}', [DocumentViewController::class, 'viewDocument'])->name('api.document.view');
 
@@ -83,13 +81,13 @@ Route::prefix('v1/conversations')->group(function () {
     Route::get('/{sessionId}', [\App\Http\Controllers\Api\ConversationController::class, 'show']);
     Route::post('/{sessionId}/end', [\App\Http\Controllers\Api\ConversationController::class, 'end']);
     Route::get('/{sessionId}/status', [\App\Http\Controllers\Api\ConversationController::class, 'status']);
-    
-    // 💬 Message Management  
+
+    // 💬 Message Management
     Route::get('/{sessionId}/messages', [\App\Http\Controllers\Api\MessageController::class, 'index']);
     Route::post('/messages/send', [\App\Http\Controllers\Api\MessageController::class, 'send']);
     Route::post('/messages/{messageId}/feedback', [\App\Http\Controllers\Api\MessageController::class, 'feedback']);
     Route::put('/messages/{messageId}/edit', [\App\Http\Controllers\Api\MessageController::class, 'edit']);
-    
+
     // 🤝 Handoff request (public - called by widget)
     Route::post('/handoff/request', [\App\Http\Controllers\Api\HandoffController::class, 'request']);
 });
@@ -116,5 +114,3 @@ Route::prefix('v1/operators')->middleware('auth.apikey')->group(function () {
 Route::get('/health', function () {
     return response()->json(['status' => 'ok', 'timestamp' => now()]);
 });
-
-

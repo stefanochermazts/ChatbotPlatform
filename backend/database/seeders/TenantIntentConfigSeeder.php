@@ -13,9 +13,10 @@ class TenantIntentConfigSeeder extends Seeder
     public function run(): void
     {
         $tenant = Tenant::find(5);
-        
-        if (!$tenant) {
+
+        if (! $tenant) {
             $this->command->error('Tenant con ID 5 non trovato');
+
             return;
         }
 

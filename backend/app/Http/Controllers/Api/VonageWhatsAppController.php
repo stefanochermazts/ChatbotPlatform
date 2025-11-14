@@ -3,17 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\LLM\OpenAIChatService;
-use App\Services\RAG\KbSearchService;
 use App\Models\Tenant;
 use App\Models\VonageMessage;
+use App\Services\LLM\OpenAIChatService;
+use App\Services\RAG\KbSearchService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class VonageWhatsAppController extends Controller
 {
     protected $chatService;
+
     protected $kbService;
 
     public function __construct(OpenAIChatService $chatService, KbSearchService $kbService)
@@ -29,7 +30,7 @@ class VonageWhatsAppController extends Controller
     {
         try {
             $payload = $request->all();
-            
+
             Log::info('Vonage WhatsApp Inbound Message', ['payload' => $payload]);
 
             // Estrai dati del messaggio
@@ -41,15 +42,17 @@ class VonageWhatsAppController extends Controller
             $timestamp = $payload['timestamp'] ?? now();
 
             // Verifica che sia un messaggio di testo valido
-            if (!$from || !$messageText || $messageType !== 'text') {
+            if (! $from || ! $messageText || $messageType !== 'text') {
                 Log::warning('Invalid WhatsApp message received', ['payload' => $payload]);
+
                 return response()->json(['status' => 'ignored'], 200);
             }
 
             // Trova il tenant basato sul numero WhatsApp (to)
             $tenant = $this->findTenantByWhatsAppNumber($to);
-            if (!$tenant) {
-                Log::error('No tenant found for WhatsApp number: ' . $to);
+            if (! $tenant) {
+                Log::error('No tenant found for WhatsApp number: '.$to);
+
                 return response()->json(['status' => 'no_tenant'], 200);
             }
 
@@ -67,7 +70,7 @@ class VonageWhatsAppController extends Controller
         } catch (\Exception $e) {
             Log::error('Error processing WhatsApp inbound message', [
                 'error' => $e->getMessage(),
-                'payload' => $request->all()
+                'payload' => $request->all(),
             ]);
 
             return response()->json(['status' => 'error'], 500);
@@ -81,7 +84,7 @@ class VonageWhatsAppController extends Controller
     {
         try {
             $payload = $request->all();
-            
+
             Log::info('Vonage WhatsApp Status Update', ['payload' => $payload]);
 
             $messageId = $payload['message_uuid'] ?? null;
@@ -93,7 +96,7 @@ class VonageWhatsAppController extends Controller
                 VonageMessage::where('message_id', $messageId)
                     ->update([
                         'status' => $status,
-                        'status_updated_at' => $timestamp
+                        'status_updated_at' => $timestamp,
                     ]);
             }
 
@@ -102,7 +105,7 @@ class VonageWhatsAppController extends Controller
         } catch (\Exception $e) {
             Log::error('Error processing WhatsApp status update', [
                 'error' => $e->getMessage(),
-                'payload' => $request->all()
+                'payload' => $request->all(),
             ]);
 
             return response()->json(['status' => 'error'], 500);
@@ -116,27 +119,28 @@ class VonageWhatsAppController extends Controller
     {
         // Normalizza il numero (rimuovi prefisso +, spazi, etc.)
         $normalizedNumber = $this->normalizePhoneNumber($whatsappNumber);
-        
+
         // Cerca tenant con questo numero WhatsApp configurato
         $tenant = Tenant::whereNotNull('whatsapp_config')
             ->get()
             ->filter(function ($tenant) use ($normalizedNumber, $whatsappNumber) {
                 $config = $tenant->getWhatsAppConfig();
-                if (!$config['is_active'] || !$config['phone_number']) {
+                if (! $config['is_active'] || ! $config['phone_number']) {
                     return false;
                 }
-                
+
                 $tenantNumber = $this->normalizePhoneNumber($config['phone_number']);
+
                 return $tenantNumber === $normalizedNumber || $config['phone_number'] === $whatsappNumber;
             })->first();
-            
-        if (!$tenant) {
+
+        if (! $tenant) {
             Log::warning('No tenant found for WhatsApp number', [
                 'number' => $whatsappNumber,
-                'normalized' => $normalizedNumber
+                'normalized' => $normalizedNumber,
             ]);
         }
-        
+
         return $tenant;
     }
 
@@ -145,21 +149,23 @@ class VonageWhatsAppController extends Controller
      */
     private function normalizePhoneNumber($phoneNumber)
     {
-        if (!$phoneNumber) return null;
-        
+        if (! $phoneNumber) {
+            return null;
+        }
+
         // Rimuovi tutti i caratteri non numerici eccetto +
         $cleaned = preg_replace('/[^\d+]/', '', $phoneNumber);
-        
+
         // Se inizia con +, mantienilo, altrimenti rimuovi prefissi comuni
         if (strpos($cleaned, '+') === 0) {
             return $cleaned;
         }
-        
+
         // Rimuovi 0 iniziale se presente (numero italiano)
         if (strpos($cleaned, '0') === 0) {
             $cleaned = substr($cleaned, 1);
         }
-        
+
         return $cleaned;
     }
 
@@ -171,12 +177,12 @@ class VonageWhatsAppController extends Controller
         try {
             // Cerca nella knowledge base del tenant
             $searchResults = $this->kbService->search($message, $tenantId);
-            
+
             // Costruisci il prompt con il contesto
             $context = '';
-            if (!empty($searchResults['citations'])) {
+            if (! empty($searchResults['citations'])) {
                 foreach ($searchResults['citations'] as $citation) {
-                    $context .= $citation['content'] . "\n\n";
+                    $context .= $citation['content']."\n\n";
                 }
             }
 
@@ -184,13 +190,14 @@ class VonageWhatsAppController extends Controller
 
             // Genera la risposta con OpenAI
             $response = $this->chatService->generateResponse([
-                ['role' => 'user', 'content' => $prompt]
+                ['role' => 'user', 'content' => $prompt],
             ]);
 
             return $response;
 
         } catch (\Exception $e) {
             Log::error('Error processing message with RAG', ['error' => $e->getMessage()]);
+
             return 'Mi dispiace, al momento non riesco a elaborare la tua richiesta. Riprova più tardi.';
         }
     }
@@ -211,7 +218,7 @@ class VonageWhatsAppController extends Controller
                     'to' => $to,
                     'message_type' => 'text',
                     'text' => $message,
-                    'channel' => 'whatsapp'
+                    'channel' => 'whatsapp',
                 ]);
 
             if ($response->successful()) {
@@ -223,12 +230,12 @@ class VonageWhatsAppController extends Controller
 
                 Log::info('WhatsApp message sent successfully', [
                     'message_id' => $messageId,
-                    'to' => $to
+                    'to' => $to,
                 ]);
             } else {
                 Log::error('Failed to send WhatsApp message', [
                     'response' => $response->json(),
-                    'status' => $response->status()
+                    'status' => $response->status(),
                 ]);
             }
 
@@ -251,7 +258,7 @@ class VonageWhatsAppController extends Controller
             'direction' => $direction,
             'channel' => 'whatsapp',
             'status' => 'sent',
-            'created_at' => now()
+            'created_at' => now(),
         ]);
     }
 }

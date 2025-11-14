@@ -19,14 +19,15 @@ class TestLinkFilter extends Command
     {
         $tenantId = (int) $this->argument('tenant_id');
         $query = $this->argument('query');
-        
+
         $tenant = Tenant::find($tenantId);
-        if (!$tenant) {
+        if (! $tenant) {
             $this->error("❌ Tenant {$tenantId} non trovato");
+
             return 1;
         }
 
-        $this->info("🔍 TEST FILTRO LINK");
+        $this->info('🔍 TEST FILTRO LINK');
         $this->info("Tenant: {$tenant->name}");
         $this->info("Query: {$query}");
         $this->newLine();
@@ -36,22 +37,23 @@ class TestLinkFilter extends Command
         $citations = $result['citations'] ?? [];
 
         if (empty($citations)) {
-            $this->warn("⚠️  Nessuna citazione trovata");
+            $this->warn('⚠️  Nessuna citazione trovata');
+
             return 0;
         }
 
         // Analizza PRIMA del filtro
         $qualityBefore = $linkFilter->analyzeLinkQuality($citations);
-        
+
         // Applica filtro
         $filteredCitations = $linkFilter->filterLinksInContext($citations, $query);
-        
+
         // Analizza DOPO il filtro
         $qualityAfter = $linkFilter->analyzeLinkQuality($filteredCitations);
 
         // Mostra risultati
         $this->displayComparison($qualityBefore, $qualityAfter);
-        
+
         // Mostra esempio di contenuto filtrato
         $this->showContentExample($citations[0] ?? [], $filteredCitations[0] ?? []);
 
@@ -60,8 +62,8 @@ class TestLinkFilter extends Command
 
     private function displayComparison(array $before, array $after): void
     {
-        $this->info("📊 CONFRONTO QUALITÀ LINK");
-        
+        $this->info('📊 CONFRONTO QUALITÀ LINK');
+
         $this->table(
             ['Metrica', 'Prima', 'Dopo', 'Miglioramento'],
             [
@@ -70,7 +72,7 @@ class TestLinkFilter extends Command
                 ['Navigazione', $before['navigation_links'], $after['navigation_links'], $this->delta($before['navigation_links'], $after['navigation_links'])],
                 ['Malformati', $before['malformed_links'], $after['malformed_links'], $this->delta($before['malformed_links'], $after['malformed_links'])],
                 ['Rilevanti', $before['relevant_links'], $after['relevant_links'], $this->delta($before['relevant_links'], $after['relevant_links'])],
-                ['Quality Score', $before['quality_score'] . '%', $after['quality_score'] . '%', $this->deltaPercent($before['quality_score'], $after['quality_score'])],
+                ['Quality Score', $before['quality_score'].'%', $after['quality_score'].'%', $this->deltaPercent($before['quality_score'], $after['quality_score'])],
             ]
         );
     }
@@ -78,67 +80,78 @@ class TestLinkFilter extends Command
     private function delta(int $before, int $after): string
     {
         $diff = $after - $before;
-        if ($diff > 0) return "+{$diff}";
-        if ($diff < 0) return "{$diff}";
-        return "0";
+        if ($diff > 0) {
+            return "+{$diff}";
+        }
+        if ($diff < 0) {
+            return "{$diff}";
+        }
+
+        return '0';
     }
 
     private function deltaPercent(float $before, float $after): string
     {
         $diff = round($after - $before, 1);
-        if ($diff > 0) return "+{$diff}%";
-        if ($diff < 0) return "{$diff}%";
-        return "0%";
+        if ($diff > 0) {
+            return "+{$diff}%";
+        }
+        if ($diff < 0) {
+            return "{$diff}%";
+        }
+
+        return '0%';
     }
 
     private function showContentExample(array $original, array $filtered): void
     {
         $this->newLine();
-        $this->info("📝 ESEMPIO CONTENUTO (prima citazione)");
-        
+        $this->info('📝 ESEMPIO CONTENUTO (prima citazione)');
+
         $originalContent = $original['snippet'] ?? '';
         $filteredContent = $filtered['snippet'] ?? '';
-        
-        if (!$originalContent) {
-            $this->warn("Nessun contenuto da mostrare");
+
+        if (! $originalContent) {
+            $this->warn('Nessun contenuto da mostrare');
+
             return;
         }
 
-        $this->line("┌" . str_repeat("─", 78) . "┐");
-        $this->line("│ " . str_pad("ORIGINALE", 76) . " │");
-        $this->line("└" . str_repeat("─", 78) . "┘");
-        
+        $this->line('┌'.str_repeat('─', 78).'┐');
+        $this->line('│ '.str_pad('ORIGINALE', 76).' │');
+        $this->line('└'.str_repeat('─', 78).'┘');
+
         $originalLines = explode("\n", wordwrap($originalContent, 76));
         foreach (array_slice($originalLines, 0, 5) as $line) {
             $this->line($line);
         }
         if (count($originalLines) > 5) {
-            $this->line("[... " . (count($originalLines) - 5) . " righe rimanenti]");
+            $this->line('[... '.(count($originalLines) - 5).' righe rimanenti]');
         }
 
         $this->newLine();
-        $this->line("┌" . str_repeat("─", 78) . "┐");
-        $this->line("│ " . str_pad("FILTRATO", 76) . " │");
-        $this->line("└" . str_repeat("─", 78) . "┘");
-        
+        $this->line('┌'.str_repeat('─', 78).'┐');
+        $this->line('│ '.str_pad('FILTRATO', 76).' │');
+        $this->line('└'.str_repeat('─', 78).'┘');
+
         $filteredLines = explode("\n", wordwrap($filteredContent, 76));
         foreach (array_slice($filteredLines, 0, 5) as $line) {
             $this->line($line);
         }
         if (count($filteredLines) > 5) {
-            $this->line("[... " . (count($filteredLines) - 5) . " righe rimanenti]");
+            $this->line('[... '.(count($filteredLines) - 5).' righe rimanenti]');
         }
 
         // Calcola statistiche cambiamento
         $charReduction = strlen($originalContent) - strlen($filteredContent);
-        $charReductionPercent = strlen($originalContent) > 0 
-            ? round(($charReduction / strlen($originalContent)) * 100, 1) 
+        $charReductionPercent = strlen($originalContent) > 0
+            ? round(($charReduction / strlen($originalContent)) * 100, 1)
             : 0;
 
         $this->newLine();
-        $this->info("📈 STATISTICHE RIDUZIONE:");
+        $this->info('📈 STATISTICHE RIDUZIONE:');
         $this->line("• Caratteri ridotti: {$charReduction} (-{$charReductionPercent}%)");
-        $this->line("• Lunghezza originale: " . strlen($originalContent) . " chars");
-        $this->line("• Lunghezza filtrata: " . strlen($filteredContent) . " chars");
+        $this->line('• Lunghezza originale: '.strlen($originalContent).' chars');
+        $this->line('• Lunghezza filtrata: '.strlen($filteredContent).' chars');
     }
 }

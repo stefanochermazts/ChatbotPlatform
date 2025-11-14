@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ChatbotFeedback extends Model
 {
     protected $table = 'chatbot_feedback';
-    
+
     protected $fillable = [
         'tenant_id',
         'user_id',
@@ -34,7 +34,9 @@ class ChatbotFeedback extends Model
 
     // Enum per i rating
     public const RATING_NEGATIVE = 'negative';
+
     public const RATING_NEUTRAL = 'neutral';
+
     public const RATING_POSITIVE = 'positive';
 
     public const RATINGS = [
@@ -88,7 +90,7 @@ class ChatbotFeedback extends Model
      */
     public function getRatingEmojiAttribute(): string
     {
-        return match($this->rating) {
+        return match ($this->rating) {
             self::RATING_NEGATIVE => '😡',
             self::RATING_NEUTRAL => '😐',
             self::RATING_POSITIVE => '😊',

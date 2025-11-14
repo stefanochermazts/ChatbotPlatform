@@ -2,8 +2,8 @@
 
 namespace App\Services\Form;
 
-use App\Models\TenantForm;
 use App\Models\FormSubmission;
+use App\Models\TenantForm;
 use Illuminate\Support\Facades\Log;
 
 class FormTriggerService
@@ -12,16 +12,16 @@ class FormTriggerService
      * Verifica se deve essere triggerato un form basandosi sul messaggio dell'utente
      */
     public function checkForTriggers(
-        int $tenantId, 
-        string $message, 
-        string $sessionId, 
+        int $tenantId,
+        string $message,
+        string $sessionId,
         array $conversationHistory = []
     ): ?array {
         Log::info('[FormTrigger] Checking triggers', [
             'tenant_id' => $tenantId,
             'message' => $message,
             'session_id' => $sessionId,
-            'history_count' => count($conversationHistory)
+            'history_count' => count($conversationHistory),
         ]);
 
         // Ottieni tutti i form attivi per il tenant
@@ -32,6 +32,7 @@ class FormTriggerService
 
         if ($forms->isEmpty()) {
             Log::debug('[FormTrigger] No active forms for tenant', ['tenant_id' => $tenantId]);
+
             return null;
         }
 
@@ -44,7 +45,7 @@ class FormTriggerService
                 Log::info('[FormTrigger] Keyword trigger activated', [
                     'form_id' => $form->id,
                     'form_name' => $form->name,
-                    'trigger_type' => 'keyword'
+                    'trigger_type' => 'keyword',
                 ]);
 
                 return $this->buildTriggerResponse($form, 'keyword', $message);
@@ -59,7 +60,7 @@ class FormTriggerService
                     'form_id' => $form->id,
                     'form_name' => $form->name,
                     'trigger_type' => 'message_count',
-                    'message_count' => $messageCount
+                    'message_count' => $messageCount,
                 ]);
 
                 return $this->buildTriggerResponse($form, 'auto', "After {$messageCount} messages");
@@ -72,7 +73,7 @@ class FormTriggerService
                 Log::info('[FormTrigger] Question trigger activated', [
                     'form_id' => $form->id,
                     'form_name' => $form->name,
-                    'trigger_type' => 'question'
+                    'trigger_type' => 'question',
                 ]);
 
                 return $this->buildTriggerResponse($form, 'question', $message);
@@ -80,6 +81,7 @@ class FormTriggerService
         }
 
         Log::debug('[FormTrigger] No triggers activated');
+
         return null;
     }
 
@@ -88,20 +90,21 @@ class FormTriggerService
      */
     private function checkKeywordTrigger(TenantForm $form, string $message): bool
     {
-        if (!$form->trigger_keywords || empty($form->trigger_keywords)) {
+        if (! $form->trigger_keywords || empty($form->trigger_keywords)) {
             return false;
         }
 
         $messageLower = mb_strtolower($message);
-        
+
         foreach ($form->trigger_keywords as $keyword) {
             $keywordLower = mb_strtolower(trim($keyword));
             if ($keywordLower && mb_strpos($messageLower, $keywordLower) !== false) {
                 Log::debug('[FormTrigger] Keyword match found', [
                     'form_id' => $form->id,
                     'keyword' => $keyword,
-                    'message' => $message
+                    'message' => $message,
                 ]);
+
                 return true;
             }
         }
@@ -114,7 +117,7 @@ class FormTriggerService
      */
     private function checkMessageCountTrigger(TenantForm $form, int $messageCount): bool
     {
-        if (!$form->trigger_after_messages) {
+        if (! $form->trigger_after_messages) {
             return false;
         }
 
@@ -126,37 +129,38 @@ class FormTriggerService
      */
     private function checkQuestionTrigger(TenantForm $form, string $message): bool
     {
-        if (!$form->trigger_after_questions || empty($form->trigger_after_questions)) {
+        if (! $form->trigger_after_questions || empty($form->trigger_after_questions)) {
             return false;
         }
 
         $messageLower = mb_strtolower($message);
-        
+
         foreach ($form->trigger_after_questions as $triggerQuestion) {
             $questionLower = mb_strtolower(trim($triggerQuestion));
-            
-            if (!$questionLower) {
+
+            if (! $questionLower) {
                 continue;
             }
 
             // Calcola similarità usando similar_text
             $similarity = 0;
             similar_text($questionLower, $messageLower, $similarity);
-            
+
             // Se la similarità è >= 70%, considera match
             if ($similarity >= 70) {
                 Log::debug('[FormTrigger] Question similarity match', [
                     'form_id' => $form->id,
                     'trigger_question' => $triggerQuestion,
                     'user_message' => $message,
-                    'similarity' => $similarity
+                    'similarity' => $similarity,
                 ]);
+
                 return true;
             }
 
             // Controlla anche se il messaggio contiene parole chiave della domanda trigger
             $triggerWords = explode(' ', $questionLower);
-            $triggerWords = array_filter($triggerWords, function($word) {
+            $triggerWords = array_filter($triggerWords, function ($word) {
                 return mb_strlen($word) > 3; // Solo parole di almeno 4 caratteri
             });
 
@@ -174,8 +178,9 @@ class FormTriggerService
                         'form_id' => $form->id,
                         'trigger_question' => $triggerQuestion,
                         'user_message' => $message,
-                        'word_match_percentage' => $wordMatchPercentage
+                        'word_match_percentage' => $wordMatchPercentage,
                     ]);
+
                     return true;
                 }
             }
@@ -233,7 +238,7 @@ class FormTriggerService
     public function canTriggerManually(int $formId, string $sessionId): bool
     {
         $form = TenantForm::active()->find($formId);
-        if (!$form) {
+        if (! $form) {
             return false;
         }
 
@@ -243,7 +248,7 @@ class FormTriggerService
             ->pending()
             ->first();
 
-        return !$existingSubmission;
+        return ! $existingSubmission;
     }
 
     /**
@@ -252,7 +257,7 @@ class FormTriggerService
     public function triggerManually(int $formId): ?array
     {
         $form = TenantForm::active()->with('fields')->find($formId);
-        if (!$form) {
+        if (! $form) {
             return null;
         }
 

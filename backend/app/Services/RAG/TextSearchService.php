@@ -9,6 +9,7 @@ class TextSearchService
 {
     /**
      * Ricerca full-text per tenant su Postgres FTS.
+     *
      * @return array<int, array{document_id:int, chunk_index:int, score:float}>
      */
     public function searchTopK(int $tenantId, string $query, int $k = 50, ?int $knowledgeBaseId = null): array
@@ -34,7 +35,7 @@ class TextSearchService
         $orQuery = implode(' | ', $sanitizedTerms);
 
         if ($knowledgeBaseId !== null) {
-            $sql = <<<SQL
+            $sql = <<<'SQL'
                 WITH q AS (SELECT to_tsquery('simple', :q) AS tsq)
                 SELECT dc.document_id, dc.chunk_index,
                        ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
@@ -56,7 +57,7 @@ class TextSearchService
                 'kbId' => (int) $knowledgeBaseId,
             ]);
         } else {
-            $sql = <<<SQL
+            $sql = <<<'SQL'
                 WITH q AS (SELECT to_tsquery('simple', :q) AS tsq)
                 SELECT dc.document_id, dc.chunk_index,
                        ts_rank(to_tsvector('simple', dc.content), q.tsq) AS score
@@ -125,7 +126,7 @@ class TextSearchService
             }
 
             foreach (preg_split('/\\s+/u', $term, -1, PREG_SPLIT_NO_EMPTY) as $token) {
-                $token = mb_strtolower(trim($token, "-_"));
+                $token = mb_strtolower(trim($token, '-_'));
 
                 if ($token === '' || mb_strlen($token) < 2) {
                     continue;
@@ -166,6 +167,7 @@ class TextSearchService
             return null;
         }
         $s = (string) $row->content;
+
         return mb_strlen($s) > $max ? mb_substr($s, 0, $max - 1).'…' : $s;
     }
 
@@ -173,6 +175,7 @@ class TextSearchService
      * Trova numeri di telefono vicini a un nome (intenti lookup "telefono").
      * Ritorna una lista di risultati con phone, document_id, chunk_index, score.
      * Score combina similarità trigram del nome e vicinanza nome↔numero.
+     *
      * @return array<int, array{phone:string,document_id:int,chunk_index:int,score:float}>
      */
     public function findPhonesNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null): array
@@ -186,8 +189,8 @@ class TextSearchService
         // Es: "vigili urbani polizia locale municipale" -> tutti i termini vengono considerati
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
-        $last  = $parts[1] ?? '';
-        
+        $last = $parts[1] ?? '';
+
         // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
         $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
@@ -215,7 +218,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         } else {
@@ -238,7 +241,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         }
@@ -248,7 +251,7 @@ class TextSearchService
         $patterns = [
             // Fissi: +39 0XX XXXXXXX oppure 0XX XXXXXXX (word boundary all'inizio)
             '/(?<!\d)(?:\+39'.$sep.')?0\d{1,3}'.$sep.'\d{6,8}(?!\d)/u',
-            // Mobili: +39 3XX XXXXXXX oppure 3XX XXXXXXX  
+            // Mobili: +39 3XX XXXXXXX oppure 3XX XXXXXXX
             '/(?<!\d)(?:\+39'.$sep.')?3\d{2}'.$sep.'\d{3}'.$sep.'\d{3,4}(?!\d)/u',
             // Numeri verdi e servizi speciali
             '/(?<!\d)(?:800|199|892|899|163|166)'.$sep.'\d{3,6}(?!\d)/u',
@@ -284,13 +287,17 @@ class TextSearchService
             }
             // Rimuovi duplicati e normalizza
             $phones = array_unique($phones);
-            
+
             foreach ($phones as $phRaw) {
                 $ph = trim(preg_replace('/[\s\.\-\(\)\x{00A0}\x{2009}\x{202F}\x{2028}\x{2029}\x{2010}-\x{2015}]/u', '', $phRaw));
-                if ($ph === '') continue;
-                
+                if ($ph === '') {
+                    continue;
+                }
+
                 // Filtri per escludere falsi positivi
-                if ($this->isLikelyNotPhone($ph, $content, $phRaw)) continue;
+                if ($this->isLikelyNotPhone($ph, $content, $phRaw)) {
+                    continue;
+                }
                 $pos = mb_strpos($content, $phRaw);
                 $dist = $namePos !== false && $pos !== false ? abs($pos - $namePos) : 9999;
                 // score: simil(name, chunk) + bonus vicinanza inversa
@@ -307,46 +314,72 @@ class TextSearchService
                 ];
             }
         }
-        usort($out, fn($a,$b) => $b['score'] <=> $a['score']);
+        usort($out, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return array_slice($out, 0, $limit);
     }
 
     private function trigramSimilarity(string $a, string $b): float
     {
         // very approximate: Jaccard over trigrams
-        $ngr = function(string $s){ $n=[]; $len=mb_strlen($s); for($i=0;$i<$len-2;$i++){ $n[mb_substr($s,$i,3)] = true; } return array_keys($n); };
-        $A = $ngr($a); $B = $ngr($b);
-        if ($A===[] || $B===[]) return 0.0;
+        $ngr = function (string $s) {
+            $n = [];
+            $len = mb_strlen($s);
+            for ($i = 0; $i < $len - 2; $i++) {
+                $n[mb_substr($s, $i, 3)] = true;
+            }
+
+return array_keys($n);
+        };
+        $A = $ngr($a);
+        $B = $ngr($b);
+        if ($A === [] || $B === []) {
+            return 0.0;
+        }
         $setA = array_fill_keys($A, true);
-        $inter=0; foreach($B as $g){ if(isset($setA[$g])) $inter++; }
+        $inter = 0;
+        foreach ($B as $g) {
+            if (isset($setA[$g])) {
+                $inter++;
+            }
+        }
         $uni = count($A) + count($B) - $inter;
-        return $uni>0 ? $inter/$uni : 0.0;
+
+        return $uni > 0 ? $inter / $uni : 0.0;
     }
 
     private function excerptAround(string $text, int $center, int $size): string
     {
         $len = mb_strlen($text);
-        if ($len <= $size) return $text;
+        if ($len <= $size) {
+            return $text;
+        }
         $start = max(0, $center - intdiv($size, 2));
-        if ($start + $size > $len) { $start = max(0, $len - $size); }
+        if ($start + $size > $len) {
+            $start = max(0, $len - $size);
+        }
         $slice = mb_substr($text, $start, $size);
-        return ($start>0 ? '…' : '').$slice.($start+$size<$len ? '…' : '');
+
+        return ($start > 0 ? '…' : '').$slice.($start + $size < $len ? '…' : '');
     }
 
     /**
      * Trova email vicine a un nome.
+     *
      * @return array<int, array{email:string,document_id:int,chunk_index:int,score:float,excerpt:string}>
      */
     public function findEmailsNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null): array
     {
         $name = trim($name);
-        if ($name === '') return [];
+        if ($name === '') {
+            return [];
+        }
         $nameLower = mb_strtolower($name);
         // 🔧 FIX: Tokenizza TUTTI i termini per supportare sinonimi espansi
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
-        $last  = $parts[1] ?? '';
-        
+        $last = $parts[1] ?? '';
+
         // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
         $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
@@ -372,7 +405,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         } else {
@@ -393,7 +426,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         }
@@ -462,29 +495,33 @@ class TextSearchService
                 ];
             }
         }
-        usort($out, fn($a,$b) => $b['score'] <=> $a['score']);
+        usort($out, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return array_slice($out, 0, $limit);
     }
 
     /**
      * Trova indirizzi (via/viale/piazza/corso/largo/vicolo/strada) vicino a un nome.
+     *
      * @return array<int, array{address:string,document_id:int,chunk_index:int,score:float,excerpt:string}>
      */
     public function findAddressesNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null, ?string $originalName = null): array
     {
         $name = trim($name);
-        if ($name === '') return [];
+        if ($name === '') {
+            return [];
+        }
         $nameLower = mb_strtolower($name);
         // 🔧 FIX: Tokenizza TUTTI i termini per supportare sinonimi espansi
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
-        $last  = $parts[1] ?? '';
+        $last = $parts[1] ?? '';
         $primaryParts = [];
         if ($originalName !== null) {
             $primaryParts = preg_split('/\s+/', mb_strtolower(trim($originalName)), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         }
         $genericTerms = ['ufficio', 'uffici', 'sportello', 'sportelli', 'servizio', 'servizi', 'municipio', 'comune', 'ente', 'office', 'service', 'ordinanze'];
-        
+
         // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
         $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
@@ -510,7 +547,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         } else {
@@ -531,7 +568,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         }
@@ -539,7 +576,7 @@ class TextSearchService
         // Pattern base indirizzi italiani
         $types = '(?:via|viale|piazza|p\.?zza|corso|largo|vicolo|piazzale|strada|str\.)';
         $civic = '(?:\d{1,4}[A-Za-z]?)';
-        $cap   = '(?:\b\d{5}\b)';
+        $cap = '(?:\b\d{5}\b)';
         $addrPattern = '/\b'.$types.'\s+[A-Za-zÀ-ÖØ-öø-ÿ\'\-\s]{2,60}(?:,?\s+'.$civic.')?(?:.*?'.$cap.')?/iu';
 
         $out = [];
@@ -689,29 +726,33 @@ class TextSearchService
                 ];
             }
         }
-        usort($out, fn($a,$b) => $b['score'] <=> $a['score']);
+        usort($out, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return array_slice($out, 0, $limit);
     }
 
     /**
      * Trova orari/schedule vicini a un nome.
+     *
      * @return array<int, array{schedule:string,document_id:int,chunk_index:int,score:float,excerpt:string}>
      */
     public function findSchedulesNearName(int $tenantId, string $name, int $limit = 10, ?int $knowledgeBaseId = null, ?string $originalName = null): array
     {
         $name = trim($name);
-        if ($name === '') return [];
+        if ($name === '') {
+            return [];
+        }
         $nameLower = mb_strtolower($name);
         // 🔧 FIX: Tokenizza TUTTI i termini per supportare sinonimi espansi
         $parts = preg_split('/\s+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $first = $parts[0] ?? '';
-        $last  = $parts[1] ?? '';
+        $last = $parts[1] ?? '';
         $primaryParts = [];
         if ($originalName !== null) {
             $primaryParts = preg_split('/\s+/', mb_strtolower(trim($originalName)), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         }
         $genericTerms = ['ufficio', 'uffici', 'sportello', 'sportelli', 'servizio', 'servizi', 'office', 'service'];
-        
+
         // Costruisci condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
         $synonymConditions = $this->buildSynonymMatchingConditions($parts, $knowledgeBaseId !== null);
 
@@ -737,7 +778,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         } else {
@@ -758,7 +799,7 @@ class TextSearchService
                     'phrase1' => '%'.$first.'%'.$last.'%',
                     'phrase2' => '%'.$last.'%'.$first.'%',
                     'first' => '%'.$first.'%',
-                    'last'  => '%'.$last.'%',
+                    'last' => '%'.$last.'%',
                 ], $synonymConditions['params'])
             );
         }
@@ -855,47 +896,47 @@ class TextSearchService
 
                 continue;
             }
-            
-        $scheduleCandidates = [];
-        foreach ($patterns as $pattern) {
-            preg_match_all($pattern, $content, $m, PREG_OFFSET_CAPTURE);
-            if (!empty($m[0])) {
-                foreach ($m[0] as $match) {
-                    $schedule = $match[0];
-                    $offset = $match[1];
 
-                    if ($this->isValidSchedule($schedule, $content, $offset)) {
-                        $scheduleCandidates[] = [
-                            'value' => trim($schedule),
-                            'position' => $offset,
-                        ];
+            $scheduleCandidates = [];
+            foreach ($patterns as $pattern) {
+                preg_match_all($pattern, $content, $m, PREG_OFFSET_CAPTURE);
+                if (! empty($m[0])) {
+                    foreach ($m[0] as $match) {
+                        $schedule = $match[0];
+                        $offset = $match[1];
+
+                        if ($this->isValidSchedule($schedule, $content, $offset)) {
+                            $scheduleCandidates[] = [
+                                'value' => trim($schedule),
+                                'position' => $offset,
+                            ];
+                        }
                     }
                 }
             }
-        }
 
-        foreach ($this->extractSchedulesFromTable($content, $primaryParts ?: $parts) as $tableCandidate) {
-            $scheduleCandidates[] = $tableCandidate;
-        }
-
-        if ($scheduleCandidates !== []) {
-            $unique = [];
-            $seen = [];
-            foreach ($scheduleCandidates as $candidate) {
-                $value = trim($candidate['value']);
-                if ($value === '') {
-                    continue;
-                }
-                if (isset($seen[$value])) {
-                    continue;
-                }
-                $seen[$value] = true;
-                $unique[] = $candidate;
+            foreach ($this->extractSchedulesFromTable($content, $primaryParts ?: $parts) as $tableCandidate) {
+                $scheduleCandidates[] = $tableCandidate;
             }
-            $scheduleCandidates = $unique;
-        }
 
-        if ($scheduleCandidates === []) {
+            if ($scheduleCandidates !== []) {
+                $unique = [];
+                $seen = [];
+                foreach ($scheduleCandidates as $candidate) {
+                    $value = trim($candidate['value']);
+                    if ($value === '') {
+                        continue;
+                    }
+                    if (isset($seen[$value])) {
+                        continue;
+                    }
+                    $seen[$value] = true;
+                    $unique[] = $candidate;
+                }
+                $scheduleCandidates = $unique;
+            }
+
+            if ($scheduleCandidates === []) {
                 Log::debug('ℹ️ [INTENT-SCHEDULE] Nessun orario strutturato trovato, si prova fallback appuntamento', [
                     'tenant_id' => $tenantId,
                     'name' => $name,
@@ -936,9 +977,9 @@ class TextSearchService
                 continue;
             }
 
-        foreach ($scheduleCandidates as $candidate) {
-            $sched = $candidate['value'];
-            $pos = $candidate['position'] ?? mb_strpos($content, $sched);
+            foreach ($scheduleCandidates as $candidate) {
+                $sched = $candidate['value'];
+                $pos = $candidate['position'] ?? mb_strpos($content, $sched);
                 $effectiveDistance = 9999;
                 if (! empty($termPositions)) {
                     foreach ($termPositions as $termPos) {
@@ -980,7 +1021,7 @@ class TextSearchService
                     'entity_label' => $entityLabel,
                 ]);
                 $out[] = [
-                'schedule' => trim((string) $sched),
+                    'schedule' => trim((string) $sched),
                     'document_id' => (int) $r->document_id,
                     'chunk_index' => (int) $r->chunk_index,
                     'score' => (float) $score,
@@ -989,7 +1030,8 @@ class TextSearchService
                 ];
             }
         }
-        usort($out, fn($a,$b) => $b['score'] <=> $a['score']);
+        usort($out, fn ($a, $b) => $b['score'] <=> $a['score']);
+
         return array_slice($out, 0, $limit);
     }
 
@@ -1103,6 +1145,7 @@ class TextSearchService
                             'position' => $position,
                         ];
                     }
+
                     continue;
                 }
 
@@ -1174,6 +1217,7 @@ class TextSearchService
                 }
                 if (stripos($normalized, 'chiuso') !== false) {
                     $times[] = 'Chiuso';
+
                     continue;
                 }
 
@@ -1182,6 +1226,7 @@ class TextSearchService
                         $endTime = $rangeMatches[2][$idx] ?? null;
                         $times[] = $endTime ? ($startTime.'-'.$endTime) : $startTime;
                     }
+
                     continue;
                 }
 
@@ -1216,7 +1261,6 @@ class TextSearchService
      * Raccoglie le posizioni dei termini rilevanti nel testo (già in lower-case),
      * ignorando quelli generici.
      *
-     * @param  string  $text
      * @param  array<int, string>  $terms
      * @param  array<int, string>  $genericTerms
      * @return array<int, int>
@@ -1253,77 +1297,77 @@ class TextSearchService
     private function isValidSchedule(string $schedule, string $content, int $offset): bool
     {
         $schedule = trim($schedule);
-        
+
         // Rimuovi spazi multipli
         $schedule = preg_replace('/\s+/', ' ', $schedule);
-        
+
         // Estrai contesto attorno alla posizione dell'orario (±50 caratteri)
         $contextBefore = mb_substr($content, max(0, $offset - 50), 50);
         $contextAfter = mb_substr($content, $offset + mb_strlen($schedule), 50);
-        $fullContext = $contextBefore . ' ' . $schedule . ' ' . $contextAfter;
-        
+        $fullContext = $contextBefore.' '.$schedule.' '.$contextAfter;
+
         // 1. Filtra anni (1900-2100)
         if (preg_match('/\b(19|20)\d{2}\b/', $schedule)) {
             return false;
         }
-        
+
         // 2. Filtra date nel contesto (es: "12/03/2024", "12 marzo 2024")
         if (preg_match('/\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.](?:19|20)?\d{2}\b/u', $fullContext)) {
             return false;
         }
-        
+
         // 3. Filtra se il contesto suggerisce una data
         if (preg_match('/\b(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre|gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic)\b/iu', $fullContext)) {
             return false;
         }
-        
+
         // 4. Filtra numeri di telefono, codici, prezzi (solo se compaiono nell'orario stesso)
         if (preg_match('/\b(?:tel|telefono|cod|codice|€|euro|prezzo|costo|partita\s+iva|p\.iva|cf|c\.f\.)\b/iu', $schedule)) {
             return false;
         }
-        
+
         // 5. Filtra coordinate o numeri civici
         if (preg_match('/\b(?:via|viale|corso|piazza|largo|lat|lon|coordinate)\b/iu', $fullContext)) {
             return false;
         }
-        
+
         // 6. Valida che i numeri siano in range valido per orari
         preg_match_all('/\b(\d{1,2})(?:[:\.](\d{2}))?\b/', $schedule, $timeMatches);
-        if (!empty($timeMatches[1])) {
+        if (! empty($timeMatches[1])) {
             foreach ($timeMatches[1] as $i => $hour) {
                 $minute = $timeMatches[2][$i] ?? '00';
                 $h = (int) $hour;
                 $m = (int) $minute;
-                
+
                 // Ore valide: 0-23, Minuti validi: 0-59
                 if ($h > 23 || $m > 59) {
                     return false;
                 }
-                
+
                 // Filtra ore molto improbabili per orari di servizio (es: 1:00, 2:00, 3:00)
-                if ($h < 6 && !preg_match('/\b(?:notturno|24|continuo|emergenza)\b/iu', $fullContext)) {
+                if ($h < 6 && ! preg_match('/\b(?:notturno|24|continuo|emergenza)\b/iu', $fullContext)) {
                     return false;
                 }
             }
         }
-        
+
         // 7. Deve avere indicatori di contesto temporale
         $timeIndicators = [
             'orario', 'orari', 'apertura', 'chiusura', 'aperto', 'chiuso',
             'ore', 'dalle', 'alle', 'fino', 'mattina', 'pomeriggio', 'sera',
             'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica',
             'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom',
-            'ricevimento', 'sportello', 'ufficio', 'servizio'
+            'ricevimento', 'sportello', 'ufficio', 'servizio',
         ];
-        
+
         $hasTimeContext = false;
         foreach ($timeIndicators as $indicator) {
-            if (preg_match('/\b' . preg_quote($indicator, '/') . '\b/iu', $fullContext)) {
+            if (preg_match('/\b'.preg_quote($indicator, '/').'\b/iu', $fullContext)) {
                 $hasTimeContext = true;
                 break;
             }
         }
-        
+
         return $hasTimeContext;
     }
 
@@ -1332,13 +1376,13 @@ class TextSearchService
      */
     /**
      * Costruisce condizioni SQL OR per matchare qualsiasi combinazione di termini sinonimi
-     * 
+     *
      * Esempio: ["vigili", "urbani", "polizia", "locale"] genera:
      * OR (LOWER(dc.content) ILIKE '%vigili%' AND LOWER(dc.content) ILIKE '%polizia%')
      * OR (LOWER(dc.content) ILIKE '%vigili%' AND LOWER(dc.content) ILIKE '%locale%')
      * OR (LOWER(dc.content) ILIKE '%urbani%' AND LOWER(dc.content) ILIKE '%polizia%')
      * ...
-     * 
+     *
      * @param  array<string>  $terms  Array di termini (nome originale + sinonimi)
      * @param  bool  $useTableAlias  Se true usa "dc.content", altrimenti "content"
      * @return array{sql: string, params: array<string, string>}
@@ -1362,7 +1406,7 @@ class TextSearchService
             for ($j = $i + 1; $j < count($terms) && $pairsGenerated < $maxPairs; $j++) {
                 $term1 = trim($terms[$i]);
                 $term2 = trim($terms[$j]);
-                
+
                 // Skip termini troppo corti o identici
                 if (mb_strlen($term1) < 2 || mb_strlen($term2) < 2 || $term1 === $term2) {
                     continue;
@@ -1370,17 +1414,17 @@ class TextSearchService
 
                 $key1 = "syn_term_{$paramIndex}_1";
                 $key2 = "syn_term_{$paramIndex}_2";
-                
+
                 $conditions[] = "(LOWER({$contentField}) ILIKE :{$key1} AND LOWER({$contentField}) ILIKE :{$key2})";
                 $params[$key1] = '%'.$term1.'%';
                 $params[$key2] = '%'.$term2.'%';
-                
+
                 $paramIndex++;
                 $pairsGenerated++;
             }
         }
 
-        $sql = !empty($conditions) ? 'OR '.implode(' OR ', $conditions) : '';
+        $sql = ! empty($conditions) ? 'OR '.implode(' OR ', $conditions) : '';
 
         return [
             'sql' => $sql,
@@ -1392,12 +1436,12 @@ class TextSearchService
     {
         // Rimuovi prefisso internazionale per i controlli
         $cleaned = preg_replace('/^(\+39|0039)/', '', $phone);
-        
+
         // Numeri di emergenza sono sempre validi
         if (preg_match('/^(?:112|113|115|117|118|1515|1530|1533|114)$/', $cleaned)) {
             return false;
         }
-        
+
         // Partita IVA: esattamente 11 cifre
         if (strlen($cleaned) === 11 && ctype_digit($cleaned)) {
             // Cerca indicatori di partita IVA nel contesto
@@ -1406,24 +1450,24 @@ class TextSearchService
                 return true;
             }
         }
-        
+
         // Codici fiscali: 16 caratteri alfanumerici
         if (strlen($originalMatch) === 16 && preg_match('/^[A-Z0-9]{16}$/i', str_replace([' ', '-', '.'], '', $originalMatch))) {
             return true;
         }
-        
+
         // Date in vari formati
         if (preg_match('/^\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4}$/', $originalMatch) ||
             preg_match('/^\d{2,4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2}$/', $originalMatch) ||
             preg_match('/^\d{4}\d{2}\d{2}$/', $cleaned)) {
             return true;
         }
-        
+
         // Orari (es: 08:30, 14.45)
         if (preg_match('/^\d{1,2}[\.\:]\d{2}$/', $originalMatch)) {
             return true;
         }
-        
+
         // Codici postali: esattamente 5 cifre
         if (strlen($cleaned) === 5 && ctype_digit($cleaned)) {
             $context = mb_strtolower(substr($content, max(0, strpos($content, $originalMatch) - 30), 100));
@@ -1431,35 +1475,29 @@ class TextSearchService
                 return true;
             }
         }
-        
+
         // Prezzi/importi (se preceduto da € o seguito da €, EUR, ecc.)
         $pos = strpos($content, $originalMatch);
         if ($pos !== false) {
             $contextBefore = substr($content, max(0, $pos - 10), 15);
             $contextAfter = substr($content, $pos + strlen($originalMatch), 15);
-            $fullContext = $contextBefore . $originalMatch . $contextAfter;
-            
-            if (preg_match('/[€$£]\s*' . preg_quote($originalMatch, '/') . '|\b' . preg_quote($originalMatch, '/') . '\s*(?:€|eur|euro|dollari?|pounds?)\b/i', $fullContext)) {
+            $fullContext = $contextBefore.$originalMatch.$contextAfter;
+
+            if (preg_match('/[€$£]\s*'.preg_quote($originalMatch, '/').'|\b'.preg_quote($originalMatch, '/').'\s*(?:€|eur|euro|dollari?|pounds?)\b/i', $fullContext)) {
                 return true;
             }
         }
-        
 
-        
         // Numeri di documento/protocollo (troppo lunghi o troppo corti, eccetto emergenze)
         if (strlen($cleaned) < 6 || strlen($cleaned) > 15) {
             return true;
         }
-        
+
         // Telefoni validi devono iniziare con cifre appropriate
-        if (!preg_match('/^(?:0\d{1,3}|3\d{2}|800|199|892|899|1\d{2,3})/', $cleaned)) {
+        if (! preg_match('/^(?:0\d{1,3}|3\d{2}|800|199|892|899|1\d{2,3})/', $cleaned)) {
             return true;
         }
-        
+
         return false;
     }
 }
-
-
-
-

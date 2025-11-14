@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class MonitorQueues extends Command
 {
@@ -31,26 +31,26 @@ class MonitorQueues extends Command
     {
         do {
             $this->displayQueueStatus();
-            
+
             if ($this->option('once')) {
                 break;
             }
-            
+
             $refresh = (int) $this->option('refresh');
             sleep($refresh);
-            
+
         } while (true);
     }
 
     private function displayQueueStatus()
     {
         // Clear screen
-        if (!$this->option('once')) {
+        if (! $this->option('once')) {
             system('clear');
         }
-        
+
         $this->info('🚀 LARAVEL QUEUE MONITOR');
-        $this->info('📅 ' . Carbon::now()->format('Y-m-d H:i:s'));
+        $this->info('📅 '.Carbon::now()->format('Y-m-d H:i:s'));
         $this->newLine();
 
         // 1. JOBS PENDING
@@ -76,7 +76,7 @@ class MonitorQueues extends Command
                         $job->queue,
                         $job->count,
                         Carbon::parse($job->oldest)->diffForHumans(),
-                        Carbon::parse($job->newest)->diffForHumans()
+                        Carbon::parse($job->newest)->diffForHumans(),
                     ];
                 })->toArray()
             );
@@ -107,7 +107,7 @@ class MonitorQueues extends Command
                         $job->queue,
                         $job->count,
                         Carbon::parse($job->oldest_failure)->diffForHumans(),
-                        Carbon::parse($job->newest_failure)->diffForHumans()
+                        Carbon::parse($job->newest_failure)->diffForHumans(),
                     ];
                 })->toArray()
             );
@@ -117,7 +117,7 @@ class MonitorQueues extends Command
 
         // 3. JOBS BY CLASS
         $this->info('🔍 JOBS PER CLASSE (PENDING)');
-        
+
         try {
             // Usa sintassi PostgreSQL per JSON
             $jobsByClass = DB::table('jobs')
@@ -144,16 +144,16 @@ class MonitorQueues extends Command
                 $jobsByClass->map(function ($job) {
                     // Fallback per job_class vuoto o null
                     $className = $job->job_class ?: 'Unknown Job';
-                    
+
                     // Pulisci il nome della classe se troppo lungo
                     if (strlen($className) > 50) {
-                        $className = '...' . substr($className, -47);
+                        $className = '...'.substr($className, -47);
                     }
-                    
+
                     return [
                         $className,
                         $job->queue ?: 'default',
-                        $job->count
+                        $job->count,
                     ];
                 })->toArray()
             );
@@ -164,18 +164,18 @@ class MonitorQueues extends Command
         // 4. TOTALI
         $totalPending = DB::table('jobs')->count();
         $totalFailed = DB::table('failed_jobs')->count();
-        
+
         $this->info('📊 RIEPILOGO TOTALE');
         $this->table(
             ['Tipo', 'Count'],
             [
                 ['Jobs Pending', $totalPending],
                 ['Jobs Failed', $totalFailed],
-                ['Total Jobs', $totalPending + $totalFailed]
+                ['Total Jobs', $totalPending + $totalFailed],
             ]
         );
 
-        if (!$this->option('once')) {
+        if (! $this->option('once')) {
             $refresh = $this->option('refresh');
             $this->info("🔄 Aggiornamento ogni {$refresh} secondi... (Ctrl+C per uscire)");
         }

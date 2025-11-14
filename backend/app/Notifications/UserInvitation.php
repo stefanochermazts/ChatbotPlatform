@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Models\User;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -29,9 +28,9 @@ class UserInvitation extends VerifyEmail implements ShouldQueue
     {
         $verificationUrl = $this->verificationUrl($notifiable);
 
-        $message = new MailMessage();
+        $message = new MailMessage;
         $message->subject($this->isNewUser ? 'Invito alla piattaforma ChatBot' : 'Verifica il tuo indirizzo email');
-        
+
         if ($this->isNewUser) {
             $message->greeting('Benvenuto!');
             $message->line('Sei stato invitato ad accedere alla piattaforma ChatBot.');

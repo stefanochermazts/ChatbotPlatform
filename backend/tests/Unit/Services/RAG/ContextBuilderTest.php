@@ -29,7 +29,7 @@ class ContextBuilderTest extends TestCase
         $citations = [
             [
                 'title' => 'Consiglieri comunali',
-                'chunk_text' => <<<MD
+                'chunk_text' => <<<'MD'
 | Nome | Ruolo |
 | --- | --- |
 | Mario Rossi | Presidente |
@@ -66,4 +66,3 @@ MD,
         parent::tearDown();
     }
 }
-

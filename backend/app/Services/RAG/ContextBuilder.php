@@ -46,7 +46,7 @@ class ContextBuilder
 
         // 🎨 Load tenant for widget config (source link text)
         $tenant = Tenant::find($tenantId);
-        
+
         $tableParts = [];
         $parts = [];
         foreach ($unique as $c) {
@@ -86,7 +86,7 @@ class ContextBuilder
                 // 🔧 FIX: Use valid markdown link format [text](url) instead of [text: url]
                 // 🎨 USE: Configurable source link text from widget config
                 $sourceLinkText = $tenant->widgetConfig->source_link_text ?? 'Fonte';
-                $sourceInfo = "\n\n[".$sourceLinkText."](".$c['document_source_url'].')';
+                $sourceInfo = "\n\n[".$sourceLinkText.']('.$c['document_source_url'].')';
             }
 
             // Combine all parts

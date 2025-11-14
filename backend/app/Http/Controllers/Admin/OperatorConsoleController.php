@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\ConversationSession;
 use App\Models\ConversationMessage;
+use App\Models\ConversationSession;
 use App\Models\HandoffRequest;
 use App\Models\User;
 use App\Services\HandoffService;
 use App\Services\OperatorRoutingService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -28,23 +28,23 @@ class OperatorConsoleController extends Controller
     {
         // 🎯 Tenant scoping for multi-tenant environment
         $tenantId = $request->attributes->get('tenant_id') ?? 5; // Default to San Cesareo dev
-        
+
         $stats = [
-            'pending_handoffs' => HandoffRequest::whereHas('conversationSession', function($q) use ($tenantId) {
+            'pending_handoffs' => HandoffRequest::whereHas('conversationSession', function ($q) use ($tenantId) {
                 $q->where('tenant_id', $tenantId);
             })->where('status', 'pending')->count(),
             'active_conversations' => ConversationSession::where('tenant_id', $tenantId)
-                                       ->whereIn('status', ['active', 'assigned'])->count(),
+                ->whereIn('status', ['active', 'assigned'])->count(),
             'available_operators' => User::where('is_operator', true)
-                                       ->where('operator_status', 'available')
-                                       ->count(),
+                ->where('operator_status', 'available')
+                ->count(),
             'total_conversations_today' => ConversationSession::where('tenant_id', $tenantId)
-                                           ->whereDate('started_at', today())->count()
+                ->whereDate('started_at', today())->count(),
         ];
 
         return view('admin.operator-console.index', [
             'stats' => $stats,
-            'title' => 'Operator Console - Dashboard'
+            'title' => 'Operator Console - Dashboard',
         ]);
     }
 
@@ -55,7 +55,7 @@ class OperatorConsoleController extends Controller
     {
         $user = Auth::user();
 
-        if (!$user || !$user->isOperator()) {
+        if (! $user || ! $user->isOperator()) {
             return response()->json(['new' => false], 403);
         }
 
@@ -69,11 +69,11 @@ class OperatorConsoleController extends Controller
             ->whereIn('tenant_id', $tenantIds)
             ->where('status', 'pending')
             ->whereNull('assigned_operator_id')
-            ->when($sinceId, fn($q) => $q->where('id', '>', $sinceId))
+            ->when($sinceId, fn ($q) => $q->where('id', '>', $sinceId))
             ->orderByDesc('requested_at')
             ->first();
 
-        if (!$handoff) {
+        if (! $handoff) {
             return response()->json(['new' => false]);
         }
 
@@ -92,7 +92,7 @@ class OperatorConsoleController extends Controller
                     'id' => $handoff->conversationSession?->id,
                     'session_id' => $handoff->conversationSession?->session_id,
                 ],
-            ]
+            ],
         ]);
     }
 
@@ -101,10 +101,10 @@ class OperatorConsoleController extends Controller
      */
     public function conversations(Request $request)
     {
-        $query = ConversationSession::with(['messages' => function($q) {
+        $query = ConversationSession::with(['messages' => function ($q) {
             $q->latest('sent_at')->limit(1);
         }, 'assignedOperator', 'tenant'])
-        ->whereIn('status', ['active', 'assigned', 'pending']);
+            ->whereIn('status', ['active', 'assigned', 'pending']);
 
         // Filtri
         if ($request->filled('tenant_id')) {
@@ -120,11 +120,11 @@ class OperatorConsoleController extends Controller
         }
 
         $conversations = $query->orderBy('last_activity_at', 'desc')
-                              ->paginate(20);
+            ->paginate(20);
 
         return view('admin.operator-console.conversations', [
             'conversations' => $conversations,
-            'title' => 'Conversazioni Attive'
+            'title' => 'Conversazioni Attive',
         ]);
     }
 
@@ -133,13 +133,13 @@ class OperatorConsoleController extends Controller
      */
     public function showConversation(Request $request, ConversationSession $session)
     {
-        $session->load(['messages' => function($q) {
+        $session->load(['messages' => function ($q) {
             $q->orderBy('sent_at', 'asc');
         }, 'assignedOperator', 'tenant', 'handoffRequests']);
 
         return view('admin.operator-console.conversation-detail', [
             'session' => $session,
-            'title' => 'Conversazione ' . $session->session_id
+            'title' => 'Conversazione '.$session->session_id,
         ]);
     }
 
@@ -149,7 +149,7 @@ class OperatorConsoleController extends Controller
     public function handoffs(Request $request)
     {
         $query = HandoffRequest::with(['conversationSession', 'assignedOperator', 'tenant'])
-                              ->where('status', 'pending');
+            ->where('status', 'pending');
 
         // Filtri
         if ($request->filled('tenant_id')) {
@@ -172,7 +172,7 @@ class OperatorConsoleController extends Controller
 
         return view('admin.operator-console.handoffs', [
             'handoffs' => $handoffs,
-            'title' => 'Richieste Handoff'
+            'title' => 'Richieste Handoff',
         ]);
     }
 
@@ -182,19 +182,19 @@ class OperatorConsoleController extends Controller
     public function assignHandoff(Request $request, HandoffRequest $handoff)
     {
         $request->validate([
-            'operator_id' => 'required|integer|exists:users,id'
+            'operator_id' => 'required|integer|exists:users,id',
         ]);
 
         $operator = User::find($request->operator_id);
-        
-        if (!$operator->isOperator() || !$operator->isAvailable()) {
+
+        if (! $operator->isOperator() || ! $operator->isAvailable()) {
             return back()->with('error', 'Operatore non disponibile');
         }
 
         $success = $this->handoffService->assignToOperator($handoff, $operator);
 
         if ($success) {
-            return back()->with('success', 'Handoff assegnato a ' . $operator->name);
+            return back()->with('success', 'Handoff assegnato a '.$operator->name);
         } else {
             return back()->with('error', 'Errore nell\'assegnazione');
         }
@@ -208,7 +208,7 @@ class OperatorConsoleController extends Controller
         $request->validate([
             'outcome' => 'required|string|in:resolved,escalated,cancelled',
             'notes' => 'nullable|string|max:1000',
-            'satisfaction' => 'nullable|numeric|min:1|max:5'
+            'satisfaction' => 'nullable|numeric|min:1|max:5',
         ]);
 
         $success = $this->handoffService->resolveHandoff(
@@ -219,7 +219,7 @@ class OperatorConsoleController extends Controller
         );
 
         if ($success) {
-            return back()->with('success', 'Handoff risolto con esito: ' . $request->outcome);
+            return back()->with('success', 'Handoff risolto con esito: '.$request->outcome);
         } else {
             return back()->with('error', 'Errore nella risoluzione');
         }
@@ -231,9 +231,9 @@ class OperatorConsoleController extends Controller
     public function operators(Request $request)
     {
         $query = User::where('is_operator', true)
-                    ->with(['assignedConversations' => function($q) {
-                        $q->whereIn('status', ['active', 'assigned']);
-                    }]);
+            ->with(['assignedConversations' => function ($q) {
+                $q->whereIn('status', ['active', 'assigned']);
+            }]);
 
         // Filtri
         if ($request->filled('status')) {
@@ -244,7 +244,7 @@ class OperatorConsoleController extends Controller
 
         return view('admin.operator-console.operators', [
             'operators' => $operators,
-            'title' => 'Gestione Operatori'
+            'title' => 'Gestione Operatori',
         ]);
     }
 
@@ -254,16 +254,16 @@ class OperatorConsoleController extends Controller
     public function updateOperatorStatus(Request $request, User $user)
     {
         $request->validate([
-            'status' => 'required|string|in:available,busy,offline,break'
+            'status' => 'required|string|in:available,busy,offline,break',
         ]);
 
-        if (!$user->isOperator()) {
+        if (! $user->isOperator()) {
             return back()->with('error', 'Utente non è un operatore');
         }
 
         $user->updateOperatorStatus($request->status);
-        
-        return back()->with('success', 'Status aggiornato a: ' . $request->status);
+
+        return back()->with('success', 'Status aggiornato a: '.$request->status);
     }
 
     /**
@@ -274,21 +274,21 @@ class OperatorConsoleController extends Controller
         \Log::info('takeover.attempt', [
             'session_id' => $session->session_id,
             'user_id' => auth()->id(),
-            'user_email' => auth()->user()?->email
+            'user_email' => auth()->user()?->email,
         ]);
-        
+
         $operator = Auth::user();
-        
-        if (!$operator->isOperator()) {
+
+        if (! $operator->isOperator()) {
             return back()->with('error', 'Solo gli operatori possono prendere controllo delle conversazioni');
         }
 
-        if (!$operator->isAvailable()) {
+        if (! $operator->isAvailable()) {
             return back()->with('error', 'Operatore non disponibile per nuove conversazioni');
         }
 
         // Check if conversation is available for takeover
-        if ($session->status !== 'active' || !in_array($session->handoff_status, ['bot_only', 'handoff_requested'])) {
+        if ($session->status !== 'active' || ! in_array($session->handoff_status, ['bot_only', 'handoff_requested'])) {
             return back()->with('error', 'Conversazione non disponibile per take over');
         }
 
@@ -299,7 +299,7 @@ class OperatorConsoleController extends Controller
                     'status' => 'assigned',
                     'handoff_status' => 'handoff_active',
                     'assigned_operator_id' => $operator->id,
-                    'last_activity_at' => now()
+                    'last_activity_at' => now(),
                 ]);
 
                 // Create handoff request if doesn't exist
@@ -313,7 +313,7 @@ class OperatorConsoleController extends Controller
                     'status' => 'assigned',
                     'assigned_operator_id' => $operator->id,  // ✅ Fixed: was 'assigned_to'
                     'requested_at' => now(),
-                    'assigned_at' => now()
+                    'assigned_at' => now(),
                 ]);
 
                 // Update operator current conversations count
@@ -327,20 +327,20 @@ class OperatorConsoleController extends Controller
                     'content' => "👨‍💼 L'operatore {$operator->name} ha preso in carico la conversazione. Ti risponderò personalmente!",
                     'content_type' => 'text',
                     'sent_at' => now(),
-                    'delivered_at' => now()
+                    'delivered_at' => now(),
                 ]);
             });
 
             return redirect()->route('admin.operator-console.conversations.show', $session)
-                           ->with('success', 'Hai preso controllo della conversazione');
+                ->with('success', 'Hai preso controllo della conversazione');
 
         } catch (\Exception $e) {
             \Log::error('takeover.failed', [
                 'session_id' => $session->session_id,
                 'operator_id' => $operator->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             return back()->with('error', 'Errore durante il take over');
         }
     }
@@ -351,47 +351,48 @@ class OperatorConsoleController extends Controller
     public function releaseConversation(Request $request, ConversationSession $session)
     {
         $operator = Auth::user();
-        
+
         \Log::info('release.conversation.start', [
             'session_id' => $session->session_id,
             'operator_id' => $operator->id,
             'assigned_to' => $session->assigned_operator_id,
             'handoff_status' => $session->handoff_status,
-            'request_data' => $request->all()
+            'request_data' => $request->all(),
         ]);
-        
+
         if ($session->assigned_operator_id !== $operator->id) {
             \Log::warning('release.unauthorized', [
                 'session_id' => $session->session_id,
                 'operator_id' => $operator->id,
-                'assigned_to' => $session->assigned_operator_id
+                'assigned_to' => $session->assigned_operator_id,
             ]);
+
             return back()->with('error', 'Non hai il controllo di questa conversazione');
         }
 
         $request->validate([
             'resolution_note' => 'nullable|string|max:500',
-            'transfer_back_to_bot' => 'boolean'
+            'transfer_back_to_bot' => 'boolean',
         ]);
-        
+
         \Log::info('release.validation_passed', [
             'session_id' => $session->session_id,
-            'transfer_back_to_bot' => $request->boolean('transfer_back_to_bot', true)
+            'transfer_back_to_bot' => $request->boolean('transfer_back_to_bot', true),
         ]);
 
         try {
             $systemMessage = null; // ✅ Initialize before transaction
             $newStatus = null;     // ✅ Initialize for use outside closure
-            
+
             DB::transaction(function () use ($session, $operator, $request, &$systemMessage, &$newStatus) {
                 // Update conversation status
                 $newStatus = $request->boolean('transfer_back_to_bot', true) ? 'active' : 'resolved';
                 $newHandoffStatus = $request->boolean('transfer_back_to_bot', true) ? 'bot_only' : 'resolved';
-                
+
                 \Log::info('release.transaction.start', [
                     'session_id' => $session->session_id,
                     'new_status' => $newStatus,
-                    'new_handoff_status' => $newHandoffStatus
+                    'new_handoff_status' => $newHandoffStatus,
                 ]);
 
                 $session->update([
@@ -399,19 +400,19 @@ class OperatorConsoleController extends Controller
                     'handoff_status' => $newHandoffStatus,
                     'assigned_operator_id' => null,
                     'last_activity_at' => now(),
-                    'closed_at' => $newStatus === 'resolved' ? now() : null
+                    'closed_at' => $newStatus === 'resolved' ? now() : null,
                 ]);
 
                 // Resolve handoff request
                 $handoffRequest = HandoffRequest::where('conversation_session_id', $session->id)
-                                               ->where('status', 'assigned')
-                                               ->first();
+                    ->where('status', 'assigned')
+                    ->first();
                 if ($handoffRequest) {
                     $handoffRequest->update([
                         'status' => 'resolved',
                         'resolution_outcome' => $newStatus === 'resolved' ? 'resolved_by_operator' : 'transferred_back_to_bot',
                         'resolution_notes' => $request->resolution_note,
-                        'resolved_at' => now()
+                        'resolved_at' => now(),
                     ]);
                 }
 
@@ -419,7 +420,7 @@ class OperatorConsoleController extends Controller
                 $operator->decrementCurrentConversations();
 
                 // Send system message
-                $message = $newStatus === 'resolved' 
+                $message = $newStatus === 'resolved'
                     ? "✅ La conversazione è stata chiusa dall'operatore {$operator->name}. Grazie!"
                     : "🤖 Sono tornato! L'operatore {$operator->name} ha completato l'assistenza. Come posso aiutarti?";
 
@@ -430,19 +431,19 @@ class OperatorConsoleController extends Controller
                     'content' => $message,
                     'content_type' => 'text',
                     'sent_at' => now(),
-                    'delivered_at' => now()
+                    'delivered_at' => now(),
                 ]);
-                
+
                 \Log::info('release.system_message_created', [
                     'message_id' => $systemMessage->id,
-                    'content' => $message
+                    'content' => $message,
                 ]);
             });
-            
+
             \Log::info('release.transaction_completed', [
                 'session_id' => $session->session_id,
                 'new_status' => $newStatus,
-                'system_message_id' => $systemMessage?->id
+                'system_message_id' => $systemMessage?->id,
             ]);
 
             // 📡 Broadcast evento WebSocket anche per il messaggio di sistema
@@ -458,29 +459,29 @@ class OperatorConsoleController extends Controller
                 \Log::error('release.broadcast_failed', [
                     'session_id' => $session->session_id,
                     'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
+                    'trace' => $e->getTraceAsString(),
                 ]);
             }
 
-            $successMessage = $newStatus === 'resolved' 
+            $successMessage = $newStatus === 'resolved'
                 ? 'Conversazione chiusa con successo'
                 : 'Conversazione trasferita al bot';
-            
+
             \Log::info('release.completed', [
                 'session_id' => $session->session_id,
-                'message' => $successMessage
+                'message' => $successMessage,
             ]);
-                
+
             return redirect()->route('admin.operator-console.conversations')
-                           ->with('success', $successMessage);
+                ->with('success', $successMessage);
 
         } catch (\Exception $e) {
             \Log::error('release.failed', [
                 'session_id' => $session->session_id,
                 'operator_id' => $operator->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             return back()->with('error', 'Errore durante il rilascio');
         }
     }
@@ -491,7 +492,7 @@ class OperatorConsoleController extends Controller
     public function sendMessage(Request $request, ConversationSession $session)
     {
         $operator = Auth::user();
-        
+
         // Verifica che l'operatore abbia controllo della conversazione
         if ($session->assigned_operator_id !== $operator->id) {
             return response()->json(['error' => 'Non hai il controllo di questa conversazione'], 403);
@@ -499,7 +500,7 @@ class OperatorConsoleController extends Controller
 
         $request->validate([
             'content' => 'required|string|max:2000',
-            'content_type' => 'string|in:text,markdown'
+            'content_type' => 'string|in:text,markdown',
         ]);
 
         try {
@@ -513,14 +514,14 @@ class OperatorConsoleController extends Controller
                 'content' => $request->content,
                 'content_type' => $request->input('content_type', 'text'),
                 'sent_at' => now(),
-                'delivered_at' => now()
+                'delivered_at' => now(),
             ]);
 
             // Aggiorna ultima attività sessione
             $session->update([
                 'last_activity_at' => now(),
                 'message_count_operator' => ($session->message_count_operator ?? 0) + 1,
-                'message_count_total' => ($session->message_count_total ?? 0) + 1
+                'message_count_total' => ($session->message_count_total ?? 0) + 1,
             ]);
 
             // Invia via API al widget (stesso endpoint usato dal bot)
@@ -531,13 +532,13 @@ class OperatorConsoleController extends Controller
                 \App\Events\ConversationMessageSent::dispatch($message);
                 \Log::info('operator.message_broadcasted', [
                     'session_id' => $session->session_id,
-                    'message_id' => $message->id
+                    'message_id' => $message->id,
                 ]);
             } catch (\Exception $e) {
                 \Log::warning('operator.broadcast_failed', [
                     'session_id' => $session->session_id,
                     'message_id' => $message->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -548,21 +549,21 @@ class OperatorConsoleController extends Controller
                     'id' => $message->id,
                     'content' => $message->content,
                     'sender_name' => $message->sender_name,
-                    'sent_at' => $message->sent_at->toISOString()
-                ]
+                    'sent_at' => $message->sent_at->toISOString(),
+                ],
             ]);
 
         } catch (\Exception $e) {
             \Log::error('operator.message_send_failed', [
                 'session_id' => $session->session_id,
                 'operator_id' => $operator->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             // 🎯 ALWAYS return JSON for AJAX requests
             return response()->json([
                 'success' => false,
-                'error' => 'Errore nell\'invio del messaggio: ' . $e->getMessage()
+                'error' => 'Errore nell\'invio del messaggio: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -580,20 +581,20 @@ class OperatorConsoleController extends Controller
                 'content_type' => $message->content_type,
                 'sender_type' => 'operator',
                 'sender_id' => $message->sender_id,
-                'sender_name' => $message->sender_name
+                'sender_name' => $message->sender_name,
             ]);
 
             \Log::info('operator.message_synced_to_widget', [
                 'session_id' => $session->session_id,
                 'message_id' => $message->id,
-                'response_status' => $response->status()
+                'response_status' => $response->status(),
             ]);
 
         } catch (\Exception $e) {
             \Log::warning('operator.widget_sync_failed', [
                 'session_id' => $session->session_id,
                 'message_id' => $message->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -604,7 +605,7 @@ class OperatorConsoleController extends Controller
     public function deleteConversation(Request $request, ConversationSession $session)
     {
         // Solo admin possono eliminare conversazioni
-        if (!auth()->user()->isAdmin()) {
+        if (! auth()->user()->isAdmin()) {
             return back()->with('error', 'Solo gli amministratori possono eliminare conversazioni');
         }
 
@@ -620,10 +621,10 @@ class OperatorConsoleController extends Controller
 
                 // Elimina messaggi associati
                 ConversationMessage::where('conversation_session_id', $session->id)->delete();
-                
-                // Elimina handoff requests associati  
+
+                // Elimina handoff requests associati
                 HandoffRequest::where('conversation_session_id', $session->id)->delete();
-                
+
                 // Elimina la sessione
                 $session->delete();
             });
@@ -631,19 +632,19 @@ class OperatorConsoleController extends Controller
             \Log::info('conversation.deleted', [
                 'session_id' => $session->session_id,
                 'deleted_by' => auth()->id(),
-                'admin_email' => auth()->user()->email
+                'admin_email' => auth()->user()->email,
             ]);
 
             return redirect()->route('admin.operator-console.conversations')
-                           ->with('success', 'Conversazione eliminata con successo');
+                ->with('success', 'Conversazione eliminata con successo');
 
         } catch (\Exception $e) {
             \Log::error('conversation.delete_failed', [
                 'session_id' => $session->session_id,
                 'admin_id' => auth()->id(),
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             return back()->with('error', 'Errore durante l\'eliminazione della conversazione');
         }
     }

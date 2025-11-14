@@ -4,22 +4,20 @@ use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DocumentAdminController;
 use App\Http\Controllers\Admin\FeedbackAdminController;
+use App\Http\Controllers\Admin\FormSubmissionController;
+use App\Http\Controllers\Admin\KnowledgeBaseAdminController;
 use App\Http\Controllers\Admin\RagTestController;
 use App\Http\Controllers\Admin\ScraperAdminController;
 use App\Http\Controllers\Admin\ScraperProgressController;
 use App\Http\Controllers\Admin\SuperAdminUtilitiesController;
 use App\Http\Controllers\Admin\TenantAdminController;
 use App\Http\Controllers\Admin\TenantFormController;
-use App\Http\Controllers\Admin\FormSubmissionController;
-use App\Http\Controllers\Admin\KnowledgeBaseAdminController;
 use App\Http\Controllers\Admin\UserManagementController;
-use App\Http\Controllers\Admin\WidgetConfigController;
-use App\Http\Controllers\Admin\WidgetAnalyticsController;
 use App\Http\Controllers\Admin\WhatsAppConfigController;
+use App\Http\Controllers\Admin\WidgetAnalyticsController;
+use App\Http\Controllers\Admin\WidgetConfigController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Customer\CustomerDashboardController;
-use App\Http\Controllers\WidgetPreviewController;
-use App\Http\Middleware\EnsureAdminToken;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -29,10 +27,10 @@ Route::get('/', function () {
 // Route di test per l'autenticazione (temporanea)
 Route::get('/test-auth', function () {
     $user = auth()->user();
-    if (!$user) {
+    if (! $user) {
         return 'Non autenticato';
     }
-    
+
     return [
         'user' => $user->name,
         'email' => $user->email,
@@ -65,7 +63,7 @@ Route::post('/email/verification-notification', [AuthController::class, 'resendV
 // Customer/Tenant routes
 Route::middleware(['auth.user'])->group(function () {
     Route::get('/dashboard', [CustomerDashboardController::class, 'index'])->name('dashboard');
-    
+
     // Tenant-specific routes
     Route::middleware('tenant.access')->prefix('tenant/{tenant}')->name('tenant.')->group(function () {
         Route::get('/dashboard', [CustomerDashboardController::class, 'show'])->name('dashboard');
@@ -167,8 +165,6 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
         ->name('documents.destroyAll')
         ->whereNumber('tenant');
 
-
-
     // Scraper config
     Route::get('/tenants/{tenant}/scraper', [ScraperAdminController::class, 'edit'])->name('scraper.edit');
     Route::post('/tenants/{tenant}/scraper', [ScraperAdminController::class, 'update'])->name('scraper.update');
@@ -209,16 +205,16 @@ Route::middleware(['auth.user', 'auto.tenant.scope'])->prefix('admin')->name('ad
     Route::get('/rag-config/profile-template', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'getProfileTemplate'])->name('rag-config.profile-template');
     Route::post('/tenants/{tenant}/rag-config/test', [App\Http\Controllers\Admin\TenantRagConfigController::class, 'testConfig'])->name('tenants.rag-config.test');
 
-// 🎯 NUOVE ROUTE: Scraping singolo URL e re-scraping documenti
-Route::post('/scraper/single-url', [App\Http\Controllers\Admin\ScraperAdminController::class, 'scrapeSingleUrl'])->name('scraper.single-url');
-Route::post('/documents/{document}/rescrape', [DocumentAdminController::class, 'rescrape'])->name('documents.rescrape');
-Route::post('/tenants/{tenant}/documents/rescrape-all', [DocumentAdminController::class, 'rescrapeAll'])->name('documents.rescrape-all');
+    // 🎯 NUOVE ROUTE: Scraping singolo URL e re-scraping documenti
+    Route::post('/scraper/single-url', [App\Http\Controllers\Admin\ScraperAdminController::class, 'scrapeSingleUrl'])->name('scraper.single-url');
+    Route::post('/documents/{document}/rescrape', [DocumentAdminController::class, 'rescrape'])->name('documents.rescrape');
+    Route::post('/tenants/{tenant}/documents/rescrape-all', [DocumentAdminController::class, 'rescrapeAll'])->name('documents.rescrape-all');
 
     // Widget Analytics
     Route::get('/widget-analytics', [WidgetAnalyticsController::class, 'index'])->name('widget-analytics.index');
     Route::get('/tenants/{tenant}/widget-analytics', [WidgetAnalyticsController::class, 'show'])->name('widget-analytics.show');
     Route::get('/tenants/{tenant}/widget-analytics/export', [WidgetAnalyticsController::class, 'export'])->name('widget-analytics.export');
-    
+
     // WhatsApp Configuration
     Route::get('/whatsapp-config', [WhatsAppConfigController::class, 'index'])->name('whatsapp-config.index');
     Route::get('/tenants/{tenant}/whatsapp-config', [WhatsAppConfigController::class, 'show'])->name('whatsapp-config.show');

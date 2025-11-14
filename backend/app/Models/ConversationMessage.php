@@ -2,11 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Carbon\Carbon;
 
 class ConversationMessage extends Model
 {
@@ -35,7 +34,7 @@ class ConversationMessage extends Model
         'edit_reason',
         'sent_at',
         'delivered_at',
-        'read_at'
+        'read_at',
     ];
 
     protected $casts = [
@@ -49,14 +48,14 @@ class ConversationMessage extends Model
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
-        'edited_at' => 'datetime'
+        'edited_at' => 'datetime',
     ];
 
     protected $dates = [
         'sent_at',
         'delivered_at',
         'read_at',
-        'edited_at'
+        'edited_at',
     ];
 
     // 🏢 Relationships
@@ -149,17 +148,17 @@ class ConversationMessage extends Model
 
     public function hasBeenRead(): bool
     {
-        return !is_null($this->read_at);
+        return ! is_null($this->read_at);
     }
 
     public function hasBeenDelivered(): bool
     {
-        return !is_null($this->delivered_at);
+        return ! is_null($this->delivered_at);
     }
 
     public function hasCitations(): bool
     {
-        return !empty($this->citations);
+        return ! empty($this->citations);
     }
 
     public function getResponseTimeInSeconds(): ?float
@@ -175,15 +174,19 @@ class ConversationMessage extends Model
     // 🎯 Message Actions
     public function markAsDelivered(): bool
     {
-        if ($this->delivered_at) return true;
-        
+        if ($this->delivered_at) {
+            return true;
+        }
+
         return $this->update(['delivered_at' => now()]);
     }
 
     public function markAsRead(): bool
     {
-        if ($this->read_at) return true;
-        
+        if ($this->read_at) {
+            return true;
+        }
+
         return $this->update(['read_at' => now()]);
     }
 
@@ -192,13 +195,13 @@ class ConversationMessage extends Model
         return $this->update(['is_helpful' => $helpful]);
     }
 
-    public function editContent(string $newContent, string $reason = null): bool
+    public function editContent(string $newContent, ?string $reason = null): bool
     {
         return $this->update([
             'content' => $newContent,
             'is_edited' => true,
             'edited_at' => now(),
-            'edit_reason' => $reason
+            'edit_reason' => $reason,
         ]);
     }
 
@@ -209,7 +212,7 @@ class ConversationMessage extends Model
             // In futuro: convertire markdown in HTML
             return $this->content;
         }
-        
+
         return $this->content;
     }
 
@@ -219,7 +222,7 @@ class ConversationMessage extends Model
             return $this->sender_name;
         }
 
-        return match($this->sender_type) {
+        return match ($this->sender_type) {
             'user' => 'Utente',
             'bot' => 'Assistente AI',
             'operator' => $this->sender ? $this->sender->name : 'Operatore',

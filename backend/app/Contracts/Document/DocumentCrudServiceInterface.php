@@ -9,20 +9,19 @@ use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Interface for document CRUD operations service
- * 
+ *
  * Responsible for creating, reading, updating, and deleting documents
  * with proper tenant scoping and authorization.
- * 
- * @package App\Contracts\Document
  */
 interface DocumentCrudServiceInterface
 {
     /**
      * Create a new document
-     * 
-     * @param array{name: string, knowledge_base_id: int, path?: string, source_url?: string, mime_type?: string} $data Document data
-     * @param int $tenantId Tenant ID (multitenancy scoping)
+     *
+     * @param  array{name: string, knowledge_base_id: int, path?: string, source_url?: string, mime_type?: string}  $data  Document data
+     * @param  int  $tenantId  Tenant ID (multitenancy scoping)
      * @return Document Created document model
+     *
      * @throws \Illuminate\Validation\ValidationException If data is invalid
      * @throws \Illuminate\Auth\Access\AuthorizationException If user cannot create
      */
@@ -30,21 +29,23 @@ interface DocumentCrudServiceInterface
 
     /**
      * Find document by ID with tenant scoping
-     * 
-     * @param int $documentId Document ID
-     * @param int $tenantId Tenant ID
+     *
+     * @param  int  $documentId  Document ID
+     * @param  int  $tenantId  Tenant ID
      * @return Document Document model
+     *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If not found
      */
     public function findById(int $documentId, int $tenantId): Document;
 
     /**
      * Update a document
-     * 
-     * @param int $documentId Document ID
-     * @param array<string, mixed> $data Updated data
-     * @param int $tenantId Tenant ID
+     *
+     * @param  int  $documentId  Document ID
+     * @param  array<string, mixed>  $data  Updated data
+     * @param  int  $tenantId  Tenant ID
      * @return Document Updated document model
+     *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If not found
      * @throws \Illuminate\Auth\Access\AuthorizationException If user cannot update
      */
@@ -52,13 +53,14 @@ interface DocumentCrudServiceInterface
 
     /**
      * Soft delete a document
-     * 
+     *
      * Marks document as deleted without removing from database.
      * Also triggers cleanup of chunks and vectors.
-     * 
-     * @param int $documentId Document ID
-     * @param int $tenantId Tenant ID
+     *
+     * @param  int  $documentId  Document ID
+     * @param  int  $tenantId  Tenant ID
      * @return bool True if deletion successful
+     *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If not found
      * @throws \Illuminate\Auth\Access\AuthorizationException If user cannot delete
      */
@@ -66,31 +68,30 @@ interface DocumentCrudServiceInterface
 
     /**
      * Bulk delete documents
-     * 
+     *
      * Soft deletes multiple documents at once.
-     * 
-     * @param array<int> $documentIds Array of document IDs
-     * @param int $tenantId Tenant ID
+     *
+     * @param  array<int>  $documentIds  Array of document IDs
+     * @param  int  $tenantId  Tenant ID
      * @return int Number of documents deleted
      */
     public function bulkDelete(array $documentIds, int $tenantId): int;
 
     /**
      * Restore a soft-deleted document
-     * 
-     * @param int $documentId Document ID
-     * @param int $tenantId Tenant ID
+     *
+     * @param  int  $documentId  Document ID
+     * @param  int  $tenantId  Tenant ID
      * @return Document Restored document model
      */
     public function restore(int $documentId, int $tenantId): Document;
 
     /**
      * Get all documents for a knowledge base
-     * 
-     * @param int $knowledgeBaseId Knowledge base ID
-     * @param int $tenantId Tenant ID
+     *
+     * @param  int  $knowledgeBaseId  Knowledge base ID
+     * @param  int  $tenantId  Tenant ID
      * @return Collection<int, Document> Collection of documents
      */
     public function getByKnowledgeBase(int $knowledgeBaseId, int $tenantId): Collection;
 }
-

@@ -80,12 +80,12 @@ class TenantForm extends Model
      */
     public function canBeTriggeredByKeyword(string $text): bool
     {
-        if (!$this->active || empty($this->trigger_keywords)) {
+        if (! $this->active || empty($this->trigger_keywords)) {
             return false;
         }
 
         $textLower = mb_strtolower($text);
-        
+
         foreach ($this->trigger_keywords as $keyword) {
             if (mb_stripos($textLower, mb_strtolower($keyword)) !== false) {
                 return true;
@@ -100,8 +100,8 @@ class TenantForm extends Model
      */
     public function canBeTriggeredByMessageCount(int $messageCount): bool
     {
-        return $this->active 
-            && $this->trigger_after_messages 
+        return $this->active
+            && $this->trigger_after_messages
             && $messageCount >= $this->trigger_after_messages;
     }
 
@@ -110,7 +110,7 @@ class TenantForm extends Model
      */
     public function canBeTriggeredByQuestion(string $question): bool
     {
-        if (!$this->active || empty($this->trigger_after_questions)) {
+        if (! $this->active || empty($this->trigger_after_questions)) {
             return false;
         }
 
@@ -118,11 +118,11 @@ class TenantForm extends Model
 
         foreach ($this->trigger_after_questions as $triggerQuestion) {
             $similarity = similar_text(
-                mb_strtolower($triggerQuestion), 
-                $questionLower, 
+                mb_strtolower($triggerQuestion),
+                $questionLower,
                 $percent
             );
-            
+
             // Se la similarity è >= 80%, considera match
             if ($percent >= 80) {
                 return true;
@@ -137,19 +137,19 @@ class TenantForm extends Model
      */
     public function getConfirmationEmailBody(array $formData = []): string
     {
-        $template = $this->user_confirmation_email_body ?? 
+        $template = $this->user_confirmation_email_body ??
             "Gentile utente,\n\nabbiamo ricevuto la sua richiesta tramite il chatbot.\n\nDati inviati:\n{form_data}\n\nLa contatteremo al più presto.\n\nCordiali saluti,\n{tenant_name}";
 
         // Sostituisci placeholder
         $template = str_replace('{tenant_name}', $this->tenant->name, $template);
         $template = str_replace('{form_name}', $this->name, $template);
-        
+
         // Formatta i dati del form
         $formDataText = '';
         foreach ($formData as $key => $value) {
             $formDataText .= "- {$key}: {$value}\n";
         }
-        
+
         $template = str_replace('{form_data}', $formDataText, $template);
 
         return $template;
